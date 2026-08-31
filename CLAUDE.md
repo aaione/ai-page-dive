@@ -32,15 +32,4 @@ CWS 装扩展 → 首次点击提示 `npm i -g pagedive && pagedive install`（�
 
 ## Commit 规范
 
-遵循 [Conventional Commits](https://www.conventionalcommits.org/)。**作者固定**：`tj <tiejia0319@gmail.com>`，见 `AGENTS.md`。
-
-```
-<type>[scope]: <description>
-```
-
-- **type**（必填，小写）：`feat` / `fix` / `docs` / `style` / `refactor` / `perf` / `test` / `build` / `ci` / `chore`
-- **scope**（可选）：`ext`（apps/extension）/ `host`（packages/host）/ `shared`（packages/shared）/ `repo`
-- **description**（必填）：祈使语气、小写、结尾不加句号
-- **破坏性变更**：type/scope 后加 `!`（如 `feat(host)!:`）
-
-示例：`feat(ext): sidePanel 渲染 markdown 流式输出`、`fix(host): pgid 收割遗漏子进程`
+见 `AGENTS.md`（Conventional Commits + 作者固定 `tj <tiejia0319@gmail.com>`），CLAUDE.md 不重复其内容。
