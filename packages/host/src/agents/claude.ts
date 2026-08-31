@@ -34,11 +34,13 @@ export function createClaudeParser() {
       prevText = text
     } else if (d.type === 'result') {
       const u = d.usage ?? {}
-      out.push({
-        type: 'usage',
-        inputTokens: u.input_tokens,
-        outputTokens: u.output_tokens,
-      })
+      if (u.input_tokens != null || u.output_tokens != null) {
+        out.push({
+          type: 'usage',
+          inputTokens: u.input_tokens,
+          outputTokens: u.output_tokens,
+        })
+      }
       out.push({ type: 'result', isError: d.is_error === true, text: d.result ?? '' })
     }
     return out

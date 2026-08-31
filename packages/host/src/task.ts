@@ -95,7 +95,7 @@ export class Task {
 
     await new Promise<void>((resolve) => {
       this.proc!.child.on('exit', async (code, signal) => {
-        if (this.finished) return resolve()
+        if (this.doneSent) return resolve() // isError 路径已发终局，勿重复
         this.finished = true
         resolve()
         await this.finish(code, signal, stderrTail, contentFile)
@@ -120,21 +120,23 @@ export class Task {
         // claude 的运行内失败：退出码 0 也判失败（硬约束 #4）
         if (ev.isError) {
           this.finished = true
+          this.doneSent = true
           this.proc?.reap()
+          this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
+          void this.persist('error')
           this.cb.onDone({
-            historyPath: '',
+            historyPath: this.historyPath,
             isError: true,
             errorText: ev.text,
             usage: this.usage,
             durationMs: Date.now() - this.startedAt,
           })
-        } else {
-          if (ev.text) {
-            // codex 无增量时 result 兜底出全文
-            if (!this.accText && ev.text) this.sendChunk(ev.text), (this.accText = ev.text)
-          }
-          this.finished = true
+        } else if (ev.text && !this.accText) {
+          // codex 无增量时 result 兜底出全文
+          this.accText = ev.text
+          this.sendChunk(ev.text)
         }
+        // 正常路径不设 finished：等 exit 事件统一走 finish()（onDone + 落盘）
         break
     }
   }
@@ -150,6 +152,7 @@ export class Task {
   private async finish(code: number | null, signal: string | null, stderrTail: string, contentFile: string): Promise<void> {
     scheduleCleanup(contentFile)
     const durationMs = Date.now() - this.startedAt
+    this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
     if (this.cancelled || signal === 'SIGTERM' || signal === 'SIGKILL') {
       await this.persist('interrupted')
       this.cb.onError('cancelled', 'task cancelled')
@@ -172,6 +175,8 @@ export class Task {
   }
 
   private historyPath = ''
+  /** isError 路径已发终局（防 exit 事件二次发） */
+  private doneSent = false
 
   private async persist(status: 'done' | 'interrupted' | 'error'): Promise<void> {
     if (!this.input) return
