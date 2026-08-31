@@ -1,0 +1,53 @@
+# PageDive 决策记录
+
+> 2026-08-31 grilling session 定案。调研依据：research/product-architecture-report.md（7 路调研 + 对抗核查）。
+
+## 已拍板决策
+
+| # | 决策位 | 结论 |
+|---|---|---|
+| 1 | 定位 | **零配置一键深度阅读 agent**（候选 A）。适配层是底层能力顺带产出，垂直场景由 workflow 生态承载 |
+| 2 | 命名 | **PageDive**（弃用 read-one）。npm 包 `pagedive`，安装命令 `pagedive install`。项目目录：`/Users/apple/work/hs/ai-feature/page-dive/` |
+| 3 | 通信底座 | **Native Messaging 薄 host + Side Panel 主 UI**。否决 localhost daemon 主通道（Chrome 147 LNA 政策风险）。host 预留 `--daemon` 升级位。权限：`activeTab` + `scripting` + `nativeMessaging` + `sidePanel`，不申请 `<all_urls>` |
+| 4 | 历史记录 | **host 侧 markdown 落盘 + 档 B+**：`~/.pagedive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）+ 历史列表/查看/删除/Finder 定位 + 过滤 + 标题/URL 搜索。全文搜索/导入导出/对话关联 → v2 |
+| 5 | CLI 适配 | **v1 = claude + codex 双适配器**。AgentDef 接口按六家（claude/codex/opencode/gemini/qwen/dsh）字段并集设计，只实现两家。`claude -p --output-format stream-json --verbose`；`codex exec --json -o <file>`。prompt 一律走 stdin |
+| 6 | 平台 | **v1 = macOS + Chrome**。Linux 声明支持不承诺测试；Windows/Edge/Brave → v2（install 分支留位） |
+| 7 | 开源 | **全开源 MIT**（2026-09-01 定案；host 可审计 = 信任自证；与 summarize/React/Vite 等 MIT 生态零摩擦，Apache-2.0 的专利条款对本品类无暴露面） |
+| 8 | 付费墙站点 | **尽力提取当前已渲染内容**（等价用户手动复制），不绕过访问控制；设置页免责文案；SPA 差站点走提取质量提示不硬拦截 |
+| 9 | 定价 | **v1 完全免费无付费墙**。Raycast 式路线：开源核心免费 → workflow 生态起量 → Pro 卖生态增值 |
+
+## 技术栈（2026-08-31 grilling 补充定案）
+
+| 位 | 选型 |
+|---|---|
+| 仓库形态 | pnpm monorepo：`apps/extension` + `packages/host` + `packages/shared`（AgentDef 类型 / NM 消息协议两侧共用） |
+| host | 纯 Node（>=18）+ TypeScript，**运行时零依赖**（NM 协议长度前缀手写 ~20 行） |
+| 扩展 UI | Vite + React + TypeScript，Side Panel 为主 UI |
+| 样式 | Tailwind v4 + 手写少量组件（不引 shadcn 全套） |
+| markdown | react-markdown + remark-gfm（流式渲染 = 每帧重渲染累积文本） |
+| 测试 | vitest 覆盖 host 流解析器 + AgentDef buildArgs 纯函数；扩展侧手动验证 |
+
+## 既定技术决策（调研定案，随架构锁定）
+
+- 提取管线：Readability → DOMPurify → Turndown(GFM)；站点适配器（arXiv/YT/文档站）打样；innerText 兜底
+- 正文全量写本地临时文件，prompt 给文件路径 + 大纲 + 元数据，agent 自主分段读取
+- host：薄壳 Node（<2k 行），per-connection spawn、幂等、pgid 进程树收割、流归一化、≤1MB chunk
+- CLI 运行内失败打 stdout（claude）——必须解析 `is_error`，不能只看退出码
+- workflow 机制：`~/.pagedive/workflows/<name>/WORKFLOW.md`（frontmatter + 正文即 prompt），目录即插件、懒扫描，用户目录 shadow 内置同名
+- 合规红线：只子进程调起未修改官方 CLI 二进制、用户自己登录、零凭证接触、零流量代理、永不对 CLI 用量收费
+
+## v1 范围（MVP）
+
+1. Side Panel 一键总结当前页（提取 → 本地临时文件 → CLI agent → 流式渲染）
+2. claude + codex 双适配器
+3. 内置 3-4 个 workflow（快速摘要 / 深度研读多步 / 论文模式）
+4. `npm i -g pagedive && pagedive install`（自动注册 NM + 探测已装 CLI）
+5. 历史 B+ 档
+
+## v2 路线图（已明确延后）
+
+`--daemon` 常驻（关面板不中断）/ 全文搜索 / 导入导出 / 追问对话 + 对话历史 / Windows / Edge/Brave / marketplace / OpenCode 等更多适配器 / dsh 深度支持
+
+## 待办素材
+
+- opencode 方法论报告（后台跑着，非阻塞）：v1 内置 workflow 的 prompt 设计参考；若未交付由主会话自行设计
