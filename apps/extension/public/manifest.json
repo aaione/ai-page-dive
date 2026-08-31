@@ -3,9 +3,20 @@
   "name": "PageDive",
   "version": "0.1.0",
   "description": "一键调用本机 AI CLI 深度总结当前网页",
-  "permissions": ["activeTab", "scripting", "nativeMessaging", "sidePanel"],
-  "background": { "service_worker": "background.js", "type": "module" },
-  "side_panel": { "default_path": "sidepanel.html" },
-  "action": { "default_title": "PageDive 深度总结" },
-  "icons": {}
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "nativeMessaging",
+    "sidePanel"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "PageDive 深度总结"
+  }
 }

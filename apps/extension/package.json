@@ -10,12 +10,22 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/chrome": "^0.2.7",
+    "@types/dompurify": "^3.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^6.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
     "vite": "^8.2.2"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "@pagedive/shared": "workspace:*",
+    "dompurify": "^3.4.14",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "turndown": "^7.2.4"
   }
 }

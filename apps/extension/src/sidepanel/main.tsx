@@ -1,2 +1,10 @@
-// M7 填充正式 UI；M0 占位保证构建通过
-document.getElementById('root')!.textContent = 'PageDive'
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import { App } from './App.js'
+import './index.css'
+
+createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
