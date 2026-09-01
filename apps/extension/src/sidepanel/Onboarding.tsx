@@ -15,35 +15,41 @@ export function Onboarding() {
   }, [])
 
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-4 p-6 text-center">
-      <h1 className="text-base font-semibold">还差一步（约 30 秒，仅一次）</h1>
-      <p className="text-xs leading-5 text-neutral-500">
-        浏览器沙箱不允许扩展直接启动本机程序——这是 Chrome 的安全模型，<br />
-        所有需要调用本机 CLI 的扩展（如 1Password）都有这一步。<br />
-        装一个官方本地组件即可解锁，装完就不用再管。
-      </p>
-      <p className="text-xs text-neutral-600">复制这一行到终端执行（需已装 Node.js）：</p>
-      <button
-        onClick={() => navigator.clipboard.writeText(cmd)}
-        className="w-full rounded-md bg-neutral-900 px-3 py-2 font-mono text-xs text-white hover:bg-neutral-700"
-        title="点击复制"
-      >
-        {cmd}
-      </button>
-      <p className="text-[11px] leading-4 text-neutral-400">
-        装好后 ⌘Q 完全退出 Chrome 再打开（Chrome 只在启动时加载本机组件）。
-        <br />
-        内容只在本机处理，不经过任何服务器。
-      </p>
-      <p className="text-[11px] text-neutral-400">
-        本页每 3 秒自动检测，装好后自动进入。
-      </p>
-      <button
-        onClick={() => location.reload()}
-        className="text-xs text-neutral-500 underline hover:text-neutral-800"
-      >
-        已安装？立即检测
-      </button>
+    <div className="flex h-screen w-full flex-col items-center justify-center bg-pd-bg px-6 text-center">
+      <div className="flex w-full max-w-[272px] flex-col items-center">
+        <h1 className="pd-serif text-[17px] font-semibold leading-[1.6] text-pd-ink">还差一步（约 30 秒，仅一次）</h1>
+        <p className="mt-3 text-xs leading-[2.0] text-pd-ink-2">
+          浏览器沙箱不允许扩展直接启动本机程序——这是 Chrome 的安全模型，<br />
+          所有需要调用本机 CLI 的扩展（如 1Password）都有这一步。<br />
+          装一个官方本地组件即可解锁，装完就不用再管。
+        </p>
+        <p className="mt-4 text-xs text-pd-ink-2">复制这一行到终端执行（需已装 Node.js）：</p>
+        <button
+          onClick={() => navigator.clipboard.writeText(cmd)}
+          className="mt-2 flex w-full items-center justify-between gap-2 rounded-[4px] bg-pd-primary px-3 py-2 text-left hover:bg-pd-primary-hover"
+          title="点击复制"
+        >
+          <span className="pd-mono text-xs text-white">{cmd}</span>
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-white" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1" />
+            <path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" />
+          </svg>
+        </button>
+        <p className="mt-4 text-[10.5px] leading-[1.8] text-pd-ink-2">
+          装好后 ⌘Q 完全退出 Chrome 再打开（Chrome 只在启动时加载本机组件）。
+          <br />
+          <span className="font-semibold text-pd-ink">内容只在本机处理，不经过任何服务器。</span>
+        </p>
+        <p className="mt-3 text-[10.5px] leading-[1.8] text-pd-ink-2">
+          本页每 3 秒自动检测，装好后自动进入。
+        </p>
+        <button
+          onClick={() => location.reload()}
+          className="mt-3 text-xs text-pd-primary underline hover:text-pd-primary-hover"
+        >
+          已安装？立即检测
+        </button>
+      </div>
     </div>
   )
 }

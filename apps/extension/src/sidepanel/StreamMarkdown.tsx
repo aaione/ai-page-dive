@@ -51,15 +51,15 @@ export const StreamMarkdown = memo(function StreamMarkdown({
   if (!done && rendered.length > 64 * 1024) {
     return (
       <div ref={scrollerRef}>
-        <p className="mb-2 text-[11px] text-neutral-400">（内容较长，完成后完整渲染）</p>
-        <pre className="whitespace-pre-wrap break-all text-xs text-neutral-600">
+        <p className="mb-2 text-[11.5px] leading-[1.9] text-pd-ink-2">（内容较长，完成后完整渲染）</p>
+        <pre className="pd-mono whitespace-pre-wrap break-all rounded-[4px] bg-pd-code-bg p-2.5 text-[11.5px] leading-[1.6] text-pd-ink">
           {rendered.slice(-8000)}
         </pre>
       </div>
     )
   }
   return (
-    <div ref={scrollerRef} className="prose-sm max-w-none text-sm leading-relaxed [&_h1]:mt-3 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-neutral-100 [&_pre]:p-2 [&_strong]:font-semibold [&_table]:my-2 [&_table]:w-full [&_td]:border [&_td]:px-1.5 [&_td]:py-0.5 [&_th]:border [&_th]:bg-neutral-100 [&_th]:px-1.5 [&_th]:py-0.5 [&_ul]:list-disc [&_ul]:pl-4">
+    <div ref={scrollerRef} data-done={done ? 'true' : 'false'} className="pd-md">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{rendered}</ReactMarkdown>
     </div>
   )

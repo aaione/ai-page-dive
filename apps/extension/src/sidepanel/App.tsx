@@ -103,15 +103,19 @@ export function App() {
   if (hostOk === false) return <Onboarding />
 
   return (
-    <div className="flex h-screen flex-col bg-neutral-50 text-neutral-900">
-      <header className="flex items-center justify-between border-b bg-white px-3 py-2">
-        <h1 className="text-sm font-semibold">PageDive</h1>
-        <nav className="flex gap-1 text-xs">
+    <div className="flex h-screen flex-col bg-pd-bg font-sans text-pd-ink">
+      <header className="flex h-11 shrink-0 items-center justify-between border-b border-pd-line bg-pd-bg px-4">
+        <h1 className="text-[13px] font-semibold tracking-[0.02em] text-pd-ink">PageDive</h1>
+        <nav className="flex h-full items-end gap-4 text-xs">
           {(['main', 'history', 'settings'] as View[]).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`rounded px-2 py-1 ${view === v ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:bg-neutral-100'}`}
+              className={`-mb-px border-b-2 pb-[9px] pt-[11px] font-medium ${
+                view === v
+                  ? 'border-pd-primary font-semibold text-pd-ink'
+                  : 'border-transparent text-pd-ink-2 hover:text-pd-ink'
+              }`}
             >
               {VIEW_LABEL[v]}
             </button>

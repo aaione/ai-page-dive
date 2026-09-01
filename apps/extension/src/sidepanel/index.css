@@ -1,5 +1,130 @@
 @import "tailwindcss";
 
-body {
-  width: 100%;
+@theme {
+  /* 色彩 */
+  --color-pd-bg: #FAF9F5;          /* 面板/阅读面：暖纸底 */
+  --color-pd-surface: #FFFFFF;     /* 极少使用（搜索按钮等对比件） */
+  --color-pd-ink: #1C1B18;         /* 主文字 */
+  --color-pd-ink-2: #8A857A;       /* 次文字 */
+  --color-pd-line: #E7E3D8;        /* 发丝线 */
+  --color-pd-primary: #1E3A5F;     /* 品牌深蓝（按钮/下划线/引用条） */
+  --color-pd-primary-hover: #16293F;
+  --color-pd-danger: #B5492F;      /* 停止/错误 */
+  --color-pd-danger-bg: #FBF6F4;
+  --color-pd-danger-text: #8F3520;
+  --color-pd-ok: #4A7A5A;          /* 设置页可用态 */
+  --color-pd-off: #C9C4B8;         /* 设置页未装态语义点 */
+  --color-pd-code-bg: #F3F1EA;     /* 行内代码底 */
+  --color-pd-hover: #F5F3EC;       /* 历史行 hover */
+
+  /* 字体 */
+  --font-serif-read: 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
+  --font-sans-ui: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', sans-serif;
+  --font-mono-ui: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* 圆角：全方案仅 2 / 4 两档（editorial 偏方正） */
+  --radius-xs: 2px;   /* 错误条 */
+  --radius-sm: 4px;   /* 主按钮/代码块/搜按钮/复制钮 */
+}
+
+body { width: 100%; background: #FAF9F5; }
+::selection { background: rgba(30,58,95,.16); }
+/* 细滚动条，融入纸底 */
+* { scrollbar-width: thin; scrollbar-color: #D8D3C6 transparent; }
+*::-webkit-scrollbar { width: 4px; }
+*::-webkit-scrollbar-thumb { background: #D8D3C6; border-radius: 2px; }
+
+/* 自定义类（CSS-first） */
+.pd-serif { font-family: var(--font-serif-read); }
+.pd-mono { font-family: var(--font-mono-ui); font-variant-numeric: tabular-nums; }
+.pd-hairline-top { border-top: 1px solid var(--color-pd-line); }
+
+/* 呼吸圆点：替代整行 animate-pulse */
+@keyframes pd-breathe { 0%,100% { opacity:.3 } 50% { opacity:1 } }
+.pd-dot { animation: pd-breathe 1.2s ease-in-out infinite; }
+
+/* 静默进度条：CLI >5s 无输出才淡入 */
+@keyframes pd-slide { 0% { transform: translateX(-120%) } 100% { transform: translateX(420%) } }
+.pd-progress { position: relative; height: 2px; overflow: hidden; opacity: 0; transition: opacity .6s; }
+.pd-progress.on { opacity: 1; }
+.pd-progress::after { content:''; position:absolute; inset:0; width:30%;
+  background: var(--color-pd-primary); animation: pd-slide 2.4s linear infinite; }
+
+/* fade-in */
+@keyframes pd-fade-in { from { opacity: 0 } to { opacity: 1 } }
+.pd-fade-in { animation: pd-fade-in 200ms ease-out both; }
+.pd-fade-in-fast { animation: pd-fade-in 120ms ease-out both; }
+
+/* ============ markdown 正文（StreamMarkdown / 历史详情共用） ============ */
+.pd-md {
+  font-family: var(--font-serif-read);
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--color-pd-ink);
+}
+.pd-md p { margin: 1.6em 0; }
+.pd-md h1, .pd-md h2, .pd-md h3, .pd-md h4 {
+  font-family: var(--font-serif-read);
+  color: var(--color-pd-ink);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.pd-md h1 { font-size: 16px; letter-spacing: .08em; margin: 1.8em 0 0.7em; }
+.pd-md h2 {
+  font-size: 16px; letter-spacing: .08em;
+  margin-top: 1.8em; margin-bottom: 0.7em; padding-top: 0.6em;
+}
+/* 章首发丝线：仅 done 后渲染，避免流式 trailing-cut 抖动 */
+.pd-md[data-done="true"] h1,
+.pd-md[data-done="true"] h2 { border-top: 1px solid var(--color-pd-line); }
+.pd-md h3 { font-size: 14.5px; margin-top: 1.4em; margin-bottom: 0.4em; }
+.pd-md h4 { font-size: 14px; margin-top: 1.2em; margin-bottom: 0.4em; }
+.pd-md strong { font-weight: 600; }
+.pd-md ul { list-style: disc; padding-left: 1.4em; }
+.pd-md ol { list-style: decimal; padding-left: 1.4em; }
+.pd-md li { margin: 0.3em 0; }
+.pd-md blockquote {
+  border-left: 2px solid var(--color-pd-primary);
+  padding-left: 0.9em;
+  font-style: italic;
+  font-size: 13.5px;
+  line-height: 1.9;
+  color: var(--color-pd-ink-2);
+  margin: 1.4em 0;
+}
+.pd-md code {
+  font-family: var(--font-mono-ui);
+  font-size: 11.5px;
+  line-height: 1.6;
+  background: var(--color-pd-code-bg);
+  border-radius: 2px;
+  padding: 0.1em 0.3em;
+}
+.pd-md pre {
+  background: var(--color-pd-code-bg);
+  border-radius: 4px;
+  overflow-x: auto;
+  padding: 10px 12px;
+  margin: 1.4em 0;
+}
+.pd-md pre code { background: transparent; padding: 0; font-size: 11.5px; }
+.pd-md table { width: 100%; font-size: 11.5px; margin: 1.4em 0; border-collapse: collapse; }
+.pd-md th {
+  font-weight: 600; text-align: left;
+  border-bottom: 1px solid var(--color-pd-ink);
+  padding: 4px 8px;
+}
+.pd-md td { border-bottom: 1px solid var(--color-pd-line); padding: 4px 8px; }
+.pd-md th:last-child, .pd-md td:last-child { padding-right: 0; }
+.pd-md a { color: var(--color-pd-primary); text-decoration: underline; }
+.pd-md hr { border: 0; border-top: 1px solid var(--color-pd-line); margin: 1.8em 0; }
+/* 表格外层横滑 + 右侧渐隐提示 */
+.pd-md .pd-table-scroll { overflow-x: auto;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+}
+
+/* 320px 窄面板兜底 */
+@media (max-width: 340px) {
+  .pd-md { font-size: 13.5px; }
 }

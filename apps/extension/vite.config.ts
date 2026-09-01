@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, copyFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // E2E 构建变体：临时加 host_permissions（浏览器手势无法自动化，E2E 需要注入权限
 // 验证全链路；产品构建不含此权限，手势授权由人工验收）。
@@ -24,7 +25,7 @@ process.on('exit', () => {
 })
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
