@@ -1,6 +1,19 @@
+import { useEffect } from 'react'
+
 const cmd = 'npm i -g pagedive && pagedive install'
 
 export function Onboarding() {
+  // 自动轮询 host：装好后无需手点「重新检测」，面板自动就绪
+  useEffect(() => {
+    const t = setInterval(() => {
+      chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
+        void chrome.runtime.lastError
+        if (resp?.ok) location.reload()
+      })
+    }, 3000)
+    return () => clearInterval(t)
+  }, [])
+
   return (
     <div className="flex h-screen flex-col items-center justify-center gap-4 p-6 text-center">
       <h1 className="text-base font-semibold">还差一步（约 30 秒，仅一次）</h1>
@@ -18,15 +31,18 @@ export function Onboarding() {
         {cmd}
       </button>
       <p className="text-[11px] leading-4 text-neutral-400">
-        安装后完全重启 Chrome，再点工具栏图标。
+        装好后 ⌘Q 完全退出 Chrome 再打开（Chrome 只在启动时加载本机组件）。
         <br />
         内容只在本机处理，不经过任何服务器。
+      </p>
+      <p className="text-[11px] text-neutral-400">
+        本页每 3 秒自动检测，装好后自动进入。
       </p>
       <button
         onClick={() => location.reload()}
         className="text-xs text-neutral-500 underline hover:text-neutral-800"
       >
-        已安装？重新检测
+        已安装？立即检测
       </button>
     </div>
   )
