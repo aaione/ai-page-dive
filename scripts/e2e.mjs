@@ -69,7 +69,7 @@ await new Promise(r => setTimeout(r, 2500))
 const page = await ctx.newPage()
 const srv = createServer((_q, res) => {
   res.setHeader('content-type', 'text/html; charset=utf-8')
-  res.end(readFileSync('/tmp/pd-e2e-page.html'))
+  res.end(readFileSync(new URL('./fixtures/article.html', import.meta.url)))
 }).listen(8765)
 await page.goto('http://127.0.0.1:8765/', { waitUntil: 'domcontentloaded' })
 await page.bringToFront()
