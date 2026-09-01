@@ -21,7 +21,7 @@ const PROFILE = '/tmp/pd-e2e-profile'
 
 function install(extId) {
   execSync(
-    `PAGEDIVE_EXTRA_NM_DIR=${PROFILE}/NativeMessagingHosts node /Users/apple/work/hs/ai-feature/page-dive/packages/host/dist/index.js install --ext-id ${extId}`,
+    `PAGEDIVE_EXTRA_NM_DIR=${PROFILE}/NativeMessagingHosts ${process.execPath} /Users/apple/work/hs/ai-feature/page-dive/packages/host/dist/index.js install --ext-id ${extId}`,
     { stdio: 'pipe' },
   )
 }
