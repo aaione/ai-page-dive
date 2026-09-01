@@ -7,9 +7,10 @@ interface Props {
   agents: AgentStatus[]
   workflows: WorkflowItem[]
   stream: TaskStreamState
+  onStartResult: (resp: { error?: string; [k: string]: unknown }) => void
 }
 
-export function SummarizeView({ agents, workflows, stream }: Props) {
+export function SummarizeView({ agents, workflows, stream, onStartResult }: Props) {
   const usable = agents.filter((a) => a.available)
   const [agentId, setAgentId] = useState('')
   const [workflow, setWorkflow] = useState('quick')
@@ -22,7 +23,12 @@ export function SummarizeView({ agents, workflows, stream }: Props) {
   )
 
   function start() {
-    chrome.runtime.sendMessage({ t: 'summarize', agentId: effectiveAgent, workflow })
+    chrome.runtime.sendMessage(
+      { t: 'summarize', agentId: effectiveAgent, workflow },
+      (resp) => {
+        if (!chrome.runtime.lastError && resp) onStartResult(resp)
+      },
+    )
   }
   function cancel() {
     chrome.runtime.sendMessage({ t: 'cancel' })

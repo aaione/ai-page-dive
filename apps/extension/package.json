@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "dev": "vite build --watch"
+    "build": "vite build && vite build --config vite.content.config.ts",
+    "dev": "vite build --watch",
+    "build:e2e": "E2E_BROAD_PERMS=1 vite build --outDir dist-e2e && E2E_BROAD_PERMS=1 vite build --config vite.content.config.ts --outDir dist-e2e --emptyOutDir false"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

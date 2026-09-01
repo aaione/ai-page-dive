@@ -7,8 +7,15 @@ import { Task } from './task.js'
 import { listWorkflows } from './workflows.js'
 
 const HOST_VERSION = '0.1.0'
+/** history-file 单帧安全上限（NM 1MB 限制留余量） */
+const HISTORY_MAX_BYTES = 900 * 1024
 
-export function runStdio(send: (obj: unknown) => void): (msg: ExtToHost) => void {
+export interface StdioSession {
+  handle: (msg: ExtToHost) => void
+  tasks: Map<string, Task>
+}
+
+export function runStdio(send: (obj: unknown) => void): StdioSession {
   const tasks = new Map<string, Task>()
 
   const handle = (msg: ExtToHost) => {
@@ -26,8 +33,9 @@ export function runStdio(send: (obj: unknown) => void): (msg: ExtToHost) => void
         const { task } = msg
         const t = new Task(task.taskId, {
           onStatus: (phase) => send({ t: 'task-status', taskId: task.taskId, phase }),
-          onChunk: (text) => send({ t: 'task-chunk', taskId: task.taskId, seq: 0, text }),
-          onDone: (info) =>
+          onChunk: (text, seq) => send({ t: 'task-chunk', taskId: task.taskId, seq, text }),
+          onDone: (info) => {
+            tasks.delete(task.taskId)
             send({
               t: 'task-done',
               taskId: task.taskId,
@@ -36,9 +44,12 @@ export function runStdio(send: (obj: unknown) => void): (msg: ExtToHost) => void
               durationMs: info.durationMs,
               isError: info.isError,
               ...(info.errorText ? { errorText: info.errorText } : {}),
-            }),
-          onError: (code, message) =>
-            send({ t: 'task-error', taskId: task.taskId, code, message }),
+            })
+          },
+          onError: (code, message) => {
+            tasks.delete(task.taskId)
+            send({ t: 'task-error', taskId: task.taskId, code, message })
+          },
         })
         t.start(task)
         tasks.set(task.taskId, t)
@@ -64,7 +75,15 @@ export function runStdio(send: (obj: unknown) => void): (msg: ExtToHost) => void
         break
       case 'history-read':
         readHistory(msg.path)
-          .then((content) => send({ t: 'history-file', path: msg.path, content }))
+          .then((content) => {
+            // NM 单帧 ≤1MB：超限截断并标注（全文在本地文件）
+            if (Buffer.byteLength(content, 'utf8') > HISTORY_MAX_BYTES) {
+              content =
+                content.slice(0, HISTORY_MAX_BYTES) +
+                `\n\n[... 已截断，全文见本地文件 ${msg.path}]`
+            }
+            send({ t: 'history-file', path: msg.path, content })
+          })
           .catch((e) => send({ t: 'error', code: 'read-fail', message: String(e?.message ?? e) }))
         break
       case 'history-delete':
@@ -82,10 +101,10 @@ export function runStdio(send: (obj: unknown) => void): (msg: ExtToHost) => void
     }
   }
 
-  return handle
+  return { handle, tasks }
 }
 
-/** NM 进程形态：stdin 读帧、stdout 写帧、stdin end → 收割全部任务并退出 */
+/** NM 进程形态：stdin 读帧、stdout 写帧；stdin end / 信号 → 收割全部任务再退出 */
 export function runNative(): void {
   const send = (obj: unknown) => {
     try {
@@ -94,8 +113,23 @@ export function runNative(): void {
       /* stdout 破损：进程将随 NM 断连终结 */
     }
   }
-  const handle = runStdio(send)
+  const { handle, tasks } = runStdio(send)
+  const reapAll = () => {
+    for (const t of tasks.values()) t.cancel()
+  }
   process.stdin.on('data', createFrameReader(handle))
-  process.stdin.on('end', () => process.exit(0))
+  process.stdin.on('end', () => {
+    reapAll()
+    setTimeout(() => process.exit(0), 200).unref()
+    process.exit(0)
+  })
+  process.on('SIGTERM', () => {
+    reapAll()
+    process.exit(0)
+  })
+  process.on('SIGINT', () => {
+    reapAll()
+    process.exit(0)
+  })
   process.stdin.resume()
 }

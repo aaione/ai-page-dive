@@ -1,7 +1,8 @@
 /**
- * 任务编排：正文缓冲 → 临时文件 → prompt 组装 → spawn → 归一化事件
- * → ≤1MB chunk → 历史落盘。
+ * 任务编排：正文缓冲 → 临时文件 → prompt 组装（workflow 正文即任务段）
+ * → spawn → 归一化事件 → ≤512KB chunk → 历史落盘。
  */
+import { rm } from 'node:fs/promises'
 import type { AgentEvent, TaskInput } from '@pagedive/shared'
 import { MAX_CHUNK } from '@pagedive/shared'
 import { createClaudeParser } from './agents/claude.js'
@@ -10,10 +11,13 @@ import { getAgent } from './agents/registry.js'
 import { buildHistoryPath, saveHistory } from './history.js'
 import { spawnCli, type SpawnedProc } from './spawn.js'
 import { scheduleCleanup, writeContentFile } from './tmpfile.js'
+import { getWorkflow } from './workflows.js'
+
+const TASK_TIMEOUT_MS = 10 * 60_000
 
 export interface TaskCallbacks {
   onStatus: (phase: 'spawned' | 'reading' | 'thinking') => void
-  onChunk: (text: string) => void
+  onChunk: (text: string, seq: number) => void
   onDone: (info: {
     historyPath: string
     isError: boolean
@@ -31,11 +35,16 @@ export class Task {
   private contentDone = false
   private proc?: SpawnedProc
   private cancelled = false
+  private ran = false
   private startedAt = 0
   private accText = ''
   private usage?: { inputTokens?: number; outputTokens?: number }
   private chunkSeq = 0
   private finished = false
+  /** isError 路径已发终局（防 exit 事件二次发） */
+  private doneSent = false
+  private historyPath = ''
+  private timeoutTimer?: ReturnType<typeof setTimeout>
 
   constructor(taskId: string, private cb: TaskCallbacks) {
     this.taskId = taskId
@@ -59,8 +68,10 @@ export class Task {
     this.proc?.reap()
   }
 
-  /** 正文齐了且 agent 可用 → 组装 prompt 并 spawn */
+  /** 正文齐了且 agent 可用 → 组装 prompt 并 spawn（幂等：重复 done:true 只跑一次） */
   async run(): Promise<void> {
+    if (this.ran) return
+    this.ran = true
     const def = getAgent(this.input.agentId)
     if (!def) {
       this.cb.onError('no-agent', `unknown agent: ${this.input.agentId}`)
@@ -69,7 +80,15 @@ export class Task {
     const page = this.input.page
     const contentFile = await writeContentFile(this.taskId, this.contentParts.join(''))
     const lastMsgFile = `${contentFile}.last`
-    const prompt = buildPrompt(page, contentFile, this.input.workflow ?? 'quick')
+    // 统一在此调度清理：isError/spawn-fail/cancel/正常路径全覆盖
+    scheduleCleanup(contentFile, 300_000)
+    scheduleCleanup(lastMsgFile, 300_000)
+
+    // workflow 正文即任务段：用户目录 shadow 内置，未命中走 DEFAULT_TASKS
+    const wfName = this.input.workflow ?? 'quick'
+    const wf = await getWorkflow(wfName)
+    const prompt = buildPrompt(page, contentFile, wfName, wf?.body)
+
     const parser =
       def.streamFormat === 'claude-stream-json' ? createClaudeParser() : createCodexParser()
 
@@ -82,7 +101,7 @@ export class Task {
         args: def.buildArgs({ contentFile, lastMsgFile }),
         stdinData: prompt,
         onStdoutLine: (line) => {
-          for (const ev of parser(line)) this.handleEvent(ev)
+          for (const ev of parser(line)) this.handleEvent(ev, contentFile)
         },
         onStderr: (s) => {
           stderrTail = (stderrTail + s).slice(-2000)
@@ -93,17 +112,31 @@ export class Task {
       return
     }
 
+    this.timeoutTimer = setTimeout(() => {
+      if (this.finished) return
+      this.cb.onError('timeout', `task exceeded ${TASK_TIMEOUT_MS / 60_000}min`)
+      this.cancel()
+    }, TASK_TIMEOUT_MS)
+
     await new Promise<void>((resolve) => {
       this.proc!.child.on('exit', async (code, signal) => {
         if (this.doneSent) return resolve() // isError 路径已发终局，勿重复
         this.finished = true
-        resolve()
         await this.finish(code, signal, stderrTail, contentFile)
+        resolve()
+      })
+      // spawn 成功后的运行期错误（罕见）：兜底收割
+      this.proc!.child.on('error', () => {
+        if (!this.finished) {
+          this.finished = true
+          resolve()
+          this.cb.onError('spawn-fail', 'child runtime error')
+        }
       })
     })
   }
 
-  private handleEvent(ev: AgentEvent): void {
+  private handleEvent(ev: AgentEvent, contentFile: string): void {
     if (this.finished) return
     switch (ev.type) {
       case 'status':
@@ -121,6 +154,7 @@ export class Task {
         if (ev.isError) {
           this.finished = true
           this.doneSent = true
+          clearTimeout(this.timeoutTimer)
           this.proc?.reap()
           this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
           void this.persist('error')
@@ -142,15 +176,16 @@ export class Task {
   }
 
   private sendChunk(text: string): void {
-    // NM 单帧 ≤1MB：按 MAX_CHUNK 切片（shared 协议 512KB）
+    // NM 单帧 ≤1MB：按 MAX_CHUNK（512KB）切片
     for (let i = 0; i < text.length; i += MAX_CHUNK) {
-      this.cb.onChunk(text.slice(i, i + MAX_CHUNK))
+      this.cb.onChunk(text.slice(i, i + MAX_CHUNK), this.chunkSeq++)
     }
-    this.chunkSeq++
   }
 
   private async finish(code: number | null, signal: string | null, stderrTail: string, contentFile: string): Promise<void> {
-    scheduleCleanup(contentFile)
+    clearTimeout(this.timeoutTimer)
+    // CLI 工作目录（mkdtemp）回收
+    if (this.proc?.cwd) rm(this.proc.cwd, { recursive: true, force: true }).catch(() => {})
     const durationMs = Date.now() - this.startedAt
     this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
     if (this.cancelled || signal === 'SIGTERM' || signal === 'SIGKILL') {
@@ -174,13 +209,8 @@ export class Task {
     }
   }
 
-  private historyPath = ''
-  /** isError 路径已发终局（防 exit 事件二次发） */
-  private doneSent = false
-
   private async persist(status: 'done' | 'interrupted' | 'error'): Promise<void> {
     if (!this.input) return
-    this.historyPath = this.historyPath || buildHistoryPath(new Date(), this.input.page.title)
     await saveHistory(
       this.historyPath,
       {
@@ -201,7 +231,7 @@ export class Task {
   }
 }
 
-/** prompt 组装：workflow 正文即任务段，占位符 {url} {file} {title} */
+/** prompt 组装：workflow 正文即任务段 */
 export function buildPrompt(
   page: TaskInput['page'],
   contentFile: string,

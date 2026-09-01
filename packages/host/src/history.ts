@@ -1,11 +1,19 @@
 /** 历史落盘：~/.pagedive/history/年/月/日/时间戳-slug.md（frontmatter 元数据） */
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
 import type { HistoryItem } from '@pagedive/shared'
 
 const ROOT = join(homedir(), '.pagedive', 'history')
+
+/** 路径校验：resolve 消除 .. 与同前缀绕过（history-evil/ 等） */
+function assertInRoot(p: string): void {
+  const r = resolve(p)
+  if (r !== ROOT && !r.startsWith(ROOT + sep)) {
+    throw new Error('path outside history root')
+  }
+}
 
 export interface HistoryMeta {
   title: string
@@ -128,17 +136,16 @@ async function readFrontmatter(path: string): Promise<Omit<HistoryItem, 'path'> 
 }
 
 export async function readHistory(path: string): Promise<string> {
-  // 防路径逃逸：只允许 ROOT 下
-  if (!path.startsWith(ROOT)) throw new Error('path outside history root')
+  assertInRoot(path)
   return readFile(path, 'utf8')
 }
 
 export async function deleteHistory(path: string): Promise<void> {
-  if (!path.startsWith(ROOT)) throw new Error('path outside history root')
+  assertInRoot(path)
   await rm(path)
 }
 
 export function revealInFinder(path: string): void {
-  if (!path.startsWith(ROOT)) throw new Error('path outside history root')
+  assertInRoot(path)
   spawn('open', ['-R', path], { stdio: 'ignore', detached: true }).unref()
 }

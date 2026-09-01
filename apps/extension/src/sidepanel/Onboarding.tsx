@@ -19,6 +19,12 @@ export function Onboarding() {
         <br />
         内容只在本机处理，不经过任何服务器。
       </p>
+      <button
+        onClick={() => location.reload()}
+        className="text-xs text-neutral-500 underline hover:text-neutral-800"
+      >
+        已安装？重新检测
+      </button>
     </div>
   )
 }

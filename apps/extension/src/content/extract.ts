@@ -9,11 +9,29 @@ import type { PageContent } from '@pagedive/shared'
 import { applySiteAdapter } from './adapters.js'
 
 // SW 经 chrome.tabs.sendMessage 调用（content script 由 SW 动态 files 注入）
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.t === 'extract') {
-    sendResponse(extractPage())
-  }
-})
+// guard：多次注入只挂一个监听器
+if (!(globalThis as any).__pagediveInjected) {
+  ;(globalThis as any).__pagediveInjected = true
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.t === 'extract') {
+      sendResponse(extractPage())
+    }
+  })
+}
+
+/** HTML table → GFM markdown（turndown 核心不带表格规则） */
+function turndownTable(table: HTMLTableElement): string {
+  const rows = [...table.querySelectorAll('tr')]
+  if (!rows.length) return ''
+  const cells = rows.map((tr) =>
+    [...tr.querySelectorAll('th,td')].map((c) => (c.textContent ?? '').trim().replace(/\|/g, '\\|').replace(/\n/g, ' ')),
+  )
+  const line = (cs: string[]) => `| ${cs.join(' | ')} |`
+  const [head, ...body] = cells
+  const out = [line(head), `| ${head.map(() => '---').join(' | ')} |`]
+  for (const r of body) out.push(line(r))
+  return out.join('\n') + '\n'
+}
 
 export function extractPage(): PageContent | { error: string } {
   try {
@@ -32,6 +50,12 @@ export function extractPage(): PageContent | { error: string } {
         codeBlockStyle: 'fenced',
         bulletListMarker: '-',
       })
+      // ponytail: 表格是 GFM 最重要的块，自写规则（不引 turndown-plugin-gfm 全家桶）
+      td.addRule('table', {
+        filter: ['table'],
+        replacement: (_content, node) => turndownTable(node as HTMLTableElement),
+      })
+      td.remove(['thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col'])
       markdown = td.turndown(html)
     }
     // Readability 失败 → innerText 兜底

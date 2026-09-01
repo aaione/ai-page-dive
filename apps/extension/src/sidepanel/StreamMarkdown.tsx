@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 /**
- * 流式 markdown：chunk 只入 buffer，100ms 节流合并重渲染。
+ * 流式 markdown：chunk 只入 buffer，trailing 100ms 节流合并重渲染。
  * >64KB 累积文本降级为尾部纯文本预览，done 后一次性完整渲染。
  */
 export const StreamMarkdown = memo(function StreamMarkdown({
@@ -26,6 +26,7 @@ export const StreamMarkdown = memo(function StreamMarkdown({
       setRendered(text)
       return
     }
+    // trailing throttle：timer 已排定就不重排，到期自然 flush（高频 chunk 不饿死渲染）
     if (timerRef.current) return
     timerRef.current = setTimeout(() => {
       timerRef.current = null
@@ -34,13 +35,12 @@ export const StreamMarkdown = memo(function StreamMarkdown({
       const cut = Math.max(t.lastIndexOf('\n\n'), t.lastIndexOf('\n'))
       setRendered(cut > 0 ? t.slice(0, cut) : t)
     }, 100)
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
-    }
   }, [text, done])
+
+  // 卸载时清理（不能在主 effect cleanup 里 clearTimeout——那会退化成每次重排）
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+  }, [])
 
   // 流式期间吸底
   useEffect(() => {
@@ -59,7 +59,7 @@ export const StreamMarkdown = memo(function StreamMarkdown({
     )
   }
   return (
-    <div ref={scrollerRef} className="prose-sm max-w-none text-sm leading-relaxed [&_h1]:mt-3 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-neutral-100 [&_pre]:p-2 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-4">
+    <div ref={scrollerRef} className="prose-sm max-w-none text-sm leading-relaxed [&_h1]:mt-3 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-neutral-100 [&_pre]:p-2 [&_strong]:font-semibold [&_table]:my-2 [&_table]:w-full [&_td]:border [&_td]:px-1.5 [&_td]:py-0.5 [&_th]:border [&_th]:bg-neutral-100 [&_th]:px-1.5 [&_th]:py-0.5 [&_ul]:list-disc [&_ul]:pl-4">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{rendered}</ReactMarkdown>
     </div>
   )

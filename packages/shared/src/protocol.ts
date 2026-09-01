@@ -75,7 +75,6 @@ export interface AgentStatus {
   id: string
   available: boolean
   version?: string
-  authed?: boolean
 }
 
 export interface PongMsg {
@@ -175,6 +174,8 @@ export type HostToExt =
   | HistoryFileMsg
   | DeletedMsg
   | ErrorMsg
+  /** SW 合成：NM host 断连（panel 据此停止 loading 并提示） */
+  | { t: '__host-disconnected' }
 
 /** 单帧最大 payload（NM 限制 1MB，host→ext 的 chunk 必须分片到线下） */
 export const MAX_CHUNK = 512 * 1024
