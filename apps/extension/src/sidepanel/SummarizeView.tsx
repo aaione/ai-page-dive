@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { AgentStatus, WorkflowItem } from '@pagedive/shared'
 import type { TaskStreamState } from './App.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
@@ -92,7 +92,10 @@ export function SummarizeView({ agents, workflows, stream, onStartResult }: Prop
 
       <div className="flex-1 overflow-y-auto p-3">
         {stream.phase && !stream.done && (
-          <p className="mb-2 animate-pulse text-xs text-neutral-400">{stream.phase}</p>
+          <p className="mb-2 animate-pulse text-xs text-neutral-400">
+            {stream.phase}
+            <Elapsed key={stream.taskId ?? 'idle'} running={running} />
+          </p>
         )}
         {stream.text ? (
           <StreamMarkdown text={stream.text} done={stream.done} />
@@ -124,6 +127,18 @@ function Placeholder() {
       深度总结当前网页。内容只在本机处理。
     </div>
   )
+}
+
+/** 运行中计时器：CLI 长时间静默思考时让用户知道任务活着 */
+function Elapsed({ running }: { running: boolean }) {
+  const [sec, setSec] = useState(0)
+  useEffect(() => {
+    if (!running) return
+    const t = setInterval(() => setSec((s) => s + 1), 1000)
+    return () => clearInterval(t)
+  }, [running])
+  if (!running || sec < 3) return null
+  return <span className="ml-1 no-underline">· {sec}s</span>
 }
 
 const WF_LABEL: Record<string, string> = {
