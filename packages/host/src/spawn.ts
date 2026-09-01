@@ -7,6 +7,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { cliEnv } from './agents/registry.js'
 
 export interface SpawnOpts {
   bin: string
@@ -34,7 +35,7 @@ export function spawnCli(opts: SpawnOpts): Promise<SpawnedProc> {
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: true, // 子进程自成组长 → 可整树收割
         cwd,
-        env: { ...process.env, NO_COLOR: '1' },
+        env: { ...cliEnv(), NO_COLOR: '1' },
       })
 
       // ENOENT 等只走 'error' 事件，exit 不触发——必须监听，否则上层永久挂起
