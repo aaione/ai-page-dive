@@ -43,6 +43,6 @@ describe('stdio 路由', () => {
     handle({ t: 'list-agents' })
     await new Promise(r => setTimeout(r, 2000))
     const agentsMsg = sent.find(m => m.t === 'agents')
-    expect(agentsMsg.agents.map((a: any) => a.id)).toEqual(['claude', 'codex'])
+    expect(agentsMsg.agents.map((a: any) => a.id)).toEqual(['claude', 'codex', 'opencode'])
   }, 15_000)
 })

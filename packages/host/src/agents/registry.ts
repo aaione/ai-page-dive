@@ -5,10 +5,11 @@ import { promisify } from 'node:util'
 import type { AgentDef } from '@pagedive/shared'
 import { claudeDef } from './claude.js'
 import { codexDef } from './codex.js'
+import { opencodeDef } from './opencode.js'
 
 const execFileP = promisify(execFile)
 
-export const AGENTS: AgentDef[] = [claudeDef, codexDef]
+export const AGENTS: AgentDef[] = [claudeDef, codexDef, opencodeDef]
 
 /**
  * Chrome 从 Dock 启动时 PATH 极简（/usr/bin:/bin:...），nvm/homebrew 装的 CLI

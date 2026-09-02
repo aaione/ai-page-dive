@@ -2,14 +2,16 @@
  * 任务编排：正文缓冲 → 临时文件 → prompt 组装（workflow 正文即任务段）
  * → spawn → 归一化事件 → ≤512KB chunk → 历史落盘。
  */
-import { rm } from 'node:fs/promises'
+import { rm, symlink } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import type { AgentEvent, TaskInput } from '@pagedive/shared'
 import { MAX_CHUNK } from '@pagedive/shared'
 import { createClaudeParser } from './agents/claude.js'
 import { createCodexParser } from './agents/codex.js'
+import { createOpencodeParser } from './agents/opencode.js'
 import { getAgent } from './agents/registry.js'
 import { buildHistoryPath, saveHistory } from './history.js'
-import { spawnCli, type SpawnedProc } from './spawn.js'
+import { makeAgentCwd, spawnCli, type SpawnedProc } from './spawn.js'
 import { scheduleCleanup, writeContentFile } from './tmpfile.js'
 import { getWorkflow } from './workflows.js'
 
@@ -87,10 +89,20 @@ export class Task {
     // workflow 正文即任务段：用户目录 shadow 内置，未命中走 DEFAULT_TASKS
     const wfName = this.input.workflow ?? 'quick'
     const wf = await getWorkflow(wfName)
-    const prompt = buildPrompt(page, contentFile, wfName, wf?.body)
 
     const parser =
-      def.streamFormat === 'claude-stream-json' ? createClaudeParser() : createCodexParser()
+      def.streamFormat === 'claude-stream-json' ? createClaudeParser()
+      : def.streamFormat === 'opencode-jsonl' ? createOpencodeParser()
+      : createCodexParser()
+
+    // opencode 需先知道 cwd 才能组 argv（--dir 钉死工作区）+ 软链正文 + 相对路径 prompt
+    const agentCwd = def.filePathInPrompt ? await makeAgentCwd() : undefined
+    let fileForPrompt = contentFile
+    if (def.filePathInPrompt && agentCwd) {
+      await linkIntoCwd(contentFile, agentCwd)
+      fileForPrompt = def.filePathInPrompt({ contentFile, contentRelPath: basename(contentFile), agentCwd })
+    }
+    const prompt = buildPrompt(page, fileForPrompt, wfName, wf?.body)
 
     this.startedAt = Date.now()
     this.cb.onStatus('spawned')
@@ -98,7 +110,8 @@ export class Task {
     try {
       this.proc = await spawnCli({
         bin: def.bin,
-        args: def.buildArgs({ contentFile, lastMsgFile }),
+        args: def.buildArgs({ contentFile, lastMsgFile, agentCwd }),
+        cwd: agentCwd,
         stdinData: prompt,
         onStdoutLine: (line) => {
           for (const ev of parser(line)) this.handleEvent(ev, contentFile)
@@ -108,6 +121,8 @@ export class Task {
         },
       })
     } catch (e: any) {
+      // spawn 失败也要回收预建的工作目录（防泄漏）
+      if (agentCwd) rm(agentCwd, { recursive: true, force: true }).catch(() => {})
       this.cb.onError('spawn-fail', String(e?.message ?? e))
       return
     }
@@ -229,6 +244,13 @@ export class Task {
   get accumulated(): string {
     return this.accText
   }
+}
+
+/** 把正文文件软链进 CLI cwd（opencode 沙箱只准读 cwd） */
+async function linkIntoCwd(contentFile: string, cwd: string): Promise<void> {
+  try {
+    await symlink(contentFile, join(cwd, basename(contentFile)))
+  } catch { /* EEXIST 等：沙箱内已有同名，直接用 */ }
 }
 
 /** prompt 组装：workflow 正文即任务段 */

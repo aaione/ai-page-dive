@@ -12,8 +12,10 @@ import { cliEnv } from './agents/registry.js'
 export interface SpawnOpts {
   bin: string
   args: string[]
-  /** prompt 经 stdin 递送，写完即 end */
+  /** prompt 经 stdin 递送，写完即 end；deferStdin 时由上层稍后调用 writeStdin */
   stdinData: string
+  /** true: spawn 时不写 stdin（上层拿到 cwd 后再写，opencode 用） */
+  deferStdin?: boolean
   onStdoutLine: (line: string) => void
   onStderr: (chunk: string) => void
   /** spawn 失败（ENOENT 等）—— 'error' 事件，exit 不会触发 */
@@ -24,13 +26,20 @@ export interface SpawnedProc {
   child: ChildProcess
   /** CLI 工作目录（tmpdir 下的空子目录，防读到用户项目配置） */
   cwd: string
+  /** deferStdin 模式下写 prompt 并结束 stdin */
+  writeStdin: (data: string) => void
   reap: () => void
 }
 
-export function spawnCli(opts: SpawnOpts): Promise<SpawnedProc> {
+/** 预建 CLI 工作目录（buildArgs 需要 cwd 时——opencode --dir），spawn 前调用 */
+export async function makeAgentCwd(): Promise<string> {
+  return mkdtemp(join(tmpdir(), 'pagedive-'))
+}
+
+export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedProc> {
   return new Promise((resolve, reject) => {
     void (async () => {
-      const cwd = await mkdtemp(join(tmpdir(), 'pagedive-'))
+      const cwd = opts.cwd ?? await makeAgentCwd()
       const child = spawn(opts.bin, opts.args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: true, // 子进程自成组长 → 可整树收割
@@ -44,10 +53,13 @@ export function spawnCli(opts: SpawnOpts): Promise<SpawnedProc> {
         reject(err)
       })
 
-      try {
-        child.stdin!.write(opts.stdinData)
-        child.stdin!.end()
-      } catch { /* child 已死，error 事件已处理 */ }
+      const writeStdin = (data: string) => {
+        try {
+          child.stdin!.write(data)
+          child.stdin!.end()
+        } catch { /* child 已死，error 事件已处理 */ }
+      }
+      if (!opts.deferStdin) writeStdin(opts.stdinData)
 
       let pending = ''
       child.stdout!.setEncoding('utf8')
@@ -81,7 +93,7 @@ export function spawnCli(opts: SpawnOpts): Promise<SpawnedProc> {
         }, 3000)
       }
 
-      resolve({ child, cwd, reap })
+      resolve({ child, cwd, writeStdin, reap })
     })().catch(reject)
   })
 }
