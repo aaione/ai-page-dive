@@ -2,7 +2,7 @@ import type { AgentStatus } from '@pagedive/shared'
 
 export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: () => void }) {
   return (
-    <div className="pd-glass h-full overflow-y-auto rounded-none px-[18px] py-4 text-xs">
+    <div className="pd-glass-overlay h-full overflow-y-auto rounded-none px-[18px] py-4 text-xs">
       <div className="flex justify-end">
         <button
           onClick={onClose}
@@ -16,7 +16,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
         </button>
       </div>
       <section>
-        <h2 className="border-b border-white/40 pb-1.5 text-xs font-semibold text-pd-ink">本机 CLI</h2>
+        <h2 className="border-b border-white/10 pb-1.5 text-xs font-semibold text-pd-ink">本机 CLI</h2>
         {agents.length ? (
           <ul className="mt-2.5 space-y-2">
             {agents.map((a) => (
@@ -42,10 +42,10 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
         )}
       </section>
       <section className="mt-6">
-        <h2 className="border-b border-white/40 pb-1.5 text-xs font-semibold text-pd-ink">说明</h2>
+        <h2 className="border-b border-white/10 pb-1.5 text-xs font-semibold text-pd-ink">说明</h2>
         <div className="mt-2.5 space-y-2 text-xs leading-[1.9] text-pd-ink-2">
           <p>
-            PageDive 只在本机调用你自己登录的官方 CLI（claude / codex），
+            PageDive 只在本机调用你自己登录的官方 CLI（claude / codex / opencode），
             <span className="font-semibold text-pd-ink">不接触任何凭证、不代理流量、不额外收费</span>；总结用量计入你的 CLI 订阅。
           </p>
           <p>

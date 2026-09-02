@@ -107,15 +107,17 @@ export function App() {
       {/* 顶部：玻璃条 —— 品牌 + 右上角图标收纳（Gemini 范式） */}
       <header className="pd-glass z-10 flex h-11 shrink-0 items-center justify-between rounded-none border-x-0 border-t-0 px-4">
         <div className="flex items-center gap-2">
-          <svg viewBox="0 0 16 16" className="h-4 w-4 text-pd-primary" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg viewBox="0 0 16 16" className="h-4 w-4 text-pd-primary" fill="currentColor">
             <path d="M8 1.5 9.6 6.4 14.5 8 9.6 9.6 8 14.5 6.4 9.6 1.5 8 6.4 6.4Z" />
           </svg>
-          <h1 className="text-[13px] font-semibold tracking-[0.02em]">PageDive</h1>
+          <h1 className="text-[13px] font-semibold tracking-[0.02em]">
+            Page<span className="text-pd-primary">Dive</span>
+          </h1>
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setOverlay(overlay === 'history' ? null : 'history')}
-            className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-pd-hover ${overlay === 'history' ? 'bg-pd-hover text-pd-ink' : 'text-pd-ink-2'}`}
+            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-pd-hover ${overlay === 'history' ? 'bg-pd-hover text-pd-ink' : 'text-pd-ink-2'}`}
             title="总结历史"
             aria-label="总结历史"
           >
@@ -126,7 +128,7 @@ export function App() {
           </button>
           <button
             onClick={() => setOverlay(overlay === 'settings' ? null : 'settings')}
-            className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-pd-hover ${overlay === 'settings' ? 'bg-pd-hover text-pd-ink' : 'text-pd-ink-2'}`}
+            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-pd-hover ${overlay === 'settings' ? 'bg-pd-hover text-pd-ink' : 'text-pd-ink-2'}`}
             title="设置"
             aria-label="设置"
           >
@@ -142,12 +144,12 @@ export function App() {
       <SummarizeView agents={agents} workflows={workflows} stream={stream} onStartResult={onStartResult} />
 
       {overlay === 'history' && (
-        <div className="pd-fade-in-fast absolute inset-0 top-11 z-20">
+        <div className="pd-fade-in-fast pointer-events-none absolute inset-0 z-20 pt-11 [&>*]:pointer-events-auto">
           <HistoryView onClose={() => setOverlay(null)} />
         </div>
       )}
       {overlay === 'settings' && (
-        <div className="pd-fade-in-fast absolute inset-0 top-11 z-20">
+        <div className="pd-fade-in-fast pointer-events-none absolute inset-0 z-20 pt-11 [&>*]:pointer-events-auto">
           <Settings agents={agents} onClose={() => setOverlay(null)} />
         </div>
       )}

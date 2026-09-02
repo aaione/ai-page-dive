@@ -1,68 +1,82 @@
 @import "tailwindcss";
 
 @theme {
-  /* 色彩：毛玻璃层叠 —— 底层品牌渐变 + 半透明玻璃面 */
-  --color-pd-bg: #EEF2F7;           /* 兜底底色（不支持 blur 时） */
-  --color-pd-surface: #FFFFFF;      /* 下拉菜单等需要高可读性的面 */
-  --color-pd-ink: #1D2433;          /* 主文字（冷调深灰蓝） */
-  --color-pd-ink-2: #6B7487;        /* 次文字 */
-  --color-pd-line: rgba(255,255,255,.55); /* 玻璃高光描边 */
-  --color-pd-primary: #3B6FE0;      /* 品牌蓝（玻璃上的实底强调） */
-  --color-pd-primary-hover: #2F5BC4;
-  --color-pd-danger: #E05252;
-  --color-pd-danger-bg: rgba(224,82,82,.10);
-  --color-pd-danger-text: #B03A3A;
-  --color-pd-ok: #3E9E6B;
-  --color-pd-off: #C6CCD8;
-  --color-pd-code-bg: rgba(255,255,255,.62);
-  --color-pd-hover: rgba(255,255,255,.45);
+  /* 色彩：深色玻璃拟态（DESIGN.md — Akhlut-AI Digital Workbench） */
+  --color-pd-bg: #0B1326;            /* 深空底（兜底） */
+  --color-pd-surface: #131B2E;       /* surface-container-low */
+  --color-pd-ink: #DAE2FD;           /* on-surface 主文字 */
+  --color-pd-ink-2: #CCC3D8;         /* on-surface-variant 次文字 */
+  --color-pd-line: rgba(255,255,255,.10); /* 玻璃描边（发丝） */
+  --color-pd-primary: #D2BBFF;       /* primary（淡紫，深底上高可读） */
+  --color-pd-primary-solid: #7C3AED; /* primary-container（实底按钮用） */
+  --color-pd-primary-hover: #9D6BFF;
+  --color-pd-secondary: #89CEFF;     /* secondary 淡蓝 */
+  --color-pd-danger: #FFB4AB;        /* error */
+  --color-pd-danger-bg: rgba(255,180,171,.10);
+  --color-pd-danger-text: #FFDAD6;   /* on-error-container */
+  --color-pd-ok: #3CDDC7;            /* tertiary 青 */
+  --color-pd-off: #4A4455;           /* outline-variant */
+  --color-pd-code-bg: rgba(0,0,0,.20);
+  --color-pd-hover: rgba(255,255,255,.08);
 
   /* 字体 */
   --font-serif-read: 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
   --font-sans-ui: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', sans-serif;
   --font-mono-ui: ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* 圆角：玻璃层偏圆润 */
+  /* 圆角：克制的工作台感（不做消费级大圆角） */
   --radius-xs: 4px;
   --radius-sm: 8px;
 }
 
-/* ── 毛玻璃底座：面板最底层的品牌渐变（玻璃层的取景） ── */
+/* ── 深空渐变底座：navy → indigo 取景（玻璃层的景深来源） ── */
 html { height: 100%; }
 body {
   width: 100%;
   background:
-    radial-gradient(1200px 500px at 85% -10%, #C7DBF7 0%, transparent 55%),
-    radial-gradient(900px 420px at -20% 110%, #BFD4EE 0%, transparent 52%),
-    linear-gradient(168deg, #F2F6FB 0%, #E7EEF7 58%, #DEE8F4 100%);
+    radial-gradient(900px 480px at 90% -10%, rgba(124,58,237,.16) 0%, transparent 55%),
+    radial-gradient(700px 420px at -15% 105%, rgba(0,162,230,.12) 0%, transparent 55%),
+    linear-gradient(155deg, #0F172A 0%, #131C33 48%, #1E1B4B 100%);
   background-attachment: fixed;
 }
-::selection { background: rgba(59,111,224,.20); }
-* { scrollbar-width: thin; scrollbar-color: rgba(29,36,51,.18) transparent; }
+::selection { background: rgba(124,58,237,.35); }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.2) transparent; }
 *::-webkit-scrollbar { width: 4px; }
-*::-webkit-scrollbar-thumb { background: rgba(29,36,51,.18); border-radius: 2px; }
+*::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 2px; }
 
-/* ── 玻璃面基元：半透明白 + blur + 高光描边 + 柔影 ── */
+/* ── 玻璃面基元（DESIGN.md Elevation） ──
+   Surface: 白 5% + blur 16px + 发丝边
+   Raised:  白 8% + blur 24px + 边加强
+   Overlay: 白 10% + blur 40px + inner glow（浮层用） */
 .pd-glass {
-  background: rgba(255,255,255,.52);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
-  backdrop-filter: blur(18px) saturate(1.5);
-  border: 1px solid rgba(255,255,255,.55);
-  box-shadow: 0 8px 28px rgba(29,36,51,.08), inset 0 1px 0 rgba(255,255,255,.6);
+  background: rgba(255,255,255,.05);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,.10);
 }
-.pd-glass-deep {
-  background: rgba(255,255,255,.72);
-  -webkit-backdrop-filter: blur(22px) saturate(1.6);
-  backdrop-filter: blur(22px) saturate(1.6);
-  border: 1px solid rgba(255,255,255,.65);
-  box-shadow: 0 12px 36px rgba(29,36,51,.13), inset 0 1px 0 rgba(255,255,255,.7);
+.pd-glass-raised {
+  background: rgba(255,255,255,.08);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255,255,255,.20);
+}
+.pd-glass-overlay {
+  background: rgba(255,255,255,.10);
+  -webkit-backdrop-filter: blur(40px);
+  backdrop-filter: blur(40px);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.15);
+}
+/* 渐变强调底（主按钮）：violet → blue */
+.pd-accent {
+  background: linear-gradient(135deg, #7C3AED 0%, #00A2E6 100%);
 }
 
 /* 自定义类（CSS-first） */
 .pd-serif { font-family: var(--font-serif-read); }
 .pd-mono { font-family: var(--font-mono-ui); font-variant-numeric: tabular-nums; }
 
-/* 呼吸圆点：替代整行 animate-pulse */
+/* 呼吸圆点 */
 @keyframes pd-breathe { 0%,100% { opacity:.3 } 50% { opacity:1 } }
 .pd-dot { animation: pd-breathe 1.2s ease-in-out infinite; }
 
@@ -71,7 +85,7 @@ body {
 .pd-progress { position: relative; height: 2px; overflow: hidden; opacity: 0; transition: opacity .6s; }
 .pd-progress.on { opacity: 1; }
 .pd-progress::after { content:''; position:absolute; inset:0; width:30%;
-  background: var(--color-pd-primary); animation: pd-slide 2.4s linear infinite; }
+  background: linear-gradient(90deg, #7C3AED, #00A2E6); animation: pd-slide 2.4s linear infinite; }
 
 /* fade-in */
 @keyframes pd-fade-in { from { opacity: 0 } to { opacity: 1 } }
@@ -83,12 +97,12 @@ body {
   font-family: var(--font-serif-read);
   font-size: 14px;
   line-height: 1.85;
-  color: var(--color-pd-ink);
+  color: #E2E8F0;
 }
 .pd-md p { margin: 1.6em 0; }
 .pd-md h1, .pd-md h2, .pd-md h3, .pd-md h4 {
   font-family: var(--font-serif-read);
-  color: var(--color-pd-ink);
+  color: #FFFFFF;
   font-weight: 600;
   line-height: 1.5;
 }
@@ -99,15 +113,16 @@ body {
 }
 /* 章首发丝线：仅 done 后渲染，避免流式 trailing-cut 抖动 */
 .pd-md[data-done="true"] h1,
-.pd-md[data-done="true"] h2 { border-top: 1px solid rgba(29,36,51,.14); }
+.pd-md[data-done="true"] h2 { border-top: 1px solid rgba(255,255,255,.10); }
 .pd-md h3 { font-size: 14.5px; margin-top: 1.4em; margin-bottom: 0.4em; }
 .pd-md h4 { font-size: 14px; margin-top: 1.2em; margin-bottom: 0.4em; }
-.pd-md strong { font-weight: 600; }
+.pd-md strong { font-weight: 600; color: #FFFFFF; }
 .pd-md ul { list-style: disc; padding-left: 1.4em; }
 .pd-md ol { list-style: decimal; padding-left: 1.4em; }
+.pd-md li::marker { color: var(--color-pd-primary); }
 .pd-md li { margin: 0.3em 0; }
 .pd-md blockquote {
-  border-left: 2px solid var(--color-pd-primary);
+  border-left: 2px solid var(--color-pd-primary-solid);
   padding-left: 0.9em;
   font-style: italic;
   font-size: 13.5px;
@@ -125,7 +140,7 @@ body {
 }
 .pd-md pre {
   background: var(--color-pd-code-bg);
-  border: 1px solid rgba(255,255,255,.5);
+  border: 1px solid rgba(255,255,255,.10);
   border-radius: 6px;
   overflow-x: auto;
   padding: 10px 12px;
@@ -135,13 +150,13 @@ body {
 .pd-md table { width: 100%; font-size: 11.5px; margin: 1.4em 0; border-collapse: collapse; }
 .pd-md th {
   font-weight: 600; text-align: left;
-  border-bottom: 1px solid rgba(29,36,51,.5);
+  border-bottom: 1px solid rgba(255,255,255,.25);
   padding: 4px 8px;
 }
-.pd-md td { border-bottom: 1px solid rgba(29,36,51,.10); padding: 4px 8px; }
+.pd-md td { border-bottom: 1px solid rgba(255,255,255,.05); padding: 4px 8px; }
 .pd-md th:last-child, .pd-md td:last-child { padding-right: 0; }
-.pd-md a { color: var(--color-pd-primary); text-decoration: underline; }
-.pd-md hr { border: 0; border-top: 1px solid rgba(29,36,51,.14); margin: 1.8em 0; }
+.pd-md a { color: var(--color-pd-secondary); text-decoration: underline; }
+.pd-md hr { border: 0; border-top: 1px solid rgba(255,255,255,.10); margin: 1.8em 0; }
 /* 表格外层横滑 + 右侧渐隐提示 */
 .pd-md .pd-table-scroll { overflow-x: auto;
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);

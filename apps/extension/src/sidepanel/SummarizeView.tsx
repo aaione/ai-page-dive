@@ -66,7 +66,7 @@ export function SummarizeView({ agents, workflows, stream, onStartResult }: Prop
           !stream.error && <Placeholder />
         )}
         {stream.done && stream.usage && (
-          <div className="pd-fade-in mt-4 border-t border-ink/10 pt-4 text-center">
+          <div className="pd-fade-in mt-4 border-t border-white/10 pt-4 text-center">
             <p className="pd-mono text-[10.5px] leading-[1.6] text-pd-ink-2">
               tokens: ↓{stream.usage.inputTokens ?? '—'} ↑{stream.usage.outputTokens ?? '—'}
             </p>
@@ -91,7 +91,7 @@ export function SummarizeView({ agents, workflows, stream, onStartResult }: Prop
 
       {/* 底部动作栏：Gemini 式玻璃框——左 workflow 下拉 / 右圆形主按钮 */}
       <div className="shrink-0 px-4 pb-4 pt-3">
-        <div className="pd-glass flex items-center gap-2 rounded-[14px] px-2.5 py-2">
+        <div className="pd-glass-raised flex items-center gap-2 rounded-[12px] px-2.5 py-2">
           <Dropdown
             value={WF_LABEL[workflow] ?? workflow}
             onChange={(name) => setWorkflow(name)}
@@ -108,10 +108,10 @@ export function SummarizeView({ agents, workflows, stream, onStartResult }: Prop
             disabled={!running && !usable.length}
             aria-label={running ? '停止' : '深度总结当前页'}
             title={running ? '停止' : '深度总结当前页'}
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white shadow-[0_2px_8px_rgba(47,91,196,0.35)] transition-colors ${
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white transition-all active:scale-95 ${
               running
-                ? 'bg-pd-danger hover:brightness-110'
-                : 'bg-pd-primary hover:bg-pd-primary-hover disabled:opacity-[0.38] disabled:shadow-none'
+                ? 'bg-pd-danger text-pd-bg hover:brightness-110'
+                : 'pd-accent shadow-[0_0_8px_rgba(124,58,237,0.30)] hover:shadow-[0_0_16px_rgba(124,58,237,0.50)] disabled:opacity-[0.38] disabled:shadow-none'
             }`}
           >
             {running ? (
@@ -178,7 +178,7 @@ function Dropdown({
       {open && items.length > 0 && (
         <ul
           role="listbox"
-          className={`pd-glass-deep pd-fade-in-fast absolute z-30 w-44 rounded-[8px] py-1 ${
+          className={`pd-glass-overlay pd-fade-in-fast absolute z-30 w-44 rounded-[8px] py-1 ${
             up ? 'bottom-[calc(100%+6px)]' : 'top-[calc(100%+6px)]'
           } ${align === 'right' ? 'right-0' : 'left-0'}`}
         >
@@ -234,7 +234,7 @@ function Placeholder() {
   return (
     <div className="pd-serif mt-8 text-center text-[13px] leading-[2.0] text-pd-ink-2">
       点击下方按钮，调用本机 {''}
-      <span className="pd-mono">claude</span> / <span className="pd-mono">codex</span>
+      <span className="pd-mono text-pd-primary">claude</span> / <span className="pd-mono text-pd-primary">codex</span> / <span className="pd-mono text-pd-primary">opencode</span>
       <br />
       深度总结当前网页。内容只在本机处理。
     </div>

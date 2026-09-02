@@ -42,7 +42,7 @@ export function HistoryView({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="pd-glass flex h-full flex-col rounded-none border-x-0 border-b-0">
+    <div className="pd-glass-overlay flex h-full flex-col rounded-none border-x-0 border-t-0 border-b-0">
       <div className="flex h-11 shrink-0 items-center gap-2 px-[18px]">
         <button
           onClick={onClose}
@@ -67,12 +67,12 @@ export function HistoryView({ onClose }: { onClose: () => void }) {
         />
         <button
           onClick={() => refresh()}
-          className="h-6 shrink-0 rounded-full bg-pd-primary px-2.5 text-xs font-medium text-white hover:bg-pd-primary-hover"
+          className="pd-accent h-6 shrink-0 rounded-full px-2.5 text-xs font-medium text-white hover:brightness-110"
         >
           搜
         </button>
       </div>
-      <ul className="flex-1 divide-y divide-white/40 overflow-y-auto px-3 py-1">
+      <ul className="flex-1 divide-y divide-white/5 overflow-y-auto px-3 py-1">
         {items.map((it) => (
           <li key={it.path} className="group flex items-center gap-1 rounded-[8px] px-3 py-3 hover:bg-pd-hover">
             <button
@@ -86,7 +86,7 @@ export function HistoryView({ onClose }: { onClose: () => void }) {
             </button>
             <button
               onClick={() => chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-reveal', path: it.path } })}
-              className="hidden rounded-full p-1.5 text-pd-ink-2 hover:bg-white/70 group-hover:block"
+              className="hidden rounded-full p-1.5 text-pd-ink-2 hover:bg-pd-hover group-hover:block"
               title="在 Finder 中显示"
             >
               <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
