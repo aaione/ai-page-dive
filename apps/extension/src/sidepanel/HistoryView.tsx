@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { HistoryFileMsg, HistoryItem, HistoryListResultMsg, HostToExt } from '@pagedive/shared'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
-export function HistoryView() {
+export function HistoryView({ onClose }: { onClose: () => void }) {
   const [items, setItems] = useState<HistoryItem[]>([])
   const [query, setQuery] = useState('')
   const [viewing, setViewing] = useState<HistoryFileMsg | null>(null)
@@ -27,14 +27,14 @@ export function HistoryView() {
       <div className="flex h-full flex-col">
         <button
           onClick={() => setViewing(null)}
-          className="flex h-9 shrink-0 items-center gap-1.5 border-b border-pd-line bg-pd-bg px-[18px] text-left text-xs text-pd-ink-2 hover:text-pd-ink"
+          className="flex h-9 shrink-0 items-center gap-1.5 px-[18px] text-left text-xs text-pd-ink-2 hover:text-pd-ink"
         >
           <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10 3 5 8l5 5" />
           </svg>
-          ← 返回列表
+          返回列表
         </button>
-        <div className="flex-1 overflow-y-auto bg-pd-bg px-[18px] py-5">
+        <div className="flex-1 overflow-y-auto px-[18px] pb-5">
           <StreamMarkdown text={body} done />
         </div>
       </div>
@@ -42,8 +42,18 @@ export function HistoryView() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-pd-line bg-pd-bg px-[18px]">
+    <div className="pd-glass flex h-full flex-col rounded-none border-x-0 border-b-0">
+      <div className="flex h-11 shrink-0 items-center gap-2 px-[18px]">
+        <button
+          onClick={onClose}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-pd-ink-2 hover:bg-pd-hover hover:text-pd-ink"
+          title="关闭历史"
+          aria-label="关闭历史"
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="m4 4 8 8M12 4l-8 8" />
+          </svg>
+        </button>
         <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-pd-ink-2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
           <circle cx="7" cy="7" r="4.5" />
           <path d="m10.5 10.5 3 3" />
@@ -53,18 +63,18 @@ export function HistoryView() {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && refresh()}
           placeholder="搜索标题 / URL…"
-          className="h-6 flex-1 border-b border-pd-line bg-transparent pb-1 text-xs text-pd-ink outline-none transition-colors placeholder:text-pd-ink-2 focus:border-pd-primary focus:border-b-2"
+          className="h-6 flex-1 bg-transparent pb-1 text-xs text-pd-ink outline-none transition-colors placeholder:text-pd-ink-2"
         />
         <button
           onClick={() => refresh()}
-          className="h-6 shrink-0 rounded-[4px] bg-pd-primary px-2 text-xs font-medium text-white hover:bg-pd-primary-hover"
+          className="h-6 shrink-0 rounded-full bg-pd-primary px-2.5 text-xs font-medium text-white hover:bg-pd-primary-hover"
         >
           搜
         </button>
       </div>
-      <ul className="flex-1 divide-y divide-pd-line overflow-y-auto">
+      <ul className="flex-1 divide-y divide-white/40 overflow-y-auto px-3 py-1">
         {items.map((it) => (
-          <li key={it.path} className="group flex items-center gap-1 px-[18px] py-3 hover:bg-pd-hover">
+          <li key={it.path} className="group flex items-center gap-1 rounded-[8px] px-3 py-3 hover:bg-pd-hover">
             <button
               onClick={() => chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: it.path } })}
               className="min-w-0 flex-1 text-left"
@@ -76,7 +86,7 @@ export function HistoryView() {
             </button>
             <button
               onClick={() => chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-reveal', path: it.path } })}
-              className="hidden rounded p-1.5 text-pd-ink-2 hover:bg-pd-line group-hover:block"
+              className="hidden rounded-full p-1.5 text-pd-ink-2 hover:bg-white/70 group-hover:block"
               title="在 Finder 中显示"
             >
               <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -90,7 +100,7 @@ export function HistoryView() {
                   setItems((xs) => xs.filter((x) => x.path !== it.path))
                 }
               }}
-              className="hidden rounded p-1.5 text-pd-ink-2 hover:bg-pd-danger-bg hover:text-pd-danger group-hover:block"
+              className="hidden rounded-full p-1.5 text-pd-ink-2 hover:bg-pd-danger-bg hover:text-pd-danger group-hover:block"
               title="删除"
             >
               <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

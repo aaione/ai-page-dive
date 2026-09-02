@@ -1,43 +1,66 @@
 @import "tailwindcss";
 
 @theme {
-  /* 色彩 */
-  --color-pd-bg: #FAF9F5;          /* 面板/阅读面：暖纸底 */
-  --color-pd-surface: #FFFFFF;     /* 极少使用（搜索按钮等对比件） */
-  --color-pd-ink: #1C1B18;         /* 主文字 */
-  --color-pd-ink-2: #8A857A;       /* 次文字 */
-  --color-pd-line: #E7E3D8;        /* 发丝线 */
-  --color-pd-primary: #1E3A5F;     /* 品牌深蓝（按钮/下划线/引用条） */
-  --color-pd-primary-hover: #16293F;
-  --color-pd-danger: #B5492F;      /* 停止/错误 */
-  --color-pd-danger-bg: #FBF6F4;
-  --color-pd-danger-text: #8F3520;
-  --color-pd-ok: #4A7A5A;          /* 设置页可用态 */
-  --color-pd-off: #C9C4B8;         /* 设置页未装态语义点 */
-  --color-pd-code-bg: #F3F1EA;     /* 行内代码底 */
-  --color-pd-hover: #F5F3EC;       /* 历史行 hover */
+  /* 色彩：毛玻璃层叠 —— 底层品牌渐变 + 半透明玻璃面 */
+  --color-pd-bg: #EEF2F7;           /* 兜底底色（不支持 blur 时） */
+  --color-pd-surface: #FFFFFF;      /* 下拉菜单等需要高可读性的面 */
+  --color-pd-ink: #1D2433;          /* 主文字（冷调深灰蓝） */
+  --color-pd-ink-2: #6B7487;        /* 次文字 */
+  --color-pd-line: rgba(255,255,255,.55); /* 玻璃高光描边 */
+  --color-pd-primary: #3B6FE0;      /* 品牌蓝（玻璃上的实底强调） */
+  --color-pd-primary-hover: #2F5BC4;
+  --color-pd-danger: #E05252;
+  --color-pd-danger-bg: rgba(224,82,82,.10);
+  --color-pd-danger-text: #B03A3A;
+  --color-pd-ok: #3E9E6B;
+  --color-pd-off: #C6CCD8;
+  --color-pd-code-bg: rgba(255,255,255,.62);
+  --color-pd-hover: rgba(255,255,255,.45);
 
   /* 字体 */
   --font-serif-read: 'Noto Serif SC', 'Songti SC', 'SimSun', Georgia, serif;
   --font-sans-ui: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', sans-serif;
   --font-mono-ui: ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* 圆角：全方案仅 2 / 4 两档（editorial 偏方正） */
-  --radius-xs: 2px;   /* 错误条 */
-  --radius-sm: 4px;   /* 主按钮/代码块/搜按钮/复制钮 */
+  /* 圆角：玻璃层偏圆润 */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
 }
 
-body { width: 100%; background: #FAF9F5; }
-::selection { background: rgba(30,58,95,.16); }
-/* 细滚动条，融入纸底 */
-* { scrollbar-width: thin; scrollbar-color: #D8D3C6 transparent; }
+/* ── 毛玻璃底座：面板最底层的品牌渐变（玻璃层的取景） ── */
+html { height: 100%; }
+body {
+  width: 100%;
+  background:
+    radial-gradient(1200px 500px at 85% -10%, #C7DBF7 0%, transparent 55%),
+    radial-gradient(900px 420px at -20% 110%, #BFD4EE 0%, transparent 52%),
+    linear-gradient(168deg, #F2F6FB 0%, #E7EEF7 58%, #DEE8F4 100%);
+  background-attachment: fixed;
+}
+::selection { background: rgba(59,111,224,.20); }
+* { scrollbar-width: thin; scrollbar-color: rgba(29,36,51,.18) transparent; }
 *::-webkit-scrollbar { width: 4px; }
-*::-webkit-scrollbar-thumb { background: #D8D3C6; border-radius: 2px; }
+*::-webkit-scrollbar-thumb { background: rgba(29,36,51,.18); border-radius: 2px; }
+
+/* ── 玻璃面基元：半透明白 + blur + 高光描边 + 柔影 ── */
+.pd-glass {
+  background: rgba(255,255,255,.52);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid rgba(255,255,255,.55);
+  box-shadow: 0 8px 28px rgba(29,36,51,.08), inset 0 1px 0 rgba(255,255,255,.6);
+}
+.pd-glass-deep {
+  background: rgba(255,255,255,.72);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  border: 1px solid rgba(255,255,255,.65);
+  box-shadow: 0 12px 36px rgba(29,36,51,.13), inset 0 1px 0 rgba(255,255,255,.7);
+}
 
 /* 自定义类（CSS-first） */
 .pd-serif { font-family: var(--font-serif-read); }
 .pd-mono { font-family: var(--font-mono-ui); font-variant-numeric: tabular-nums; }
-.pd-hairline-top { border-top: 1px solid var(--color-pd-line); }
 
 /* 呼吸圆点：替代整行 animate-pulse */
 @keyframes pd-breathe { 0%,100% { opacity:.3 } 50% { opacity:1 } }
@@ -76,7 +99,7 @@ body { width: 100%; background: #FAF9F5; }
 }
 /* 章首发丝线：仅 done 后渲染，避免流式 trailing-cut 抖动 */
 .pd-md[data-done="true"] h1,
-.pd-md[data-done="true"] h2 { border-top: 1px solid var(--color-pd-line); }
+.pd-md[data-done="true"] h2 { border-top: 1px solid rgba(29,36,51,.14); }
 .pd-md h3 { font-size: 14.5px; margin-top: 1.4em; margin-bottom: 0.4em; }
 .pd-md h4 { font-size: 14px; margin-top: 1.2em; margin-bottom: 0.4em; }
 .pd-md strong { font-weight: 600; }
@@ -97,12 +120,13 @@ body { width: 100%; background: #FAF9F5; }
   font-size: 11.5px;
   line-height: 1.6;
   background: var(--color-pd-code-bg);
-  border-radius: 2px;
+  border-radius: 3px;
   padding: 0.1em 0.3em;
 }
 .pd-md pre {
   background: var(--color-pd-code-bg);
-  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,.5);
+  border-radius: 6px;
   overflow-x: auto;
   padding: 10px 12px;
   margin: 1.4em 0;
@@ -111,13 +135,13 @@ body { width: 100%; background: #FAF9F5; }
 .pd-md table { width: 100%; font-size: 11.5px; margin: 1.4em 0; border-collapse: collapse; }
 .pd-md th {
   font-weight: 600; text-align: left;
-  border-bottom: 1px solid var(--color-pd-ink);
+  border-bottom: 1px solid rgba(29,36,51,.5);
   padding: 4px 8px;
 }
-.pd-md td { border-bottom: 1px solid var(--color-pd-line); padding: 4px 8px; }
+.pd-md td { border-bottom: 1px solid rgba(29,36,51,.10); padding: 4px 8px; }
 .pd-md th:last-child, .pd-md td:last-child { padding-right: 0; }
 .pd-md a { color: var(--color-pd-primary); text-decoration: underline; }
-.pd-md hr { border: 0; border-top: 1px solid var(--color-pd-line); margin: 1.8em 0; }
+.pd-md hr { border: 0; border-top: 1px solid rgba(29,36,51,.14); margin: 1.8em 0; }
 /* 表格外层横滑 + 右侧渐隐提示 */
 .pd-md .pd-table-scroll { overflow-x: auto;
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);

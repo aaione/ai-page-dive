@@ -15,8 +15,8 @@ export function Onboarding() {
   }, [])
 
   return (
-    <div className="flex h-screen w-full flex-col items-center justify-center bg-pd-bg px-6 text-center">
-      <div className="flex w-full max-w-[272px] flex-col items-center">
+    <div className="flex h-screen w-full flex-col items-center justify-center px-6 text-center">
+      <div className="pd-glass flex w-full max-w-[300px] flex-col items-center rounded-[16px] p-6">
         <h1 className="pd-serif text-[17px] font-semibold leading-[1.6] text-pd-ink">还差一步（约 30 秒，仅一次）</h1>
         <p className="mt-3 text-xs leading-[2.0] text-pd-ink-2">
           浏览器沙箱不允许扩展直接启动本机程序——这是 Chrome 的安全模型，<br />
@@ -26,7 +26,7 @@ export function Onboarding() {
         <p className="mt-4 text-xs text-pd-ink-2">复制这一行到终端执行（需已装 Node.js）：</p>
         <button
           onClick={() => navigator.clipboard.writeText(cmd)}
-          className="mt-2 flex w-full items-center justify-between gap-2 rounded-[4px] bg-pd-primary px-3 py-2 text-left hover:bg-pd-primary-hover"
+          className="mt-2 flex w-full items-center justify-between gap-2 rounded-[8px] bg-pd-primary px-3 py-2 text-left shadow-[0_4px_14px_rgba(47,91,196,0.35)] hover:bg-pd-primary-hover"
           title="点击复制"
         >
           <span className="pd-mono text-xs text-white">{cmd}</span>

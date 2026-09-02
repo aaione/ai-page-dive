@@ -5,7 +5,7 @@ import { SummarizeView } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
 import { Settings } from './Settings.js'
 
-type View = 'main' | 'history' | 'settings'
+type Overlay = null | 'history' | 'settings'
 
 export interface TaskStreamState {
   taskId: string | null
@@ -22,7 +22,7 @@ const BLANK: TaskStreamState = {
 }
 
 export function App() {
-  const [view, setView] = useState<View>('main')
+  const [overlay, setOverlay] = useState<Overlay>(null)
   const [hostOk, setHostOk] = useState<boolean | null>(null)
   const [agents, setAgents] = useState<AgentStatus[]>([])
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
@@ -103,37 +103,58 @@ export function App() {
   if (hostOk === false) return <Onboarding />
 
   return (
-    <div className="flex h-screen flex-col bg-pd-bg font-sans text-pd-ink">
-      <header className="flex h-11 shrink-0 items-center justify-between border-b border-pd-line bg-pd-bg px-4">
-        <h1 className="text-[13px] font-semibold tracking-[0.02em] text-pd-ink">PageDive</h1>
-        <nav className="flex h-full items-end gap-4 text-xs">
-          {(['main', 'history', 'settings'] as View[]).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`-mb-px border-b-2 pb-[9px] pt-[11px] font-medium ${
-                view === v
-                  ? 'border-pd-primary font-semibold text-pd-ink'
-                  : 'border-transparent text-pd-ink-2 hover:text-pd-ink'
-              }`}
-            >
-              {VIEW_LABEL[v]}
-            </button>
-          ))}
-        </nav>
+    <div className="relative flex h-screen flex-col font-sans text-pd-ink">
+      {/* 顶部：玻璃条 —— 品牌 + 右上角图标收纳（Gemini 范式） */}
+      <header className="pd-glass z-10 flex h-11 shrink-0 items-center justify-between rounded-none border-x-0 border-t-0 px-4">
+        <div className="flex items-center gap-2">
+          <svg viewBox="0 0 16 16" className="h-4 w-4 text-pd-primary" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 1.5 9.6 6.4 14.5 8 9.6 9.6 8 14.5 6.4 9.6 1.5 8 6.4 6.4Z" />
+          </svg>
+          <h1 className="text-[13px] font-semibold tracking-[0.02em]">PageDive</h1>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setOverlay(overlay === 'history' ? null : 'history')}
+            className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-pd-hover ${overlay === 'history' ? 'bg-pd-hover text-pd-ink' : 'text-pd-ink-2'}`}
+            title="总结历史"
+            aria-label="总结历史"
+          >
+            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="8" cy="8" r="6" />
+              <path d="M8 4.8V8l2.2 1.6" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setOverlay(overlay === 'settings' ? null : 'settings')}
+            className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-pd-hover ${overlay === 'settings' ? 'bg-pd-hover text-pd-ink' : 'text-pd-ink-2'}`}
+            title="设置"
+            aria-label="设置"
+          >
+            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="8" cy="8" r="2.2" />
+              <path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" />
+            </svg>
+          </button>
+        </div>
       </header>
-      <main className="flex-1 overflow-hidden">
-        {view === 'main' && (
-          <SummarizeView agents={agents} workflows={workflows} stream={stream} onStartResult={onStartResult} />
-        )}
-        {view === 'history' && <HistoryView />}
-        {view === 'settings' && <Settings agents={agents} />}
-      </main>
+
+      {/* 主视图永不消失；历史/设置为玻璃覆盖层 */}
+      <SummarizeView agents={agents} workflows={workflows} stream={stream} onStartResult={onStartResult} />
+
+      {overlay === 'history' && (
+        <div className="pd-fade-in-fast absolute inset-0 top-11 z-20">
+          <HistoryView onClose={() => setOverlay(null)} />
+        </div>
+      )}
+      {overlay === 'settings' && (
+        <div className="pd-fade-in-fast absolute inset-0 top-11 z-20">
+          <Settings agents={agents} onClose={() => setOverlay(null)} />
+        </div>
+      )}
     </div>
   )
 }
 
-const VIEW_LABEL: Record<View, string> = { main: '总结', history: '历史', settings: '设置' }
 const PHASE_LABEL: Record<string, string> = {
   spawned: '已启动 CLI',
   reading: '正在读取正文',

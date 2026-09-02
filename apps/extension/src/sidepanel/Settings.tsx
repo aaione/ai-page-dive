@@ -1,10 +1,22 @@
 import type { AgentStatus } from '@pagedive/shared'
 
-export function Settings({ agents }: { agents: AgentStatus[] }) {
+export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: () => void }) {
   return (
-    <div className="h-full overflow-y-auto bg-pd-bg px-[18px] py-5 text-xs">
+    <div className="pd-glass h-full overflow-y-auto rounded-none px-[18px] py-4 text-xs">
+      <div className="flex justify-end">
+        <button
+          onClick={onClose}
+          className="flex h-6 w-6 items-center justify-center rounded-full text-pd-ink-2 hover:bg-pd-hover hover:text-pd-ink"
+          title="关闭设置"
+          aria-label="关闭设置"
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="m4 4 8 8M12 4l-8 8" />
+          </svg>
+        </button>
+      </div>
       <section>
-        <h2 className="border-b border-pd-line pb-1.5 text-xs font-semibold text-pd-ink">本机 CLI</h2>
+        <h2 className="border-b border-white/40 pb-1.5 text-xs font-semibold text-pd-ink">本机 CLI</h2>
         {agents.length ? (
           <ul className="mt-2.5 space-y-2">
             {agents.map((a) => (
@@ -30,7 +42,7 @@ export function Settings({ agents }: { agents: AgentStatus[] }) {
         )}
       </section>
       <section className="mt-6">
-        <h2 className="border-b border-pd-line pb-1.5 text-xs font-semibold text-pd-ink">说明</h2>
+        <h2 className="border-b border-white/40 pb-1.5 text-xs font-semibold text-pd-ink">说明</h2>
         <div className="mt-2.5 space-y-2 text-xs leading-[1.9] text-pd-ink-2">
           <p>
             PageDive 只在本机调用你自己登录的官方 CLI（claude / codex），

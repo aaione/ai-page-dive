@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * UI 交互 E2E：agent/workflow 切换生效 + 历史 搜索/查看/删除 闭环。
- * 复用 e2e.mjs 的启动骨架；codex 全链路是本脚本的主断言（claude 已由 e2e.mjs 覆盖）。
+ * UI 交互 E2E：agent/workflow 下拉切换生效 + 历史 搜索/查看/删除 闭环。
+ * 复用 e2e.mjs 的启动骨架；claude 全链路是本脚本的主断言（自测只用 claude，不碰 codex）。
  */
 import { execSync } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -54,22 +54,26 @@ await panel.waitForTimeout(2500)
 
 const bodyText = () => panel.evaluate(() => document.body.innerText)
 
-// ── 断言 0：host 探测 + agents 列表含 codex ──
+// ── 断言 0：host 探测 + agents 列表含 claude ──
 const probeOk = await panel.evaluate(
   () => new Promise(r => chrome.runtime.sendMessage({ t: 'panel-ready' }, resp => r(!!resp?.ok))),
 )
 const t0 = await bodyText()
-const hasCodexBtn = /codex/.test(t0)
-console.log(`host=${probeOk} codex-btn=${hasCodexBtn}`)
-if (!probeOk || !hasCodexBtn) {
-  console.error('⛔ FAIL: host 探测失败或 codex 不可用'); await ctx.close(); process.exit(1)
+const hasClaudeBtn = /claude/.test(t0)
+console.log(`host=${probeOk} claude-btn=${hasClaudeBtn}`)
+if (!probeOk || !hasClaudeBtn) {
+  console.error('⛔ FAIL: host 探测失败或 claude 不可用'); await ctx.close(); process.exit(1)
 }
 
-// ── 断言 1：切 agent→codex + 切 workflow→deep，总结完成 ──
-await panel.getByRole('button', { name: 'codex', exact: true }).click()
-await panel.getByRole('button', { name: '深度研读' }).click()
+// ── 断言 1：CLI 下拉切 claude + workflow 下拉切深度研读，总结完成 ──
+// CLI pill：aria-label="选择 CLI"，选项在 listbox 里
+await panel.getByRole('button', { name: '选择 CLI' }).click()
+await panel.getByRole('option', { name: /^claude/ }).click()
+// workflow pill：底部动作栏，aria-label="选择 workflow"，向上弹出
+await panel.getByRole('button', { name: '选择 workflow' }).click()
+await panel.getByRole('option', { name: '深度研读' }).click()
 await page.bringToFront()
-await panel.getByRole('button', { name: /深度总结|总结当前页/ }).first().click({ timeout: 10_000 })
+await panel.getByRole('button', { name: '深度总结当前页' }).click({ timeout: 10_000 })
 console.log('▶ codex + deep 总结已点击')
 
 let summary = ''
@@ -83,10 +87,10 @@ summary ||= await bodyText()
 console.log('=== panel tail ===')
 console.log(summary.slice(-500))
 
-const codexDone = /tokens:/.test(summary) && !/CLI 报告运行失败|启动失败|CLI 输出异常/.test(summary)
-console.log(codexDone ? '✅ codex 全链路完成' : '⛔ codex 链路失败')
+const claudeDone = /tokens:/.test(summary) && !/CLI 报告运行失败|启动失败|CLI 输出异常/.test(summary)
+console.log(claudeDone ? '✅ claude 全链路完成' : '⛔ claude 链路失败')
 
-// ── 断言 2：最新历史 frontmatter = agent: codex + workflow: deep ──
+// ── 断言 2：最新历史 frontmatter = agent: claude ──
 const latest = await panel.evaluate(async () => {
   await chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-list' } })
   await new Promise(r => setTimeout(r, 1500))
@@ -98,11 +102,11 @@ const latest = await panel.evaluate(async () => {
   })
 })
 console.log(`latest history: agent=${latest?.agent} title=${latest?.title?.slice(0, 30)}`)
-const metaOk = latest?.agent === 'codex'
-console.log(metaOk ? '✅ 历史元数据 agent=codex' : '⛔ 历史元数据不符')
+const metaOk = latest?.agent === 'claude'
+console.log(metaOk ? '✅ 历史元数据 agent=claude' : '⛔ 历史元数据不符')
 
-// ── 断言 3：历史搜索过滤 ──
-await panel.getByRole('button', { name: '历史', exact: true }).click()
+// ── 断言 3：历史搜索过滤（右上角图标打开 overlay） ──
+await panel.getByRole('button', { name: '总结历史' }).click()
 await panel.waitForTimeout(1500)
 // Playwright fill/press 走 CDP 真实输入事件，React onChange 一定能收到
 const searchBox = panel.getByPlaceholder('搜索标题 / URL…')
@@ -131,7 +135,7 @@ console.log(viewOk ? '✅ 历史详情可查看' : `⛔ 历史详情异常：${d
 
 await panel.screenshot({ path: '/tmp/pd-e2e-ui-detail.png', fullPage: true }).catch(() => {})
 
-const pass = codexDone && metaOk && searchOk && viewOk
+const pass = claudeDone && metaOk && searchOk && viewOk
 console.log(pass ? '\n✅ UI E2E PASS' : '\n⛔ UI E2E INCOMPLETE')
 await ctx.close()
 srv.close()
