@@ -26,21 +26,19 @@ export function App() {
   const [hostOk, setHostOk] = useState<boolean | null>(null)
   const [agents, setAgents] = useState<AgentStatus[]>([])
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
+  const [probed, setProbed] = useState(false)
   const [stream, setStream] = useState<TaskStreamState>(BLANK)
 
   useEffect(() => {
-    // 面板就绪：ping→pong 真实探测 host（SW 侧 8s 超时，node 冷启动可慢）
     chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
       setHostOk(!!resp?.ok)
       if (resp?.ok) requestLists()
     })
-    // host 帧直通
     const listener = (m: HostToExt) => {
       switch (m.t) {
-        case 'agents': setAgents(m.agents); break
+        case 'agents': setAgents(m.agents); setProbed(true); break
         case 'workflows': setWorkflows(m.items); break
         case 'task-chunk':
-          // 换任务即重置（防旧任务文本拼接）
           setStream((s) =>
             s.taskId === m.taskId
               ? { ...s, text: s.text + m.text }
@@ -103,36 +101,33 @@ export function App() {
   if (hostOk === false) return <Onboarding />
 
   return (
-    <div className="relative flex h-screen flex-col font-sans text-pd-ink">
-      {/* 顶部：玻璃条 —— 品牌 + 右上角图标收纳（Gemini 范式） */}
-      <header className="pd-glass z-10 flex h-11 shrink-0 items-center justify-between rounded-none border-x-0 border-t-0 px-4">
-        <div className="flex items-center gap-2">
-          <svg viewBox="0 0 16 16" className="h-4 w-4 text-pd-primary" fill="currentColor">
+    <div className="pd-app">
+      <header className="pd-header">
+        <div className="pd-header-brand">
+          <svg viewBox="0 0 16 16" className="pd-icon" fill="currentColor">
             <path d="M8 1.5 9.6 6.4 14.5 8 9.6 9.6 8 14.5 6.4 9.6 1.5 8 6.4 6.4Z" />
           </svg>
-          <h1 className="text-[13px] font-semibold tracking-[0.02em]">
-            Page<span className="text-pd-primary">Dive</span>
-          </h1>
+          <h1 className="pd-title">Page<span className="pd-accent-text">Dive</span></h1>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="pd-header-actions">
           <button
             onClick={() => setOverlay(overlay === 'history' ? null : 'history')}
-            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-pd-hover ${overlay === 'history' ? 'bg-pd-hover text-pd-ink' : 'text-pd-ink-2'}`}
+            className={`pd-icon-btn ${overlay === 'history' ? 'active' : ''}`}
             title="总结历史"
             aria-label="总结历史"
           >
-            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="8" cy="8" r="6" />
               <path d="M8 4.8V8l2.2 1.6" />
             </svg>
           </button>
           <button
             onClick={() => setOverlay(overlay === 'settings' ? null : 'settings')}
-            className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-pd-hover ${overlay === 'settings' ? 'bg-pd-hover text-pd-ink' : 'text-pd-ink-2'}`}
+            className={`pd-icon-btn ${overlay === 'settings' ? 'active' : ''}`}
             title="设置"
             aria-label="设置"
           >
-            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="8" cy="8" r="2.2" />
               <path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" />
             </svg>
@@ -140,16 +135,17 @@ export function App() {
         </div>
       </header>
 
-      {/* 主视图永不消失；历史/设置为玻璃覆盖层 */}
-      <SummarizeView agents={agents} workflows={workflows} stream={stream} onStartResult={onStartResult} />
+      <main className="pd-main">
+        <SummarizeView agents={agents} workflows={workflows} stream={stream} onStartResult={onStartResult} probed={probed} />
+      </main>
 
       {overlay === 'history' && (
-        <div className="pd-fade-in-fast pointer-events-none absolute inset-0 z-20 pt-11 [&>*]:pointer-events-auto">
+        <div className="pd-overlay pd-fade-in-fast">
           <HistoryView onClose={() => setOverlay(null)} />
         </div>
       )}
       {overlay === 'settings' && (
-        <div className="pd-fade-in-fast pointer-events-none absolute inset-0 z-20 pt-11 [&>*]:pointer-events-auto">
+        <div className="pd-overlay pd-fade-in-fast">
           <Settings agents={agents} onClose={() => setOverlay(null)} />
         </div>
       )}

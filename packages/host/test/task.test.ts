@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { describe, expect, it } from 'vitest'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Task, buildPrompt } from '../src/task.js'
@@ -18,7 +18,7 @@ console.log(JSON.stringify({type:'result',is_error:true,result:'认证失败'}))
     slow: `setTimeout(() => console.log(JSON.stringify({type:'result',is_error:false,result:'完成'})), 60_000)`,
     noagent: '',
   }[mode]
-  await import('node:fs/promises').then(fs => fs.writeFile(script, code ?? '', 'utf8'))
+  await writeFile(script, code ?? '', 'utf8')
   return script
 }
 
@@ -118,4 +118,28 @@ describe('Task 状态机', () => {
     expect(p2).toContain('5-8 条要点')
     expect(p2).toContain('/tmp/f.md')
   })
+
+  it('instruction 优先于 workflow 正文（默认模式）', async () => {
+    // ESM 模块 namespace 只读，不能桩 spawnCli——改为让假 CLI 把收到的 stdin
+    // 写到临时文件，跑完读回断言 prompt 内容
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const dir = await mkdtemp(join(tmpdir(), 'pd-ins-'))
+    const echo = join(dir, 'echo.mjs')
+    const capFile = join(dir, 'prompt.txt')
+    await writeFile(echo, `let d='';process.stdin.on('data',c=>d+=c).on('end',async()=>{
+const fs=await import('node:fs');fs.writeFileSync(${JSON.stringify(capFile)},d)
+console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))})`)
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].bin = 'node'
+    AGENTS[0].buildArgs = () => [echo]
+    const { task: mk } = makeCbs(); const task = mk('t-ins')
+    task.start({ taskId: 't-ins', agentId: 'claude', workflow: 'default', instruction: '列出正文中的公司名', page: PAGE as any })
+    task.appendContent(BODY, true)
+    await task.run().catch(() => {})
+    AGENTS[0].buildArgs = orig
+    const prompt = await readFile(capFile, 'utf8')
+    expect(prompt).toContain('列出正文中的公司名')
+    expect(prompt).not.toContain('5-8 条要点')
+    await rm(dir, { recursive: true, force: true })
+  }, 30_000)
 })

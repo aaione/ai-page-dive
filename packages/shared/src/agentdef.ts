@@ -50,5 +50,7 @@ export interface TaskInput {
   taskId: string
   agentId: string
   workflow?: string
+  /** 用户自由输入（默认模式任务段，优先于 workflow 正文） */
+  instruction?: string
   page: Omit<PageContent, 'contentMarkdown'>
 }

@@ -47,7 +47,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       return nmPort.probe()
     }
     case 'summarize':
-      return startSummarize(msg.agentId as string, msg.workflow as string)
+      return startSummarize(msg.agentId as string, msg.workflow as string, msg.instruction as string | undefined)
     case 'cancel':
       if (currentTask) {
         nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })
@@ -71,7 +71,7 @@ nmPort.onDisconnect(() => {
     .catch(() => {})
 })
 
-async function startSummarize(agentId: string, workflow: string) {
+async function startSummarize(agentId: string, workflow: string, instruction?: string) {
   // target：action 点击的 tab（activeTab 授权随手势生效）。SW 重启丢态或 panel
   // 直接点按钮时 fallback 到当前活跃 tab——无授权的 tab 注入会失败并提示，
   // 不会造成越权（executeScript 直接被 Chrome 拒绝）。
@@ -105,7 +105,7 @@ async function startSummarize(agentId: string, workflow: string) {
 
   const ok = nmPort.send({
     t: 'task-start',
-    task: { taskId, agentId, workflow, page: meta },
+    task: { taskId, agentId, workflow, instruction, page: meta },
   })
   if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
 

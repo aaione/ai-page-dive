@@ -8,23 +8,29 @@ interface Props {
   workflows: WorkflowItem[]
   stream: TaskStreamState
   onStartResult: (resp: { error?: string; [k: string]: unknown }) => void
+  probed?: boolean
 }
 
-export function SummarizeView({ agents, workflows, stream, onStartResult }: Props) {
+export function SummarizeView({ agents, workflows, stream, onStartResult, probed }: Props) {
   const usable = agents.filter((a) => a.available)
   const [agentId, setAgentId] = useState('')
-  const [workflow, setWorkflow] = useState('quick')
+  const [workflow, setWorkflow] = useState('default')
+  const [input, setInput] = useState('')
   const effectiveAgent = agentId || usable[0]?.id || 'claude'
   const running = !stream.done && stream.taskId !== null
 
-  const wfs = useMemo(
-    () => (workflows.length ? workflows : [{ name: 'quick', description: '快速摘要', builtin: true }]),
-    [workflows],
-  )
+  const wfs = useMemo(() => {
+    const order: Record<string, number> = { quick: 0, deep: 1, paper: 2 }
+    const rest = [...(workflows.length ? workflows : [{ name: 'quick', description: '快速摘要', builtin: true }])]
+      .sort((a, b) => (order[a.name] ?? 9 + a.name.localeCompare(b.name)) - (order[b.name] ?? 9 + b.name.localeCompare(a.name)))
+    return [{ name: 'default', description: '按输入框内容执行；留空则快速摘要', builtin: true }, ...rest]
+  }, [workflows])
 
   function start() {
+    const text = input.trim()
+    const wf = workflow === 'default' && !text ? 'quick' : workflow
     chrome.runtime.sendMessage(
-      { t: 'summarize', agentId: effectiveAgent, workflow },
+      { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text || undefined },
       (resp) => {
         if (!chrome.runtime.lastError && resp) onStartResult(resp)
       },
@@ -35,30 +41,31 @@ export function SummarizeView({ agents, workflows, stream, onStartResult }: Prop
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* 静默进度条：CLI >5s 无输出淡入（纯样式 hook） */}
+    <div className="pd-view">
       <SilentProgress text={stream.text} done={stream.done} running={running} />
 
-      {/* CLI 下拉 pill（Gemini 模型选择器位置） */}
-      <div className="shrink-0 px-4 pt-3">
-        <Dropdown
+      <div className="pd-model-selector">
+        <ModelDropdown
           value={effectiveAgent}
           onChange={setAgentId}
-          items={usable.map((a) => ({ key: a.id, label: a.id, hint: a.version }))}
+          items={usable.map((a) => ({
+            key: a.id,
+            label: a.id,
+            hint: a.version,
+          }))}
           fallback="未检测到 CLI"
-          mono
-          ariaLabel="选择 CLI"
+          loading={!probed}
+          ariaLabel="选择 CLI 模型"
         />
       </div>
 
-      {/* 输出流：中间纯阅读区 */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-[18px] py-4">
+      <div className="pd-content" role="region" aria-live="polite">
         {stream.phase && !stream.done && (
-          <p className="mb-2 flex items-center gap-2 text-[11.5px] leading-[1.9] text-pd-ink-2">
-            <span className="pd-dot inline-block h-[6px] w-[6px] shrink-0 rounded-full bg-pd-primary" />
-            {stream.phase}
+          <div className="pd-status-bar">
+            <span className="pd-dot" aria-hidden="true" />
+            <span>{stream.phase}</span>
             <Elapsed key={stream.taskId ?? 'idle'} running={running} />
-          </p>
+          </div>
         )}
         {stream.text ? (
           <StreamMarkdown text={stream.text} done={stream.done} />
@@ -66,83 +73,50 @@ export function SummarizeView({ agents, workflows, stream, onStartResult }: Prop
           !stream.error && <Placeholder />
         )}
         {stream.done && stream.usage && (
-          <div className="pd-fade-in mt-4 border-t border-white/10 pt-4 text-center">
-            <p className="pd-mono text-[10.5px] leading-[1.6] text-pd-ink-2">
-              tokens: ↓{stream.usage.inputTokens ?? '—'} ↑{stream.usage.outputTokens ?? '—'}
-            </p>
+          <div className="pd-usage">
+            <span className="pd-mono">tokens: ↓{stream.usage.inputTokens ?? '—'} ↑{stream.usage.outputTokens ?? '—'}</span>
           </div>
         )}
         {stream.error && (
-          <div className="pd-fade-in-fast mt-4 rounded-[2px] border-l-2 border-pd-danger bg-pd-danger-bg px-3 py-2.5">
-            <p className="flex items-start gap-2 text-xs leading-[1.7] text-pd-danger-text">
-              <svg viewBox="0 0 16 16" className="mt-[3px] h-[14px] w-[14px] shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M8 1.5 14.5 13H1.5L8 1.5Z" />
-                <path d="M8 6v3.2" />
-                <path d="M8 11.2v.1" />
-              </svg>
-              <span>
-                {stream.isError ? 'CLI 报告运行失败：' : ''}
-                {stream.error}
-              </span>
-            </p>
+          <div className="pd-error" role="alert">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+              <path d="M8 1.5 14.5 13H1.5L8 1.5Z" />
+              <path d="M8 6v3.2" />
+              <path d="M8 11.2v.1" />
+            </svg>
+            <span>
+              {stream.isError ? 'CLI 报告运行失败：' : ''}
+              {stream.error}
+            </span>
           </div>
         )}
       </div>
 
-      {/* 底部动作栏：Gemini 式玻璃框——左 workflow 下拉 / 右圆形主按钮 */}
-      <div className="shrink-0 px-4 pb-4 pt-3">
-        <div className="pd-glass-raised flex items-center gap-2 rounded-[12px] px-2.5 py-2">
-          <Dropdown
-            value={WF_LABEL[workflow] ?? workflow}
-            onChange={(name) => setWorkflow(name)}
-            items={wfs.map((w) => ({ key: w.name, label: WF_LABEL[w.name] ?? w.name, hint: w.description }))}
-            align="left"
-            up
-            ariaLabel="选择 workflow"
-          />
-          <p className="min-w-0 flex-1 truncate text-center text-[11px] leading-[1.6] text-pd-ink-2">
-            {running ? '正在总结当前页…' : '总结当前网页'}
-          </p>
-          <button
-            onClick={running ? cancel : start}
-            disabled={!running && !usable.length}
-            aria-label={running ? '停止' : '深度总结当前页'}
-            title={running ? '停止' : '深度总结当前页'}
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white transition-all active:scale-95 ${
-              running
-                ? 'bg-pd-danger text-pd-bg hover:brightness-110'
-                : 'pd-accent shadow-[0_0_8px_rgba(124,58,237,0.30)] hover:shadow-[0_0_16px_rgba(124,58,237,0.50)] disabled:opacity-[0.38] disabled:shadow-none'
-            }`}
-          >
-            {running ? (
-              /* 停止：方形停止符 */
-              <svg viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor">
-                <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
-              </svg>
-            ) : (
-              /* 启动：上箭头（总结 = 跑一遍） */
-              <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 13V3M8 3 4.6 6.4M8 3l3.4 3.4" />
-              </svg>
-            )}
-          </button>
-        </div>
+      <div className="pd-action-bar">
+        <ActionBar
+          workflow={workflow}
+          onWorkflowChange={setWorkflow}
+          workflows={wfs}
+          input={input}
+          onInputChange={setInput}
+          running={running}
+          usableCount={usable.length}
+          onStart={start}
+          onCancel={cancel}
+        />
       </div>
     </div>
   )
 }
 
-/** 下拉 pill：点开选项浮层，点外部关闭。value 只显示，key 传回 onChange。 */
-function Dropdown({
-  value, onChange, items, fallback, mono, up, align = 'left', ariaLabel,
+function ModelDropdown({
+  value, onChange, items, fallback, loading, ariaLabel,
 }: {
   value: string
   onChange: (key: string) => void
   items: { key: string; label: string; hint?: string }[]
   fallback?: string
-  mono?: boolean
-  up?: boolean
-  align?: 'left' | 'right'
+  loading?: boolean
   ariaLabel?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -157,41 +131,47 @@ function Dropdown({
     return () => document.removeEventListener('mousedown', onDoc)
   }, [open])
 
+  const selected = items.find((it) => it.key === value)
+
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div ref={ref} className="pd-dropdown">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex max-w-[130px] items-center gap-1 rounded-full border border-transparent px-2 py-1 text-xs hover:border-white/60 hover:bg-pd-hover ${
-          mono ? 'pd-mono' : 'font-medium'
-        } ${items.length ? 'text-pd-ink' : 'cursor-default text-pd-ink-2'}`}
+        disabled={loading}
+        className={`pd-dropdown-trigger ${items.length ? '' : 'disabled'}`}
       >
-        <span className="truncate">{items.length ? value : (fallback ?? value)}</span>
-        {items.length > 0 && (
-          <svg viewBox="0 0 16 16" className="h-3 w-3 shrink-0 text-pd-ink-2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m4 6.5 4 4 4-4" />
-          </svg>
+        {loading ? (
+          <span className="pd-model-loading">
+            <span className="pd-model-loading-dot" aria-hidden="true" />
+            <span className="pd-dropdown-label">正在检测本机 CLI…</span>
+          </span>
+        ) : (
+          <>
+            <span className="pd-dropdown-label">
+              {items.length ? (selected?.label ?? value) : (fallback ?? value)}
+            </span>
+            {items.length > 0 && (
+              <svg viewBox="0 0 16 16" className="pd-dropdown-arrow" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m4 6.5 4 4 4-4" />
+              </svg>
+            )}
+          </>
         )}
       </button>
       {open && items.length > 0 && (
-        <ul
-          role="listbox"
-          className={`pd-glass-overlay pd-fade-in-fast absolute z-30 w-44 rounded-[8px] py-1 ${
-            up ? 'bottom-[calc(100%+6px)]' : 'top-[calc(100%+6px)]'
-          } ${align === 'right' ? 'right-0' : 'left-0'}`}
-        >
+        <ul role="listbox" className="pd-dropdown-menu pd-fade-in-fast">
           {items.map((it) => (
             <li key={it.key} role="option" aria-selected={it.key === value}>
               <button
                 onClick={() => { onChange(it.key); setOpen(false) }}
-                className={`flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-pd-hover ${
-                  it.key === value ? 'bg-pd-hover' : ''
-                }`}
+                className={`pd-dropdown-item ${it.key === value ? 'selected' : ''}`}
               >
-                <span className={`${mono ? 'pd-mono' : ''} text-xs text-pd-ink`}>{it.label}</span>
-                {it.hint && <span className="pd-mono truncate text-[10px] text-pd-ink-2">{it.hint}</span>}
+                {it.key === value && <span className="pd-dropdown-check" aria-hidden="true" />}
+                <span className="pd-dropdown-item-label pd-mono">{it.label}</span>
+                {it.hint && <span className="pd-dropdown-item-hint pd-mono">{it.hint}</span>}
               </button>
             </li>
           ))}
@@ -201,7 +181,102 @@ function Dropdown({
   )
 }
 
-/** 静默进度条：距最后 chunk >5s 加 .on；首 chunk 或 done 撤掉。只读 stream.text，不动流逻辑。 */
+function ActionBar({
+  workflow, onWorkflowChange, workflows,
+  input, onInputChange,
+  running, usableCount,
+  onStart, onCancel,
+}: {
+  workflow: string
+  onWorkflowChange: (name: string) => void
+  workflows: { name: string; description: string; builtin: boolean }[]
+  input: string
+  onInputChange: (v: string) => void
+  running: boolean
+  usableCount: number
+  onStart: () => void
+  onCancel: () => void
+}) {
+  const [workflowOpen, setWorkflowOpen] = useState(false)
+  const workflowRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!workflowOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (workflowRef.current && !workflowRef.current.contains(e.target as Node)) setWorkflowOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [workflowOpen])
+
+  const selectedWorkflow = workflows.find((w) => w.name === workflow)
+
+  return (
+    <div ref={workflowRef} className="pd-action-bar-inner">
+      <div className="pd-workflow-dropdown">
+        <button
+          onClick={() => setWorkflowOpen((o) => !o)}
+          aria-label="选择总结模式"
+          aria-haspopup="listbox"
+          aria-expanded={workflowOpen}
+          className="pd-workflow-trigger"
+        >
+          <span className="pd-workflow-label">{WF_LABEL[workflow] ?? workflow}</span>
+          <svg viewBox="0 0 16 16" className={`pd-workflow-arrow ${workflowOpen ? 'open' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m4 6.5 4 4 4-4" />
+          </svg>
+        </button>
+        {workflowOpen && (
+          <ul role="listbox" className="pd-dropdown-menu pd-workflow-menu pd-fade-in-fast">
+            {workflows.map((w) => (
+              <li key={w.name} role="option" aria-selected={w.name === workflow}>
+                <button
+                  onClick={() => { onWorkflowChange(w.name); setWorkflowOpen(false) }}
+                  className={`pd-dropdown-item ${w.name === workflow ? 'selected' : ''}`}
+                >
+                  {w.name === workflow && <span className="pd-dropdown-check" aria-hidden="true" />}
+                  <span className="pd-dropdown-item-label">{WF_LABEL[w.name] ?? w.name}</span>
+                  {w.description && <span className="pd-dropdown-item-hint">{w.description}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <input
+        value={input}
+        onChange={(e) => onInputChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing && !running && usableCount) onStart()
+        }}
+        disabled={running}
+        placeholder={running ? '正在总结当前页…' : '想了解这个网页什么？'}
+        aria-label="自定义指令"
+        className="pd-input"
+      />
+
+      <button
+        onClick={running ? onCancel : onStart}
+        disabled={!running && !usableCount}
+        aria-label={running ? '停止' : '深度总结当前页'}
+        title={running ? '停止' : '深度总结当前页'}
+        className={`pd-primary-btn ${running ? 'running' : ''}`}
+      >
+        {running ? (
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M8 13V3M8 3 4.6 6.4M8 3l3.4 3.4" />
+          </svg>
+        )}
+      </button>
+    </div>
+  )
+}
+
 function SilentProgress({ text, done, running }: { text: string; done: boolean; running: boolean }) {
   const [silent, setSilent] = useState(false)
   const lastChunkRef = useRef(Date.now())
@@ -227,21 +302,22 @@ function SilentProgress({ text, done, running }: { text: string; done: boolean; 
   }, [running, done])
 
   if (!running) return null
-  return <div className={`pd-progress shrink-0 ${silent ? 'on' : ''}`} />
+  return <div className={`pd-progress ${silent ? 'on' : ''}`} aria-hidden="true" />
 }
 
 function Placeholder() {
   return (
-    <div className="pd-serif mt-8 text-center text-[13px] leading-[2.0] text-pd-ink-2">
-      点击下方按钮，调用本机 {''}
-      <span className="pd-mono text-pd-primary">claude</span> / <span className="pd-mono text-pd-primary">codex</span> / <span className="pd-mono text-pd-primary">opencode</span>
-      <br />
-      深度总结当前网页。内容只在本机处理。
+    <div className="pd-placeholder">
+      <p className="pd-placeholder-title">想了解这个网页的什么？</p>
+      <p className="pd-placeholder-hint">
+        直接在下方输入问题，或选择一种总结模式
+        <br />
+        <span className="pd-mono">claude</span> / <span className="pd-mono">codex</span> / <span className="pd-mono">opencode</span> · 内容只在本机处理
+      </p>
     </div>
   )
 }
 
-/** 运行中计时器：CLI 长时间静默思考时让用户知道任务活着 */
 function Elapsed({ running }: { running: boolean }) {
   const [sec, setSec] = useState(0)
   useEffect(() => {
@@ -250,10 +326,11 @@ function Elapsed({ running }: { running: boolean }) {
     return () => clearInterval(t)
   }, [running])
   if (!running || sec < 3) return null
-  return <span className="pd-mono ml-0.5 no-underline">· {sec}s</span>
+  return <span className="pd-mono pd-elapsed">· {sec}s</span>
 }
 
 const WF_LABEL: Record<string, string> = {
+  default: '默认模式',
   quick: '快速摘要',
   deep: '深度研读',
   paper: '论文模式',

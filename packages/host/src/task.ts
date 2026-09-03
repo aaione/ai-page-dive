@@ -102,7 +102,7 @@ export class Task {
       await linkIntoCwd(contentFile, agentCwd)
       fileForPrompt = def.filePathInPrompt({ contentFile, contentRelPath: basename(contentFile), agentCwd })
     }
-    const prompt = buildPrompt(page, fileForPrompt, wfName, wf?.body)
+    const prompt = buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wf?.body)
 
     this.startedAt = Date.now()
     this.cb.onStatus('spawned')
@@ -253,7 +253,7 @@ async function linkIntoCwd(contentFile: string, cwd: string): Promise<void> {
   } catch { /* EEXIST 等：沙箱内已有同名，直接用 */ }
 }
 
-/** prompt 组装：workflow 正文即任务段 */
+/** prompt 组装：instruction（用户输入）优先，其次 workflow 正文 */
 export function buildPrompt(
   page: TaskInput['page'],
   contentFile: string,
