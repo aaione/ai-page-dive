@@ -75,6 +75,8 @@ export interface AgentStatus {
   id: string
   available: boolean
   version?: string
+  /** 该 CLI 最近一次任务使用的模型（init 事件捕获，供下拉展示） */
+  model?: string
 }
 
 export interface PongMsg {
@@ -110,6 +112,8 @@ export interface TaskStatusMsg {
 export interface TaskMetaMsg {
   t: 'task-meta'
   taskId: string
+  /** 归属 CLI（panel 端 merge 模型名到 agents state 用） */
+  agentId?: string
   model?: string
   sessionId?: string
 }
@@ -125,6 +129,8 @@ export interface TaskChunkMsg {
 export interface TaskDoneMsg {
   t: 'task-done'
   taskId: string
+  /** 归属 CLI（panel 端 merge 模型名到 agents state 用） */
+  agentId?: string
   historyPath: string
   usage?: { inputTokens?: number; outputTokens?: number }
   durationMs: number

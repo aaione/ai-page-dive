@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentStatus, WorkflowItem } from '@pagedive/shared'
+import type { WorkflowItem } from '@pagedive/shared'
 import type { ChatMessage, TaskStreamState } from './App.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
@@ -7,14 +7,15 @@ interface Props {
   agents: AgentStatus[]
   workflows: WorkflowItem[]
   stream: TaskStreamState
+  agentId: string
+  onAgentChange: (id: string) => void
   onStartResult: (resp: { error?: string; [k: string]: unknown }) => void
   beginTurn: (text: string) => void
   beginSession: () => void
 }
 
-export function SummarizeView({ agents, workflows, stream, onStartResult, beginTurn, beginSession }: Props) {
+export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession }: Props) {
   const usable = agents.filter((a) => a.available)
-  const [agentId, setAgentId] = useState('')
   const [workflow, setWorkflow] = useState('default')
   const [input, setInput] = useState('')
   const effectiveAgent = agentId || usable[0]?.id || 'claude'
@@ -60,20 +61,6 @@ export function SummarizeView({ agents, workflows, stream, onStartResult, beginT
 
   return (
     <div className="pd-view">
-      <div className="pd-model-selector">
-        <ModelDropdown
-          value={effectiveAgent}
-          onChange={setAgentId}
-          items={usable.map((a) => ({
-            key: a.id,
-            label: a.id,
-            hint: a.version || undefined,
-          }))}
-          fallback="未检测到 CLI"
-          ariaLabel="选择 CLI 模型"
-        />
-      </div>
-
       <div className="pd-content" role="region" aria-live="polite">
         {messages.length === 0 && <Placeholder />}
         {messages.map((m) =>
@@ -124,10 +111,7 @@ function AssistantMessage({
   return (
     <div className="pd-chat-assistant">
       <div className="pd-chat-assistant-head">
-        <span className="pd-chat-model pd-mono">
-          {agentId}
-          {msg.model ? ` · ${msg.model}` : ''}
-        </span>
+        <span className="pd-chat-model pd-mono">{agentId}</span>
         {running && (
           <span className="pd-chat-thinking">
             <span className="pd-dot" aria-hidden="true" />
@@ -212,7 +196,7 @@ function MessageActions({ text, onNewChat }: { text: string; onNewChat: () => vo
   )
 }
 
-function ModelDropdown({
+export function ModelDropdown({
   value, onChange, items, fallback, ariaLabel,
 }: {
   value: string

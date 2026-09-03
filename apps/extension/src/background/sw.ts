@@ -5,7 +5,7 @@
  *   SW → panel: 直接转发 host 的 HostToExt 帧
  */
 import { nmPort } from '../lib/nmport.js'
-import type { ExtToHost, HostToExt, PageContent } from '@pagedive/shared'
+import type { AgentStatus, ExtToHost, HostToExt, PageContent } from '@pagedive/shared'
 
 // ponytail: 单任务状态（SW 可能重启丢内存态，重启后靠 panel 重新 ping 恢复 UI）
 let currentTask: {
@@ -18,9 +18,21 @@ let currentTask: {
 let lastSession: { agentId: string; sessionId: string } | null = null
 // 当前任务用的 agent（task-meta 到达时此刻的 agent 即会话归属）
 let currentAgentId = 'claude'
+// 每个 CLI 最近使用的模型（下拉展示用）：agentId → model。
+// 独立于 agentsCache 存活——host 的 agents 帧可能在 task-meta 之后才到（探测慢），
+// 若不独立 merge 会被无 model 的 fresh 列表覆盖。
+const lastModels = new Map<string, string>()
 
 // 总结目标：action 点击的 tab（activeTab 授权随手势生效，其他 tab 无授权）
 let target: chrome.tabs.Tab | null = null
+
+// agents 列表缓存（合并最近模型后驻留 SW；SW 重启后首次 list-agents 仍走 host）
+let agentsCache: AgentStatus[] | null = null
+
+// 钉住（默认开）：点扩展图标直达 Side Panel。SW 内存态（无 storage 权限，
+// 重启回默认开——v1 语义即默认钉住）；panel 内可切换。
+let pinned = true
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch(() => {})
 
 chrome.action.onClicked.addListener(async (tab) => {
   target = tab
@@ -65,8 +77,17 @@ async function handleMessage(msg: any): Promise<unknown> {
         return { ok: true }
       }
       return undefined
+    case 'set-pinned':
+      pinned = !!msg.value
+      chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch(() => {})
+      return { ok: true }
     case 'nm':
       // panel → host 的通用转发（list-agents / list-workflows / history 等）
+      if ((msg.msg as any)?.t === 'list-agents' && agentsCache) {
+        // SW 内存缓存优先（含最近模型），直接回 panel；host 探测兜底
+        chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
+        return { ok: true }
+      }
       return { ok: nmPort.send(msg.msg as ExtToHost) }
   }
   return undefined
@@ -75,9 +96,26 @@ async function handleMessage(msg: any): Promise<unknown> {
 // host → panel 直通
 nmPort.onMessage((m) => {
   const msg = m as any
+  if (msg?.t === 'agents') {
+    // host 探测结果可能晚于 task-meta（无 model）：merge lastModels 后缓存下发，
+    // 并取代原帧（原样转发会把 panel 已 merge 的状态覆盖回无 model 版）
+    agentsCache = (msg.agents as AgentStatus[]).map((a) =>
+      lastModels.has(a.id) ? { ...a, model: lastModels.get(a.id) } : a,
+    )
+    chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
+    return
+  }
   // 捕获会话 id 供追问（claude init 事件捕获，task-done 兜底）
   if (msg?.t === 'task-meta' || msg?.t === 'task-done') {
     if (msg.sessionId) lastSession = { agentId: currentAgentId, sessionId: msg.sessionId }
+    // 记住该 CLI 最近模型，merge 进 agents 缓存即刻下发（下拉展示 claude · GLM-5.2）
+    if (msg.model) {
+      lastModels.set(currentAgentId, msg.model)
+      if (agentsCache) {
+        agentsCache = agentsCache.map((a) => (a.id === currentAgentId ? { ...a, model: msg.model } : a))
+        chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
+      }
+    }
   }
   chrome.runtime.sendMessage(m).catch(() => {})
 })

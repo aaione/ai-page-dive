@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AgentStatus, HostToExt, WorkflowItem } from '@pagedive/shared'
 import { Onboarding } from './Onboarding.js'
-import { SummarizeView } from './SummarizeView.js'
+import { SummarizeView, ModelDropdown } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
 import { Settings } from './Settings.js'
 
@@ -38,6 +38,14 @@ export function App() {
   const [agents, setAgents] = useState<AgentStatus[]>([])
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [stream, setStream] = useState<TaskStreamState>(BLANK)
+  const [agentId, setAgentId] = useState('')
+  const [pinned, setPinned] = useState(true)
+
+  function togglePinned() {
+    const next = !pinned
+    setPinned(next)
+    chrome.runtime.sendMessage({ t: 'set-pinned', value: next }).catch(() => {})
+  }
 
   useEffect(() => {
     chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
@@ -46,7 +54,13 @@ export function App() {
     })
     const listener = (m: HostToExt) => {
       switch (m.t) {
-        case 'agents': setAgents(m.agents); break
+        case 'agents':
+          // host 探测结果可能晚于 task-meta：保留 panel 已捕获的 model 不被覆盖
+          setAgents((prev) => {
+            const known = new Map(prev.filter((a) => a.model).map((a) => [a.id, a.model!]))
+            return m.agents.map((a) => (known.has(a.id) && !a.model ? { ...a, model: known.get(a.id) } : a))
+          })
+          break
         case 'workflows': setWorkflows(m.items); break
         case 'task-meta':
           setStream((s) => ({
@@ -57,6 +71,11 @@ export function App() {
                 : msg,
             ),
           }))
+          // 模型名收敛到下拉：帧自带 agentId，panel 直接 merge（不依赖 SW 内存态，
+          // SW 长任务期间重启也不丢）
+          if (m.model && m.agentId) {
+            setAgents((as) => as.map((a) => (a.id === m.agentId ? { ...a, model: m.model } : a)))
+          }
           break
         case 'task-chunk': {
           setStream((s) => {
@@ -100,6 +119,10 @@ export function App() {
                 : msg,
             ),
           }))
+          // 兜底 merge（task-meta 未带 model 时）
+          if (m.model && m.agentId) {
+            setAgents((as) => as.map((a) => (a.id === m.agentId && a.model !== m.model ? { ...a, model: m.model } : a)))
+          }
           break
         case 'task-error':
           setStream((s) => {
@@ -167,15 +190,23 @@ export function App() {
 
   if (hostOk === false) return <Onboarding />
 
+  const usable = agents.filter((a) => a.available)
+  const effectiveAgent = agentId || usable[0]?.id || 'claude'
+
   return (
     <div className="pd-app">
       <header className="pd-header">
-        <div className="pd-header-brand">
-          <svg viewBox="0 0 16 16" className="pd-icon" fill="currentColor">
-            <path d="M8 1.5 9.6 6.4 14.5 8 9.6 9.6 8 14.5 6.4 9.6 1.5 8 6.4 6.4Z" />
-          </svg>
-          <h1 className="pd-title">Page<span className="pd-accent-text">Dive</span></h1>
-        </div>
+        <ModelDropdown
+          value={effectiveAgent}
+          onChange={setAgentId}
+          items={usable.map((a) => ({
+            key: a.id,
+            label: a.id,
+            hint: a.model ?? (a.version || undefined),
+          }))}
+          fallback="未检测到 CLI"
+          ariaLabel="选择 CLI 模型"
+        />
         <div className="pd-header-actions">
           <button
             onClick={() => setOverlay(overlay === 'history' ? null : 'history')}
@@ -200,6 +231,17 @@ export function App() {
             </svg>
           </button>
           <button
+            onClick={togglePinned}
+            className={`pd-icon-btn ${pinned ? 'active' : ''}`}
+            title={pinned ? '已钉住：点击图标直接打开面板' : '未钉住：点击图标打开面板需先点击'}
+            aria-label={pinned ? '取消钉住' : '钉住'}
+            aria-pressed={pinned}
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9.5 1.5 14.5 6.5 12.6 8.4 11.9 7.7 8.2 11.4 8.5 13.2 8 13.7 2.3 8 2.8 7.5 4.6 7.8 8.3 4.1 7.6 3.4 9.5 1.5Z" />
+            </svg>
+          </button>
+          <button
             onClick={() => window.close()}
             className="pd-icon-btn"
             title="关闭"
@@ -213,7 +255,7 @@ export function App() {
       </header>
 
       <main className="pd-main">
-        <SummarizeView agents={agents} workflows={workflows} stream={stream} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} />
+        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} />
       </main>
 
       {overlay === 'history' && (
