@@ -17,8 +17,17 @@ import { getWorkflow } from './workflows.js'
 
 const TASK_TIMEOUT_MS = 10 * 60_000
 
+/**
+ * CLI 会话 id → 首轮 spawn cwd 的映射（追问用）。
+ * claude 的会话记录按 cwd 分区存储（~/.claude/projects/<cwd 编码>/），
+ * resume 轮 cwd 不一致会报 No conversation found。
+ * ponytail: 内存表随 host 进程存活（NM 断连即失；重启后追问失效可接受）
+ */
+const sessionCwds = new Map<string, string>()
+
 export interface TaskCallbacks {
   onStatus: (phase: 'spawned' | 'reading' | 'thinking') => void
+  onMeta: (info: { model?: string; sessionId?: string }) => void
   onChunk: (text: string, seq: number) => void
   onDone: (info: {
     historyPath: string
@@ -26,6 +35,8 @@ export interface TaskCallbacks {
     errorText?: string
     usage?: { inputTokens?: number; outputTokens?: number }
     durationMs: number
+    model?: string
+    sessionId?: string
   }) => void
   onError: (code: 'spawn-fail' | 'timeout' | 'cancelled' | 'parse' | 'no-agent', message: string) => void
 }
@@ -41,6 +52,7 @@ export class Task {
   private startedAt = 0
   private accText = ''
   private usage?: { inputTokens?: number; outputTokens?: number }
+  private meta?: { model?: string; sessionId?: string }
   private chunkSeq = 0
   private finished = false
   /** isError 路径已发终局（防 exit 事件二次发） */
@@ -80,11 +92,15 @@ export class Task {
       return
     }
     const page = this.input.page
-    const contentFile = await writeContentFile(this.taskId, this.contentParts.join(''))
-    const lastMsgFile = `${contentFile}.last`
+    // 追问轮：上下文在 CLI 会话里，无正文/临时文件，prompt 只剩 instruction
+    const isResume = !!this.input.resumeSessionId
+    const contentFile = isResume ? '' : await writeContentFile(this.taskId, this.contentParts.join(''))
+    const lastMsgFile = isResume ? '' : `${contentFile}.last`
     // 统一在此调度清理：isError/spawn-fail/cancel/正常路径全覆盖
-    scheduleCleanup(contentFile, 300_000)
-    scheduleCleanup(lastMsgFile, 300_000)
+    if (!isResume) {
+      scheduleCleanup(contentFile, 300_000)
+      scheduleCleanup(lastMsgFile, 300_000)
+    }
 
     // workflow 正文即任务段：用户目录 shadow 内置，未命中走 DEFAULT_TASKS
     const wfName = this.input.workflow ?? 'quick'
@@ -96,13 +112,21 @@ export class Task {
       : createCodexParser()
 
     // opencode 需先知道 cwd 才能组 argv（--dir 钉死工作区）+ 软链正文 + 相对路径 prompt
-    const agentCwd = def.filePathInPrompt ? await makeAgentCwd() : undefined
+    // claude 追问轮复用首轮 cwd（会话按 cwd 分区存储）；首轮用固定工作区，
+    // 不用 mkdtemp 随机目录——否则 SW/host 重启后 cwd 不可复现，resume 必失败
+    let agentCwd = def.filePathInPrompt && !isResume ? await makeAgentCwd() : undefined
+    if (isResume) {
+      const remembered = sessionCwds.get(this.input.resumeSessionId!)
+      if (remembered) agentCwd = remembered
+    }
     let fileForPrompt = contentFile
     if (def.filePathInPrompt && agentCwd) {
       await linkIntoCwd(contentFile, agentCwd)
       fileForPrompt = def.filePathInPrompt({ contentFile, contentRelPath: basename(contentFile), agentCwd })
     }
-    const prompt = buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wf?.body)
+    const prompt = isResume
+      ? (this.input.instruction ?? '')
+      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wf?.body)
 
     this.startedAt = Date.now()
     this.cb.onStatus('spawned')
@@ -110,7 +134,7 @@ export class Task {
     try {
       this.proc = await spawnCli({
         bin: def.bin,
-        args: def.buildArgs({ contentFile, lastMsgFile, agentCwd }),
+        args: def.buildArgs({ contentFile, lastMsgFile, agentCwd, resumeSessionId: this.input.resumeSessionId }),
         cwd: agentCwd,
         stdinData: prompt,
         onStdoutLine: (line) => {
@@ -157,6 +181,17 @@ export class Task {
       case 'status':
         this.cb.onStatus(ev.phase)
         break
+      case 'meta':
+        this.meta = {
+          model: ev.model ?? this.meta?.model,
+          sessionId: ev.sessionId ?? this.meta?.sessionId,
+        }
+        // 记录会话 → cwd（追问轮 resume 需要同 cwd 才能找到会话）
+        if (this.meta.sessionId && this.proc?.cwd) {
+          sessionCwds.set(this.meta.sessionId, this.proc.cwd)
+        }
+        this.cb.onMeta(this.meta)
+        break
       case 'text-delta':
         this.accText += ev.text
         this.sendChunk(ev.text)
@@ -179,6 +214,8 @@ export class Task {
             errorText: ev.text,
             usage: this.usage,
             durationMs: Date.now() - this.startedAt,
+            model: this.meta?.model,
+            sessionId: this.meta?.sessionId,
           })
         } else if (ev.text && !this.accText) {
           // codex 无增量时 result 兜底出全文
@@ -199,8 +236,10 @@ export class Task {
 
   private async finish(code: number | null, signal: string | null, stderrTail: string, contentFile: string): Promise<void> {
     clearTimeout(this.timeoutTimer)
-    // CLI 工作目录（mkdtemp）回收
-    if (this.proc?.cwd) rm(this.proc.cwd, { recursive: true, force: true }).catch(() => {})
+    // CLI 工作目录（mkdtemp）回收——已被会话映射记录的 cwd 不删（后续 resume 要用同 cwd）
+    if (this.proc?.cwd && ![...sessionCwds.values()].includes(this.proc.cwd)) {
+      rm(this.proc.cwd, { recursive: true, force: true }).catch(() => {})
+    }
     const durationMs = Date.now() - this.startedAt
     this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
     if (this.cancelled || signal === 'SIGTERM' || signal === 'SIGKILL') {
@@ -220,12 +259,16 @@ export class Task {
         isError: false,
         usage: this.usage,
         durationMs,
+        model: this.meta?.model,
+        sessionId: this.meta?.sessionId,
       })
     }
   }
 
   private async persist(status: 'done' | 'interrupted' | 'error'): Promise<void> {
     if (!this.input) return
+    // 追问轮不单独落盘：它属于首轮会话的延续，不是独立总结
+    if (this.input.resumeSessionId) return
     await saveHistory(
       this.historyPath,
       {

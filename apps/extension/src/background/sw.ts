@@ -14,6 +14,11 @@ let currentTask: {
   content: string
 } | null = null
 
+// 上一轮完成的会话（追问用）：agent + CLI 会话 id
+let lastSession: { agentId: string; sessionId: string } | null = null
+// 当前任务用的 agent（task-meta 到达时此刻的 agent 即会话归属）
+let currentAgentId = 'claude'
+
 // 总结目标：action 点击的 tab（activeTab 授权随手势生效，其他 tab 无授权）
 let target: chrome.tabs.Tab | null = null
 
@@ -46,8 +51,14 @@ async function handleMessage(msg: any): Promise<unknown> {
       }
       return nmPort.probe()
     }
-    case 'summarize':
-      return startSummarize(msg.agentId as string, msg.workflow as string, msg.instruction as string | undefined)
+    case 'summarize': {
+      const instruction = msg.instruction as string | undefined
+      // 追问轮：复用上一轮 CLI 会话（claude --resume），不重新提取页面
+      if (msg.followUp === true && lastSession) {
+        return startFollowUp(lastSession.agentId, lastSession.sessionId, instruction ?? '')
+      }
+      return startSummarize(msg.agentId as string, msg.workflow as string, instruction)
+    }
     case 'cancel':
       if (currentTask) {
         nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })
@@ -63,6 +74,11 @@ async function handleMessage(msg: any): Promise<unknown> {
 
 // host → panel 直通
 nmPort.onMessage((m) => {
+  const msg = m as any
+  // 捕获会话 id 供追问（claude init 事件捕获，task-done 兜底）
+  if (msg?.t === 'task-meta' || msg?.t === 'task-done') {
+    if (msg.sessionId) lastSession = { agentId: currentAgentId, sessionId: msg.sessionId }
+  }
   chrome.runtime.sendMessage(m).catch(() => {})
 })
 nmPort.onDisconnect(() => {
@@ -70,6 +86,24 @@ nmPort.onDisconnect(() => {
     .sendMessage({ t: '__host-disconnected' } as HostToExt)
     .catch(() => {})
 })
+
+/** 追问轮：上下文在 CLI 会话里，host 直接 resume，无提取/无正文 */
+function startFollowUp(agentId: string, sessionId: string, instruction: string) {
+  if (!instruction.trim()) return { error: 'empty-instruction' }
+  const taskId = `t${Date.now().toString(36)}`
+  currentTask = null // 追问轮不占任务位（panel 侧 streaming 状态由 chunk 驱动）
+  const ok = nmPort.send({
+    t: 'task-start',
+    task: {
+      taskId, agentId, resumeSessionId: sessionId, instruction,
+      page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 },
+    },
+  })
+  if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
+  // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）
+  nmPort.send({ t: 'task-content', taskId, seq: 0, text: '', done: true })
+  return { ok: true, taskId }
+}
 
 async function startSummarize(agentId: string, workflow: string, instruction?: string) {
   // target：action 点击的 tab（activeTab 授权随手势生效）。SW 重启丢态或 panel
@@ -101,6 +135,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
 
   const { contentMarkdown, ...meta } = page
   const taskId = `t${Date.now().toString(36)}`
+  currentAgentId = agentId
   currentTask = { taskId, page: meta, content: contentMarkdown }
 
   const ok = nmPort.send({

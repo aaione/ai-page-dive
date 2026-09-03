@@ -23,12 +23,12 @@ export interface AgentDef {
    */
   filePathInPrompt?: (opts: BuildArgsOpts) => string
 
-  /** 会话恢复位（v2 追问对话用，v1 仅留接口） */
+  /** 会话恢复位：claude 用 --resume <id>（specify 模式） */
   resume?: { mode: 'specify' } | { mode: 'capture'; eventId: string }
 }
 
 export interface BuildArgsOpts {
-  /** 正文临时文件绝对路径（写进 prompt，agent 用 Read 分段读） */
+  /** 正文临时文件绝对路径（写进 prompt，agent 用 Read 分段读）；追问轮为空串 */
   contentFile: string
   /** 正文文件相对于 CLI cwd 的路径（opencode 等只准读 cwd 的 CLI 用） */
   contentRelPath?: string
@@ -36,11 +36,14 @@ export interface BuildArgsOpts {
   agentCwd?: string
   /** codex -o 最终消息落盘路径 */
   lastMsgFile?: string
+  /** 追问轮：续接上一轮 CLI 会话（claude --resume） */
+  resumeSessionId?: string
 }
 
-/** host 归一化后的流事件（两家解析器的统一输出） */
+/** host 归一化后的流事件（解析器的统一输出） */
 export type AgentEvent =
   | { type: 'status'; phase: 'spawned' | 'reading' | 'thinking' }
+  | { type: 'meta'; model?: string; sessionId?: string }
   | { type: 'text-delta'; text: string }
   | { type: 'usage'; inputTokens?: number; outputTokens?: number }
   | { type: 'result'; isError: boolean; text: string }
@@ -50,7 +53,9 @@ export interface TaskInput {
   taskId: string
   agentId: string
   workflow?: string
-  /** 用户自由输入（默认模式任务段，优先于 workflow 正文） */
+  /** 用户自由输入（默认模式任务段，优先于 workflow 正文；追问轮即追问内容） */
   instruction?: string
+  /** 追问轮：续接 CLI 会话（此时无正文/工作流，prompt 只剩 instruction） */
+  resumeSessionId?: string
   page: Omit<PageContent, 'contentMarkdown'>
 }

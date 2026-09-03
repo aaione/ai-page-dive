@@ -3,11 +3,19 @@ import { claudeDef } from '../src/agents/claude.js'
 import { codexDef } from '../src/agents/codex.js'
 
 describe('buildArgs 快照', () => {
-  it('claude：-p stream-json verbose，prompt 走 stdin 不在 argv', () => {
+  it('claude：-p stream-json verbose + partial 增量 + resume 位', () => {
     expect(claudeDef.buildArgs({ contentFile: '/tmp/x.md' })).toEqual([
       '-p',
       '--output-format', 'stream-json',
       '--verbose',
+      '--include-partial-messages',
+    ])
+    expect(claudeDef.buildArgs({ contentFile: '/tmp/x.md', resumeSessionId: 'abc' })).toEqual([
+      '-p',
+      '--output-format', 'stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--resume', 'abc',
     ])
   })
 

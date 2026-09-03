@@ -33,6 +33,7 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         const { task } = msg
         const t = new Task(task.taskId, {
           onStatus: (phase) => send({ t: 'task-status', taskId: task.taskId, phase }),
+          onMeta: (info) => send({ t: 'task-meta', taskId: task.taskId, ...info }),
           onChunk: (text, seq) => send({ t: 'task-chunk', taskId: task.taskId, seq, text }),
           onDone: (info) => {
             tasks.delete(task.taskId)
@@ -44,6 +45,8 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
               durationMs: info.durationMs,
               isError: info.isError,
               ...(info.errorText ? { errorText: info.errorText } : {}),
+              ...(info.model ? { model: info.model } : {}),
+              ...(info.sessionId ? { sessionId: info.sessionId } : {}),
             })
           },
           onError: (code, message) => {

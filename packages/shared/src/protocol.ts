@@ -106,6 +106,14 @@ export interface TaskStatusMsg {
   /** 低频状态更新（不含正文增量） */
 }
 
+/** CLI 会话元信息（init 事件捕获）：模型名 + 会话 id（追问用） */
+export interface TaskMetaMsg {
+  t: 'task-meta'
+  taskId: string
+  model?: string
+  sessionId?: string
+}
+
 export interface TaskChunkMsg {
   t: 'task-chunk'
   taskId: string
@@ -123,6 +131,10 @@ export interface TaskDoneMsg {
   /** claude 运行内失败（is_error）也走这里，isError=true */
   isError: boolean
   errorText?: string
+  /** CLI 会话 id（claude），供追问 --resume */
+  sessionId?: string
+  /** 实际使用的模型名（claude init 事件） */
+  model?: string
 }
 
 export interface TaskErrorMsg {
@@ -167,6 +179,7 @@ export type HostToExt =
   | AgentsMsg
   | WorkflowsMsg
   | TaskStatusMsg
+  | TaskMetaMsg
   | TaskChunkMsg
   | TaskDoneMsg
   | TaskErrorMsg

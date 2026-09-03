@@ -25,6 +25,7 @@ console.log(JSON.stringify({type:'result',is_error:true,result:'认证失败'}))
 function makeCbs() {
   const cbs = {
     status: [] as string[],
+    meta: null as any,
     chunks: [] as [string, number][],
     done: null as any,
     errors: [] as [string, string][],
@@ -34,6 +35,7 @@ function makeCbs() {
     task: (id = 't1') =>
       new Task(id, {
         onStatus: (p) => cbs.status.push(p),
+        onMeta: (info) => (cbs.meta = info),
         onChunk: (text, seq) => cbs.chunks.push([text, seq]),
         onDone: (info) => (cbs.done = info),
         onError: (code, message) => cbs.errors.push([code, message]),

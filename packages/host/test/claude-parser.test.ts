@@ -3,10 +3,15 @@ import { createClaudeParser } from '../src/agents/claude.js'
 
 // fixture 采自 claude 2.1.162 真实输出（2026-09-01）
 describe('claude stream-json parser', () => {
-  it('system init → status', () => {
+  it('system init → meta（model/sessionId）+ status', () => {
     const p = createClaudeParser()
-    const evs = p(JSON.stringify({ type: 'system', subtype: 'init', model: 'x' }))
-    expect(evs).toEqual([{ type: 'status', phase: 'thinking' }])
+    const evs = p(
+      JSON.stringify({ type: 'system', subtype: 'init', model: 'GLM-5.2', session_id: 's1' }),
+    )
+    expect(evs).toEqual([
+      { type: 'meta', model: 'GLM-5.2', sessionId: 's1' },
+      { type: 'status', phase: 'thinking' },
+    ])
   })
 
   it('thinking 块不产出，text 块产出 delta', () => {
@@ -18,7 +23,7 @@ describe('claude stream-json parser', () => {
     expect(p(line)).toEqual([{ type: 'text-delta', text: '你好' }])
   })
 
-  it('多轮 assistant 文本累积 diff', () => {
+  it('多轮 assistant 文本累积 diff（partial 不可用时的兜底路径）', () => {
     const p = createClaudeParser()
     const mk = (t: string) =>
       JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: t }] } })
