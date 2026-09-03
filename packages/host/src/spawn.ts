@@ -5,8 +5,8 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { cliEnv } from './agents/registry.js'
 
 export interface SpawnOpts {

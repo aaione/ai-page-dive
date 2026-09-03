@@ -51,7 +51,10 @@ export function SummarizeView({ agents, workflows, stream, onStartResult, probed
           items={usable.map((a) => ({
             key: a.id,
             label: a.id,
-            hint: a.version,
+            hint:
+              a.id === 'opencode'
+                ? `${a.version ?? ''} · 首次使用或会弹一次系统安全确认`
+                : a.version,
           }))}
           fallback="未检测到 CLI"
           loading={!probed}

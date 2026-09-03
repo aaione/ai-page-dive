@@ -36,6 +36,14 @@
 - workflow 机制：`~/.pagedive/workflows/<name>/WORKFLOW.md`（frontmatter + 正文即 prompt），目录即插件、懒扫描，用户目录 shadow 内置同名
 - 合规红线：只子进程调起未修改官方 CLI 二进制、用户自己登录、零凭证接触、零流量代理、永不对 CLI 用量收费
 
+### 已知限制（opencode 的 Gatekeeper 弹框，v1 接受）
+
+- **症状**：从 Chrome 派生的 host 调起 opencode 时，它内嵌 Bun 1.3.14 每启动把 adhoc 签名的运行时 dylib（随机名 hash）提取到临时目录再 dlopen。macOS 的 quarantine 是「进程树级传播」——Chrome 调用 `qtn_proc_apply_to_self` 让其子树新建的所有文件带 `com.apple.quarantine`（与签名、Chrome 盘上 xattr 均无关）。文件名每次随机 → Gatekeeper 每次重新弹「无法验证是否含恶意软件」。
+- **已证伪的 host 侧方案**（勿回退）：
+  - xattr 竞态轮询剥 `com.apple.quarantine`（spawn 后 120ms×4s）——Gatekeeper 在 dlopen 瞬间即评估，外部轮询追不上，实测无效。
+  - `qtn_proc_set_flags(qp,0)+qtn_proc_apply_to_self` 清自身——`apply_to_self` 语义是 opt-in（让己方文件带 quarantine），即便 flags=0 也会让随后创建的文件**全部**带 quarantine（实测 `0081;...;;`）。只 ADD 不 CLEAR，无公开清除 API。
+- **现状**：claude/codex 为官方签名二进制、无运行时 dylib 提取 → 不受影响，v1 主路径零弹框。opencode 弹框是上游通病（`anthropics/claude-code#14914` Claude 自家扩展同样命中、官方未修），在我们控制之外；UI 已对 opencode 下拉显示「首次使用或会弹一次系统安全确认」。彻底解决需上游改 bundle 方式（固定提取路径 pre-sign / 不再运行时提取）或 macOS 提供进程级清除 API。
+
 ## v1 范围（MVP）
 
 1. Side Panel 一键总结当前页（提取 → 本地临时文件 → CLI agent → 流式渲染）
