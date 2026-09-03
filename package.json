@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:smoke": "node packages/host/scripts/smoke.mjs",
+    "test:smoke:opencode": "node packages/host/scripts/smoke.mjs opencode"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
