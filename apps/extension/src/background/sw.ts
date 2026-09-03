@@ -61,7 +61,9 @@ async function handleMessage(msg: any): Promise<unknown> {
       if (active?.id && active.url && !/^(chrome|edge|about|chrome-extension):/.test(active.url)) {
         target = active
       }
-      return nmPort.probe()
+      // probe 失败时带上 NM 断连错误（forbidden=ID 未登记 vs not found=host 未装）
+      const r = await nmPort.probe()
+      return r.ok ? r : { ok: false, nmError: nmPort.lastError }
     }
     case 'summarize': {
       const instruction = msg.instruction as string | undefined

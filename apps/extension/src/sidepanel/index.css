@@ -1030,6 +1030,11 @@ body {
   line-height: 1.8;
   color: var(--color-pd-ink-2);
 }
+.pd-onboarding-copied {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--color-pd-secondary);
+}
 .pd-onboarding-note strong {
   font-weight: 600;
   color: #fff;

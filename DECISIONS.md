@@ -36,6 +36,16 @@
 - workflow 机制：`~/.pagedive/workflows/<name>/WORKFLOW.md`（frontmatter + 正文即 prompt），目录即插件、懒扫描，用户目录 shadow 内置同名
 - 合规红线：只子进程调起未修改官方 CLI 二进制、用户自己登录、零凭证接触、零流量代理、永不对 CLI 用量收费
 
+### 扩展↔本机连接架构定案（2026-09-04 多维调研，留在 NM）
+
+- **结论：留在 Native Messaging，否决 WebSocket daemon 与云中继两条替代路线。**
+- 否决 WebSocket daemon（`ws://127.0.0.1` + 常驻进程）：① 需新增 host_permissions，违反权限四件套硬约束 ② Chrome LNA（Local Network Access）已在 142 默认生效、147 起扩展到 WebSocket（chromestatus.com/feature/515272807206928），loopback 豁免是当前宽限而非 spec 承诺（WICG 终态含 public→loopback）③ Chrome 强制的 `allowed_origins` 要换成自建 Origin/token 校验（DNS rebinding 防护）④ daemon 常驻管理 + SW 30s 保活心跳。省的只是「注册 + 重启浏览器」两步，净换险。
+- 否决云中继（Claude --chrome 的 `bridge.claudeusercontent.com` 模式）：Anthropic 为远程会话/跨设备用账号 UUID 配对，页面数据流经其服务器——直接违反「内容不出本机」。
+- 行业铁律（1Password/Bitwarden/JetBrains/Claude 全核实）：无产品做到「扩展装完即用」连本机程序；桌面 App 产品靠安装器藏这步，纯 CLI 产品只能显式一次终端命令。Anthropic 静默预装 NM manifest 到 7 个浏览器曾引发 2026-04 隐私丑闻——坚持 pull（用户主动 `pagedive install`），不做 push。
+- **ID 漂移根因修复**：`public/manifest.json` 加 `key` 字段（RSA 公钥，官方机制，developer.chrome.com/docs/extensions/reference/manifest/key），unpacked 扩展 ID 恒定为 `nclbhhhmgcabjlgmlbkoblipogajajgn`，与加载路径无关；CWS 上架零影响（商店用自己的签名，key 只管开发期）。私钥在 `~/.pagedive/dev-extension-key.pem`（0600）。
+- **Onboarding 自愈**：引导命令动态带 `--ext-id ${chrome.runtime.id}`（install 幂等 + origins 追加不覆盖，一条命令通吃「host 未装 / ID 未登记」）；`panel-ready` 探测失败回传 `nmError`，panel 区分 `forbidden`（只差补登记，轻文案）vs `not found`（完整安装引导）。
+- 附带定案：`pagedive install` 后续补 `doctor` 子命令（host 侧自检 manifest 位置/JSON/path/origin 匹配）——NM 调试信息只在 Chrome 内部错误日志，扩展侧拿不到（v2）。
+
 ### 已知限制（opencode 的 Gatekeeper 弹框，v1 接受）
 
 - **症状**：从 Chrome 派生的 host 调起 opencode 时，它内嵌 Bun 1.3.14 每启动把 adhoc 签名的运行时 dylib（随机名 hash）提取到临时目录再 dlopen。macOS 的 quarantine 是「进程树级传播」——Chrome 调用 `qtn_proc_apply_to_self` 让其子树新建的所有文件带 `com.apple.quarantine`（与签名、Chrome 盘上 xattr 均无关）。文件名每次随机 → Gatekeeper 每次重新弹「无法验证是否含恶意软件」。
