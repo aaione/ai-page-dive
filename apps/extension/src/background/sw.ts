@@ -44,12 +44,15 @@ chrome.sidePanel.setOptions({ enabled: false }).catch(() => {})
 // 不随用户切换 tab 而跟随变化。
 let panelTabId: number | null = null
 
-chrome.action.onClicked.addListener(async (tab) => {
+chrome.action.onClicked.addListener((tab) => {
   target = tab
   panelTabId = tab.id ?? null
-  // 先对该 tab 启用 side panel（覆盖全局 enabled:false），再打开
-  await chrome.sidePanel.setOptions({ tabId: tab.id!, enabled: true }).catch(() => {})
-  await chrome.sidePanel.open({ tabId: tab.id! }).catch(() => {})
+  // 同步连发、绝不 await：sidePanel.open 要求 user gesture，跨一次 setOptions 的
+  // IPC round-trip 手势链即断（reload 扩展后 SW 冷启动、round-trip 变慢时必现），
+  // 错误被 catch 吞掉就表现为「点图标没反应」。同 turn 两条消息按序进 Chrome
+  // 队列，open 处理时该 tab 的 enabled:true 已生效
+  void chrome.sidePanel.setOptions({ tabId: tab.id!, enabled: true })
+  void chrome.sidePanel.open({ tabId: tab.id! })
 })
 
 // 面板只在 panelTabId 上可见，onActivated 无需跟随切 tab 改 target；
