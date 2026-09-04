@@ -162,24 +162,14 @@ body {
   font-family: var(--font-sans-ui);
 }
 
-/* ── Header: Surface glass ── */
-.pd-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 44px;
-  padding: 0 10px 0 12px;
-  flex-shrink: 0;
+/* ── 浮动工具条（右上角，豆包/Gemini 式无自有 header）── */
+.pd-float-tools {
+  position: absolute;
+  top: 8px;
+  right: 8px;
   z-index: 10;
-  background: rgba(255,255,255,.05);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
-  backdrop-filter: blur(16px) saturate(150%);
-  border-bottom: 1px solid rgba(255,255,255,.10);
-}
-.pd-header-actions {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 /* ── Icon Button ── */
@@ -227,7 +217,6 @@ body {
   position: absolute;
   inset: 0;
   z-index: 20;
-  padding-top: 44px;
   /* Elevation: Overlay */
   background: rgba(11,17,32,.55);
   -webkit-backdrop-filter: blur(40px) saturate(150%);
@@ -488,10 +477,10 @@ body {
   margin-top: 6px;
   border-radius: 10px;
   list-style: none;
-  /* Overlay glass + 深底兜底：截图中“纯透明弹层压在内容上”的乱源 */
-  background: linear-gradient(180deg, rgba(30,41,59,.92) 0%, rgba(15,23,42,.96) 100%);
-  -webkit-backdrop-filter: blur(40px) saturate(150%);
-  backdrop-filter: blur(40px) saturate(150%);
+  /* 真磨砂：低透明底 + blur/saturate 出质感（磨得过内容，读得清文字） */
+  background: linear-gradient(180deg, rgba(30,41,59,.55) 0%, rgba(15,23,42,.65) 100%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
   border: 1px solid rgba(255,255,255,.12);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 8px 32px rgba(0,0,0,.35);
 }
@@ -554,9 +543,11 @@ body {
   opacity: 1;
 }
 
-/* ── Model dropdown (header) ── */
-.pd-header .pd-dropdown-menu {
-  left: 0;
+/* ── CLI 选择行（tips 条与输入框之间，右对齐内联）── */
+.pd-cli-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 4px 6px;
 }
 
 /* ── Workflow dropdown (action bar) ── */

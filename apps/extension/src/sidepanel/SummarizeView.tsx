@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { WorkflowItem } from '@pagedive/shared'
+import type { AgentStatus, WorkflowItem } from '@pagedive/shared'
 import type { ChatMessage, PageMeta, TaskStreamState } from './App.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
@@ -92,6 +92,16 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
 
       <div className="pd-action-bar">
         {pageMeta && <PageTips meta={pageMeta} />}
+        {/* CLI 选择器：内联输入框上方（Gemini「Flash ⌄」式），追问轮沿用会话 agent */}
+        <div className="pd-cli-row">
+          <ModelDropdown
+            value={hasSession ? (followAgent ?? effectiveAgent) : effectiveAgent}
+            onChange={onAgentChange}
+            items={usable.map((a) => ({ key: a.id, label: a.id, version: a.version, model: a.model }))}
+            fallback="无可用 CLI"
+            ariaLabel="选择 AI CLI"
+          />
+        </div>
         <ActionBar
           workflow={workflow}
           onWorkflowChange={setWorkflow}
@@ -197,9 +207,10 @@ function MessageActions({ text, onNewChat }: { text: string; onNewChat: () => vo
         </svg>
       </button>
       <button onClick={onNewChat} className="pd-chat-action-btn" title="新对话" aria-label="新对话">
+        {/* chat 气泡 + 加号（原喇叭造型被误认成语音） */}
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M8 2.5 5 5H3v6h2l3 2.5v-11Z" />
-          <path d="M11 6a3.5 3.5 0 0 1 0 4" />
+          <path d="M13.5 7.5a5.5 5.5 0 0 1-8.2 4.8L2.5 13.5l1.2-2.8A5.5 5.5 0 1 1 13.5 7.5Z" />
+          <path d="M8 5.4v4.2M5.9 7.5h4.2" />
         </svg>
       </button>
     </div>

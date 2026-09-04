@@ -40,6 +40,23 @@ chrome.action.onClicked.addListener(async (tab) => {
   await chrome.sidePanel.open({ tabId: tab.id! }).catch(() => {})
 })
 
+// side panel 跨 tab 常驻：切 tab 时跟随更新总结目标 + 推送 page-meta（tips 条同步）。
+// 无 tabs 权限时新 tab 的 url 不可见（activeTab 仅手势页可读）→ target 置 null，
+// 总结按钮走 fallback 注入 → 被 Chrome 拒绝 → 提示点图标重新授权，不越权。
+const isNormalPage = (u?: string) => !!u && !/^(chrome|edge|about|chrome-extension):/.test(u)
+function followTab(tab: chrome.tabs.Tab | null) {
+  target = isNormalPage(tab?.url) ? tab : null
+  chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta() }).catch(() => {})
+}
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  followTab(await chrome.tabs.get(tabId).catch(() => null))
+})
+// 目标 tab 内导航：activeTab 授权随导航失效（url 变不可见），保持 target 由
+// 注入兜底；url 仍可见（同源导航）则刷新 meta
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (target?.id === tabId && info.status === 'complete') followTab(tab)
+})
+
 // 注意：MV3 中 async listener 的返回值会被较新 Chrome 直接当响应回传（Promise 化），
 // 绕过 sendResponse——必须用同步壳 return true 保持 channel。
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -159,6 +176,25 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string) 
   return { ok: true, taskId }
 }
 
+/** 逐 frame 提取，取正文最长者为该页内容（iframe SPA：top frame 往往只有壳） */
+async function extractBest(tabId: number): Promise<PageContent | { error: string }> {
+  const results = (await chrome.scripting
+    .executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        const l = (globalThis as any).__pagediveExtract
+        return l ? l() : { error: 'no-extractor' }
+      },
+    })
+    .catch(() => undefined)) as { result: PageContent | { error: string } }[] | undefined
+  const pages = (results ?? []).map((r) => r.result).filter((p): p is PageContent => !!p && !('error' in p))
+  if (!pages.length) {
+    const errs = (results ?? []).map((r) => (r.result && 'error' in r.result ? r.result.error : '')).filter(Boolean)
+    return { error: errs.includes('empty-content') ? 'empty-content' : 'no-permission' }
+  }
+  return pages.reduce((a, b) => (b.contentMarkdown.length > a.contentMarkdown.length ? b : a))
+}
+
 /** 当前总结目标页元数据（tips 条展示用）；target 无 url 时（无 tabs 权限）fallback tab query */
 function pageMeta(): { title: string; url: string; favIconUrl?: string } | null {
   if (target?.url && !/^(chrome|edge|about|chrome-extension):/.test(target.url)) {
@@ -181,11 +217,13 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     return { error: 'unsupported-page', url: tab.url }
   }
 
-  // content script 需 modules → 动态 files 注入（activeTab 授权下用户手势有效）
+  // content script 需 modules → 动态 files 注入（activeTab 授权下用户手势有效）。
+  // allFrames：豆包文档等 SPA 正文渲染在 iframe，只注 top frame 会拿到空壳误报
+  // 「无内容」——跨域 frame 的注入同样被 activeTab 覆盖（手势授予整个 tab）
   let injectErr: string | null = null
   await chrome.scripting
     .executeScript({
-      target: { tabId: tab.id! },
+      target: { tabId: tab.id!, allFrames: true },
       files: ['content.js'],
     })
     .catch((e) => {
@@ -195,12 +233,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     // 授权失效（无手势/已切页）：原样带回错误文本，panel 给重授权指引
     return { error: 'no-permission', detail: injectErr }
   }
-  const page = (await chrome.tabs
-    .sendMessage(tab.id!, { t: 'extract' })
-    .catch(() => undefined)) as PageContent | { error: string } | undefined
-  if (!page || 'error' in page) {
-    return { error: page?.error === 'empty-content' ? 'empty-content' : 'no-permission' }
-  }
+  const page = await extractBest(tab.id!)
 
   const { contentMarkdown, ...meta } = page
   const taskId = `t${Date.now().toString(36)}`

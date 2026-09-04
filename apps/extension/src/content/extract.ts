@@ -9,9 +9,11 @@ import type { PageContent } from '@pagedive/shared'
 import { applySiteAdapter } from './adapters.js'
 
 // SW 经 chrome.tabs.sendMessage 调用（content script 由 SW 动态 files 注入）
-// guard：多次注入只挂一个监听器
+// guard：多次注入只挂一个监听器；同时挂到 globalThis 供 SW 的 executeScript(func)
+// 直接调用（iframe 聚合提取路径，绕开 tabs.sendMessage 只达 top frame 的限制）
 if (!(globalThis as any).__pagediveInjected) {
   ;(globalThis as any).__pagediveInjected = true
+  ;(globalThis as any).__pagediveExtract = extractPage
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.t === 'extract') {
       sendResponse(extractPage())

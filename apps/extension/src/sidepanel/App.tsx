@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AgentStatus, HistoryItem, HostToExt, WorkflowItem } from '@pagedive/shared'
 import { Onboarding } from './Onboarding.js'
-import { SummarizeView, ModelDropdown } from './SummarizeView.js'
+import { SummarizeView } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
 import { Settings } from './Settings.js'
 
@@ -215,49 +215,36 @@ export function App() {
 
   if (hostOk === false) return <Onboarding />
 
-  const usable = agents.filter((a) => a.available)
-  const effectiveAgent = agentId || usable[0]?.id || 'claude'
+  const effectiveAgent = agentId || agents.find((a) => a.available)?.id || 'claude'
 
   return (
     <div className="pd-app">
-      <header className="pd-header">
-        <ModelDropdown
-          value={effectiveAgent}
-          onChange={setAgentId}
-          items={usable.map((a) => ({
-            key: a.id,
-            label: a.id,
-            version: a.version || undefined,
-            model: a.model,
-          }))}
-          fallback="未检测到 CLI"
-          ariaLabel="选择 CLI 模型"
-        />
-        <div className="pd-header-actions">
-          <button
-            onClick={() => setOverlay(overlay === 'history' ? null : 'history')}
-            className={`pd-icon-btn ${overlay === 'history' ? 'active' : ''}`}
-            title="总结历史"
-            aria-label="总结历史"
-          >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="8" cy="8" r="6" />
-              <path d="M8 4.8V8l2.2 1.6" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setOverlay(overlay === 'settings' ? null : 'settings')}
-            className={`pd-icon-btn ${overlay === 'settings' ? 'active' : ''}`}
-            title="设置"
-            aria-label="设置"
-          >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="8" cy="8" r="2.4" />
-              <path d="M8 1.8v1.9M8 12.3v1.9M1.8 8h1.9M12.3 8h1.9M3.5 3.5l1.3 1.3M11.2 11.2l1.3 1.3M12.5 3.5l-1.3 1.3M4.8 11.2l-1.3 1.3" />
-            </svg>
-          </button>
-        </div>
-      </header>
+      {/* 浮动工具条（右上角，避开系统 header）：历史 / 设置 */}
+      <div className="pd-float-tools">
+        <button
+          onClick={() => setOverlay(overlay === 'history' ? null : 'history')}
+          className={`pd-icon-btn ${overlay === 'history' ? 'active' : ''}`}
+          title="总结历史"
+          aria-label="总结历史"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="8" cy="8" r="6" />
+            <path d="M8 4.8V8l2.2 1.6" />
+          </svg>
+        </button>
+        <button
+          onClick={() => setOverlay(overlay === 'settings' ? null : 'settings')}
+          className={`pd-icon-btn ${overlay === 'settings' ? 'active' : ''}`}
+          title="设置"
+          aria-label="设置"
+        >
+          {/* 标准齿轮：外圈齿 + 中孔 */}
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6.8 1.8h2.4l.4 1.8c.5.2 1 .4 1.4.7l1.7-.7 1.2 2.1-1.3 1.3a5.6 5.6 0 0 1 0 1.6l1.3 1.3-1.2 2.1-1.7-.7c-.4.3-.9.5-1.4.7l-.4 1.8H6.8l-.4-1.8a5.6 5.6 0 0 1-1.4-.7l-1.7.7-1.2-2.1 1.3-1.3a5.6 5.6 0 0 1 0-1.6L2.1 5.7l1.2-2.1 1.7.7c.4-.3.9-.5 1.4-.7l.4-1.8Z" />
+            <circle cx="8" cy="8" r="2.2" />
+          </svg>
+        </button>
+      </div>
 
       <main className="pd-main">
         <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} />
