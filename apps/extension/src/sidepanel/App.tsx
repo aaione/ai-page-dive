@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AgentStatus, HostToExt, WorkflowItem } from '@pagedive/shared'
+import type { AgentStatus, HistoryItem, HostToExt, WorkflowItem } from '@pagedive/shared'
 import { Onboarding } from './Onboarding.js'
 import { SummarizeView, ModelDropdown } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
@@ -171,6 +171,7 @@ export function App() {
         : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
         : resp.error === 'no-permission' ? '无提取权限：浏览器要求换页后重新授权——点击工具栏上的 PageDive 图标后重试'
         : resp.error === 'empty-content' ? '页面没有可提取的正文'
+        : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——本次将开始全新总结'
         : String(resp.error)
       setStream((s) => ({
         ...s,
@@ -193,12 +194,16 @@ export function App() {
   const beginSession = useCallback(() => setStream(BLANK), [])
 
   /** 历史详情「继续对话」：装载历史正文为一条 assistant 消息 + 通知 SW 恢复会话 */
-  const resumeHistory = useCallback((item: { agent: string; sessionId?: string; title?: string; url?: string }, body: string) => {
+  const resumeHistory = useCallback((item: HistoryItem, body: string) => {
     setOverlay(null)
     setAgentId(item.agent)
+    const text = body.trim()
     setStream({
       taskId: null,
-      messages: [{ id: `h${item.ts}`, role: 'assistant', text: body }],
+      messages: text
+        ? [{ id: `h${item.ts}`, role: 'assistant' as const, text }]
+        // 空正文（error 历史）：给出占位说明，避免空白气泡 + 误判 hasSession
+        : [{ id: `h${item.ts}`, role: 'assistant' as const, text: '（该记录无正文——发送消息将开始全新总结）', error: '该历史记录状态为失败，无对话上下文可续', isError: true }],
       activeId: null,
       phase: '',
       done: true,

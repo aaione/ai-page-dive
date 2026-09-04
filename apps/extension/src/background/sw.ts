@@ -69,9 +69,12 @@ async function handleMessage(msg: any): Promise<unknown> {
     }
     case 'summarize': {
       const instruction = msg.instruction as string | undefined
-      // 追问轮：复用上一轮 CLI 会话（claude --resume），不重新提取页面
-      if (msg.followUp === true && lastSession) {
-        return startFollowUp(lastSession.agentId, lastSession.sessionId, instruction ?? '')
+      // 追问轮：复用上一轮 CLI 会话（claude --resume），不重新提取页面。
+      // SW 休眠丢 lastSession 时明确报错——静默降级为新总结会让用户误以为在追问
+      if (msg.followUp === true) {
+        if (!lastSession) return { error: 'session-lost' }
+        const r = startFollowUp(lastSession.agentId, lastSession.sessionId, instruction ?? '')
+        return { ...r, agentId: lastSession.agentId }
       }
       return startSummarize(msg.agentId as string, msg.workflow as string, instruction)
     }
@@ -202,6 +205,8 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   const { contentMarkdown, ...meta } = page
   const taskId = `t${Date.now().toString(36)}`
   currentAgentId = agentId
+  // 新一轮总结开始：旧会话失效（防切换 CLI 后追问串回旧 agent 的会话）
+  lastSession = null
   currentTask = { taskId, page: meta, content: contentMarkdown }
 
   // 提取成功 → 下发目标页元数据（panel tips 条「正在分享 …」）
@@ -211,7 +216,10 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     t: 'task-start',
     task: { taskId, agentId, workflow, instruction, page: meta },
   })
-  if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
+  if (!ok) {
+    currentTask = null
+    return { error: 'host-not-found', lastError: nmPort.lastError }
+  }
 
   // 正文分片 ≤512KB
   const CH = 512 * 1024

@@ -42,10 +42,13 @@ export const StreamMarkdown = memo(function StreamMarkdown({
     if (timerRef.current) clearTimeout(timerRef.current)
   }, [])
 
-  // 流式期间吸底
+  // 流式期间吸底：向上找最近的可滚动祖先（.pd-content 才是滚动容器，
+  // 直接 parentElement 是 .pd-chat-assistant——写 scrollTop 是 no-op）
   useEffect(() => {
-    const el = scrollerRef.current?.parentElement
-    if (el && !done) el.scrollTop = el.scrollHeight
+    if (done) return
+    let el: HTMLElement | null = scrollerRef.current
+    while (el && el.scrollHeight <= el.clientHeight) el = el.parentElement
+    if (el) el.scrollTop = el.scrollHeight
   })
 
   if (!done && rendered.length > 64 * 1024) {

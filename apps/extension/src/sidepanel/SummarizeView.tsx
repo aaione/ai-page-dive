@@ -19,6 +19,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const usable = agents.filter((a) => a.available)
   const [workflow, setWorkflow] = useState('default')
   const [input, setInput] = useState('')
+  /** 追问轮实际执行会话的 CLI（SW 回带；头部展示与真实执行一致） */
+  const [followAgent, setFollowAgent] = useState<string | null>(null)
   const effectiveAgent = agentId || usable[0]?.id || 'claude'
   const messages = stream.messages
   const running = stream.activeId !== null
@@ -38,9 +40,15 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     beginTurn(text)
     setInput('')
     if (hasSession) {
+      // 追问轮：agentId 由 SW 按会话归属决定，响应回带实际值——头部展示同步
       chrome.runtime.sendMessage(
         { t: 'summarize', agentId: effectiveAgent, instruction: text, followUp: true },
-        (resp) => { if (!chrome.runtime.lastError && resp) onStartResult(resp) },
+        (resp) => {
+          if (!chrome.runtime.lastError && resp) {
+            if (resp.agentId) setFollowAgent(resp.agentId)
+            onStartResult(resp)
+          }
+        },
       )
     } else {
       const wf = workflow === 'default' ? 'quick' : workflow
@@ -76,7 +84,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
               phase={stream.phase}
               running={running && !!m.streaming}
               onNewChat={newChat}
-              agentId={effectiveAgent}
+              agentId={followAgent && m.streaming !== true ? followAgent : effectiveAgent}
             />
           ),
         )}
@@ -215,8 +223,15 @@ export function ModelDropdown({
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [open])
 
   const selected = items.find((it) => it.key === value)
@@ -285,18 +300,27 @@ function ActionBar({
     const onDoc = (e: MouseEvent) => {
       if (workflowRef.current && !workflowRef.current.contains(e.target as Node)) setWorkflowOpen(false)
     }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setWorkflowOpen(false)
+    }
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [workflowOpen])
 
   return (
     <div ref={workflowRef} className="pd-action-bar-inner">
-      <div className="pd-workflow-dropdown">
+      <div className={`pd-workflow-dropdown ${hasSession ? 'inactive' : ''}`}>
         <button
           onClick={() => setWorkflowOpen((o) => !o)}
+          disabled={hasSession}
           aria-label="选择总结模式"
           aria-haspopup="listbox"
           aria-expanded={workflowOpen}
+          title={hasSession ? '追问沿用首轮模式' : undefined}
           className="pd-workflow-trigger"
         >
           <span className="pd-workflow-label">{WF_LABEL[workflow] ?? workflow}</span>
@@ -326,7 +350,8 @@ function ActionBar({
         value={input}
         onChange={(e) => onInputChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing && !running && usableCount) onStart()
+          // keyCode 229：部分 IME（韩文等）compositionend 先于 keydown，isComposing 已 false
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && !running && usableCount) onStart()
         }}
         disabled={running}
         placeholder={hasSession ? '继续追问…' : '想了解这个网页什么？'}
@@ -367,7 +392,12 @@ function PageTips({ meta }: { meta: PageMeta }) {
   return (
     <div className="pd-page-tips" role="status">
       {meta.favIconUrl ? (
-        <img src={meta.favIconUrl} alt="" className="pd-page-tips-favicon" />
+        <img
+          src={meta.favIconUrl}
+          alt=""
+          className="pd-page-tips-favicon"
+          onError={(e) => { e.currentTarget.style.display = 'none' }}
+        />
       ) : (
         <svg viewBox="0 0 16 16" className="pd-page-tips-favicon" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
           <circle cx="8" cy="8" r="6" />

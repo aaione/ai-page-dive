@@ -2,7 +2,8 @@
  * 任务编排：正文缓冲 → 临时文件 → prompt 组装（workflow 正文即任务段）
  * → spawn → 归一化事件 → ≤512KB chunk → 历史落盘。
  */
-import { rm, symlink } from 'node:fs/promises'
+import { mkdir, rm, symlink } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { AgentEvent, TaskInput } from '@pagedive/shared'
 import { MAX_CHUNK } from '@pagedive/shared'
@@ -18,12 +19,21 @@ import { getWorkflow } from './workflows.js'
 const TASK_TIMEOUT_MS = 10 * 60_000
 
 /**
- * CLI 会话 id → 首轮 spawn cwd 的映射（追问用）。
+ * CLI 会话 id → 首轮 spawn cwd 的映射（追问用，内存加速）。
  * claude 的会话记录按 cwd 分区存储（~/.claude/projects/<cwd 编码>/），
  * resume 轮 cwd 不一致会报 No conversation found。
- * ponytail: 内存表随 host 进程存活（NM 断连即失；重启后追问失效可接受）
+ * 兜底：miss 时用固定工作区 ~/.pagedive/agent-workspace/（host 重启后仍可复现）
  */
 const sessionCwds = new Map<string, string>()
+
+/** 固定 CLI 工作区（幂等创建）：claude 会话跨 host 重启可 resume 的关键 */
+let stableCwd: string | null = null
+async function getStableAgentCwd(): Promise<string> {
+  if (stableCwd) return stableCwd
+  const dir = join(homedir(), '.pagedive', 'agent-workspace')
+  await mkdir(dir, { recursive: true })
+  return (stableCwd = dir)
+}
 
 export interface TaskCallbacks {
   onStatus: (phase: 'spawned' | 'reading' | 'thinking') => void
@@ -111,13 +121,16 @@ export class Task {
       : def.streamFormat === 'opencode-jsonl' ? createOpencodeParser()
       : createCodexParser()
 
-    // opencode 需先知道 cwd 才能组 argv（--dir 钉死工作区）+ 软链正文 + 相对路径 prompt
-    // claude 追问轮复用首轮 cwd（会话按 cwd 分区存储）；首轮用固定工作区，
-    // 不用 mkdtemp 随机目录——否则 SW/host 重启后 cwd 不可复现，resume 必失败
+    // opencode 需先知道 cwd 才能组 argv（--dir 钉死工作区）+ 软链正文 + 相对路径 prompt。
+    // claude 会话按 cwd 分区存储（~/.claude/projects/<cwd 编码>/）：cwd 必须跨 host 重启
+    // 可复现，否则 --resume 报 No conversation found——统一用固定工作区
+    // ~/.pagedive/agent-workspace/，sessionCwds 仅作内存加速
     let agentCwd = def.filePathInPrompt && !isResume ? await makeAgentCwd() : undefined
     if (isResume) {
       const remembered = sessionCwds.get(this.input.resumeSessionId!)
-      if (remembered) agentCwd = remembered
+      agentCwd = remembered ?? (await getStableAgentCwd())
+    } else if (!agentCwd) {
+      agentCwd = await getStableAgentCwd()
     }
     let fileForPrompt = contentFile
     if (def.filePathInPrompt && agentCwd) {
@@ -236,8 +249,13 @@ export class Task {
 
   private async finish(code: number | null, signal: string | null, stderrTail: string, contentFile: string): Promise<void> {
     clearTimeout(this.timeoutTimer)
-    // CLI 工作目录（mkdtemp）回收——已被会话映射记录的 cwd 不删（后续 resume 要用同 cwd）
-    if (this.proc?.cwd && ![...sessionCwds.values()].includes(this.proc.cwd)) {
+    // CLI 临时工作目录（mkdtemp）回收——固定工作区（stableCwd）与已被会话映射
+    // 记录的 cwd 不删（后续 resume 要用同 cwd）
+    if (
+      this.proc?.cwd &&
+      this.proc.cwd !== stableCwd &&
+      ![...sessionCwds.values()].includes(this.proc.cwd)
+    ) {
       rm(this.proc.cwd, { recursive: true, force: true }).catch(() => {})
     }
     const durationMs = Date.now() - this.startedAt

@@ -54,32 +54,6 @@ body {
 .pd-dot { animation: pd-breathe 1.2s ease-in-out infinite; }
 
 /* ══════════════════════════════════════════════
-   Glass elevation tokens（DESIGN.md 四层）
-   ══════════════════════════════════════════════ */
-.pd-glass-surface,
-.pd-glass-raised,
-.pd-glass-overlay {
-  position: relative;
-  border-radius: 12px;
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
-  backdrop-filter: blur(16px) saturate(150%);
-}
-.pd-glass-surface::before,
-.pd-glass-raised::before,
-.pd-glass-overlay::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  /* 顶部 1px 高光：玻璃厚度感 */
-  background: linear-gradient(to bottom, rgba(255,255,255,.10), transparent 18%);
-}
-.pd-glass-surface { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.10); }
-.pd-glass-raised { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); }
-.pd-glass-overlay { background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.12); -webkit-backdrop-filter: blur(40px) saturate(150%); backdrop-filter: blur(40px) saturate(150%); box-shadow: inset 0 1px 0 rgba(255,255,255,.15); }
-
-/* ══════════════════════════════════════════════
    Chat（对话式消息流）
    ══════════════════════════════*══════════════ */
 .pd-chat-user {
@@ -268,30 +242,6 @@ body {
   min-height: 0;
   overflow-y: auto;
   padding: 16px 18px;
-}
-
-/* ── Status bar ── */
-.pd-status-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 11.5px;
-  line-height: 1.9;
-  color: var(--color-pd-ink-2);
-}
-.pd-status-bar .pd-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: 9999px;
-  background: var(--color-pd-primary);
-}
-
-.pd-elapsed {
-  margin-left: 2px;
-  text-decoration: none;
 }
 
 /* ── Usage ── */
@@ -517,18 +467,6 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pd-model-loading {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.pd-model-loading-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-pd-accent, #8b5cf6);
-  animation: pd-pulse 1.1s ease-in-out infinite;
-}
 .pd-dropdown-arrow {
   width: 12px;
   height: 12px;
@@ -611,6 +549,10 @@ body {
   font-size: 9.5px;
   opacity: .85;
 }
+.pd-dropdown-item-model {
+  color: var(--color-pd-secondary);
+  opacity: 1;
+}
 
 /* ── Model dropdown (header) ── */
 .pd-header .pd-dropdown-menu {
@@ -661,6 +603,18 @@ body {
 .pd-workflow-menu {
   bottom: calc(100% + 6px);
   left: 0;
+}
+/* 追问轮：workflow 沿用首轮，选择器禁用降透明 */
+.pd-workflow-dropdown.inactive {
+  opacity: 0.45;
+  cursor: default;
+}
+.pd-workflow-dropdown.inactive .pd-workflow-trigger {
+  cursor: default;
+}
+.pd-workflow-dropdown.inactive .pd-workflow-trigger:hover {
+  border-color: transparent;
+  background: transparent;
 }
 
 /* ══════════════════════════════════════════════
@@ -729,11 +683,6 @@ body {
 .pd-md th:last-child, .pd-md td:last-child { padding-right: 0; }
 .pd-md a { color: var(--color-pd-secondary); text-decoration: underline; }
 .pd-md hr { border: 0; border-top: 1px solid rgba(255,255,255,.06); margin: 1.8em 0; }
-.pd-md .pd-table-scroll {
-  overflow-x: auto;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
-}
 
 @media (max-width: 340px) {
   .pd-md { font-size: 13.5px; }
