@@ -34,7 +34,7 @@ node packages/host/scripts/smoke.mjs claude   # 真实 CLI 端到端冒烟（cla
 
 ## 安装（用户视角）
 
-CWS 装扩展 → 首次使用提示执行 `npm i -g pagedive && pagedive install` → 回浏览器即用。
+CWS 装扩展 → 首次使用提示执行 `npm i -g ai-page-dive && ai-page-dive install` → 回浏览器即用。
 
 ## v1 范围
 

@@ -40,7 +40,7 @@ pnpm monorepo：
 
 ## Install Flow（用户视角）
 
-CWS 装扩展 → 首次点击提示 `npm i -g pagedive && pagedive install`（注册 NM host + 探测本机 CLI）→ 回浏览器即用。
+CWS 装扩展 → 首次点击提示 `npm i -g ai-page-dive && ai-page-dive install`（注册 NM host + 探测本机 CLI）→ 回浏览器即用。
 
 ## Commit & Pull Request Guidelines
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { HistoryFileMsg, HistoryItem, HistoryListResultMsg, HostToExt } from '@pagedive/shared'
+import type { HistoryFileMsg, HistoryItem, HistoryListResultMsg, HostToExt } from '@ai-page-dive/shared'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
 export function HistoryView({ onClose, onResume }: { onClose: () => void; onResume: (item: HistoryItem, body: string) => void }) {

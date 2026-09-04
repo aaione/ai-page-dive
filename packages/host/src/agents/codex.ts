@@ -1,4 +1,4 @@
-import type { AgentDef, AgentEvent } from '@pagedive/shared'
+import type { AgentDef, AgentEvent } from '@ai-page-dive/shared'
 
 /**
  * codex exec JSONL 解析器。

@@ -1,15 +1,15 @@
 {
-  "name": "@pagedive/host",
+  "name": "@ai-page-dive/host",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "pagedive": "./dist/index.js"
+    "ai-page-dive": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@pagedive/shared": "workspace:*"
+    "@ai-page-dive/shared": "workspace:*"
   }
 }

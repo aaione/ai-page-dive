@@ -23,5 +23,5 @@ switch (cmd) {
     break
   }
   default:
-    console.log('pagedive host 0.1.0\n  pagedive install [--ext-id <id>]\n  pagedive probe\n  pagedive --stdio')
+    console.log('pagedive host 0.1.0\n  ai-page-dive install [--ext-id <id>]\n  pagedive probe\n  pagedive --stdio')
 }

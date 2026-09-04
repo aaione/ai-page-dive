@@ -2,7 +2,7 @@
  * 站点适配器打样：Readability 表现差的站点定向提取。
  * v1 只打样 arXiv abs 页；返回 null 走默认管线。
  */
-import type { PageContent } from '@pagedive/shared'
+import type { PageContent } from '@ai-page-dive/shared'
 
 type Adapter = (url: URL, doc: Document) => PageContent | null
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ExtToHost } from '@pagedive/shared'
+import type { ExtToHost } from '@ai-page-dive/shared'
 import { runStdio } from '../src/stdio.js'
 
 function makeSession() {

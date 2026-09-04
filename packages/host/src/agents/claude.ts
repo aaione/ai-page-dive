@@ -1,4 +1,4 @@
-import type { AgentDef, AgentEvent } from '@pagedive/shared'
+import type { AgentDef, AgentEvent } from '@ai-page-dive/shared'
 
 /**
  * claude stream-json 解析器（--include-partial-messages）。

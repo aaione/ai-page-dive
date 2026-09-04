@@ -7,7 +7,7 @@
 | # | 决策位 | 结论 |
 |---|---|---|
 | 1 | 定位 | **零配置一键深度阅读 agent**（候选 A）。适配层是底层能力顺带产出，垂直场景由 workflow 生态承载 |
-| 2 | 命名 | **PageDive**（弃用 read-one）。npm 包 `pagedive`，安装命令 `pagedive install`。项目目录：`/Users/apple/work/hs/ai-feature/page-dive/` |
+| 2 | 命名 | **PageDive**（弃用 read-one）。npm 包 `pagedive`，安装命令 `ai-page-dive install`。项目目录：`/Users/apple/work/hs/ai-feature/page-dive/` |
 | 3 | 通信底座 | **Native Messaging 薄 host + Side Panel 主 UI**。否决 localhost daemon 主通道（Chrome 147 LNA 政策风险）。host 预留 `--daemon` 升级位。权限：`activeTab` + `scripting` + `nativeMessaging` + `sidePanel`，不申请 `<all_urls>` |
 | 4 | 历史记录 | **host 侧 markdown 落盘 + 档 B+**：`~/.pagedive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）+ 历史列表/查看/删除/Finder 定位 + 过滤 + 标题/URL 搜索。全文搜索/导入导出/对话关联 → v2 |
 | 5 | CLI 适配 | **v1 = claude + codex 双适配器**。AgentDef 接口按六家（claude/codex/opencode/gemini/qwen/dsh）字段并集设计，只实现两家。`claude -p --output-format stream-json --verbose`；`codex exec --json -o <file>`。prompt 一律走 stdin |
@@ -41,10 +41,10 @@
 - **结论：留在 Native Messaging，否决 WebSocket daemon 与云中继两条替代路线。**
 - 否决 WebSocket daemon（`ws://127.0.0.1` + 常驻进程）：① 需新增 host_permissions，违反权限四件套硬约束 ② Chrome LNA（Local Network Access）已在 142 默认生效、147 起扩展到 WebSocket（chromestatus.com/feature/515272807206928），loopback 豁免是当前宽限而非 spec 承诺（WICG 终态含 public→loopback）③ Chrome 强制的 `allowed_origins` 要换成自建 Origin/token 校验（DNS rebinding 防护）④ daemon 常驻管理 + SW 30s 保活心跳。省的只是「注册 + 重启浏览器」两步，净换险。
 - 否决云中继（Claude --chrome 的 `bridge.claudeusercontent.com` 模式）：Anthropic 为远程会话/跨设备用账号 UUID 配对，页面数据流经其服务器——直接违反「内容不出本机」。
-- 行业铁律（1Password/Bitwarden/JetBrains/Claude 全核实）：无产品做到「扩展装完即用」连本机程序；桌面 App 产品靠安装器藏这步，纯 CLI 产品只能显式一次终端命令。Anthropic 静默预装 NM manifest 到 7 个浏览器曾引发 2026-04 隐私丑闻——坚持 pull（用户主动 `pagedive install`），不做 push。
+- 行业铁律（1Password/Bitwarden/JetBrains/Claude 全核实）：无产品做到「扩展装完即用」连本机程序；桌面 App 产品靠安装器藏这步，纯 CLI 产品只能显式一次终端命令。Anthropic 静默预装 NM manifest 到 7 个浏览器曾引发 2026-04 隐私丑闻——坚持 pull（用户主动 `ai-page-dive install`），不做 push。
 - **ID 漂移根因修复**：`public/manifest.json` 加 `key` 字段（RSA 公钥，官方机制，developer.chrome.com/docs/extensions/reference/manifest/key），unpacked 扩展 ID 恒定为 `nclbhhhmgcabjlgmlbkoblipogajajgn`，与加载路径无关；CWS 上架零影响（商店用自己的签名，key 只管开发期）。私钥在 `~/.pagedive/dev-extension-key.pem`（0600）。
 - **Onboarding 自愈**：引导命令动态带 `--ext-id ${chrome.runtime.id}`（install 幂等 + origins 追加不覆盖，一条命令通吃「host 未装 / ID 未登记」）；`panel-ready` 探测失败回传 `nmError`，panel 区分 `forbidden`（只差补登记，轻文案）vs `not found`（完整安装引导）。
-- 附带定案：`pagedive install` 后续补 `doctor` 子命令（host 侧自检 manifest 位置/JSON/path/origin 匹配）——NM 调试信息只在 Chrome 内部错误日志，扩展侧拿不到（v2）。
+- 附带定案：`ai-page-dive install` 后续补 `doctor` 子命令（host 侧自检 manifest 位置/JSON/path/origin 匹配）——NM 调试信息只在 Chrome 内部错误日志，扩展侧拿不到（v2）。
 
 ### 已知限制（opencode 的 Gatekeeper 弹框，v1 接受）
 
@@ -59,7 +59,7 @@
 1. Side Panel 一键总结当前页（提取 → 本地临时文件 → CLI agent → 流式渲染）
 2. claude + codex 双适配器
 3. 内置 3-4 个 workflow（快速摘要 / 深度研读多步 / 论文模式）
-4. `npm i -g pagedive && pagedive install`（自动注册 NM + 探测已装 CLI）
+4. `npm i -g ai-page-dive && ai-page-dive install`（自动注册 NM + 探测已装 CLI）
 5. 历史 B+ 档
 
 ## v2 路线图（已明确延后）

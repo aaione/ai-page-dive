@@ -20,12 +20,12 @@ importers:
 
   apps/extension:
     dependencies:
+      '@ai-page-dive/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
-      '@pagedive/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       dompurify:
         specifier: ^3.4.14
         version: 3.4.14
@@ -75,7 +75,7 @@ importers:
 
   packages/host:
     dependencies:
-      '@pagedive/shared':
+      '@ai-page-dive/shared':
         specifier: workspace:*
         version: link:../shared
 

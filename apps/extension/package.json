@@ -1,5 +1,5 @@
 {
-  "name": "@pagedive/extension",
+  "name": "@ai-page-dive/extension",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
-    "@pagedive/shared": "workspace:*",
+    "@ai-page-dive/shared": "workspace:*",
     "dompurify": "^3.4.14",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",

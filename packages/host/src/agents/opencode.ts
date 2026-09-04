@@ -1,4 +1,4 @@
-import type { AgentDef, AgentEvent } from '@pagedive/shared'
+import type { AgentDef, AgentEvent } from '@ai-page-dive/shared'
 
 /**
  * opencode run --format json JSONL 解析器。

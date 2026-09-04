@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
-import type { HistoryItem } from '@pagedive/shared'
+import type { HistoryItem } from '@ai-page-dive/shared'
 
 const ROOT = join(homedir(), '.pagedive', 'history')
 

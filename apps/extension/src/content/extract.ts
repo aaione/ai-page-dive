@@ -5,7 +5,7 @@
 import { Readability } from '@mozilla/readability'
 import DOMPurify from 'dompurify'
 import TurndownService from 'turndown'
-import type { PageContent } from '@pagedive/shared'
+import type { PageContent } from '@ai-page-dive/shared'
 import { applySiteAdapter } from './adapters.js'
 
 // SW 经 chrome.tabs.sendMessage 调用（content script 由 SW 动态 files 注入）

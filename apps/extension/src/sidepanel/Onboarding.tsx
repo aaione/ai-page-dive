@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 /** 自愈命令：动态带当前扩展 ID——install 幂等 + origins 追加不覆盖，
  * 一条命令通吃「host 未装 / ID 未登记 / 两者都缺」三种失败 */
-const cmd = `npm i -g pagedive && pagedive install --ext-id ${chrome.runtime.id}`
+const cmd = `npm i -g ai-page-dive && ai-page-dive install --ext-id ${chrome.runtime.id}`
 
 export function Onboarding() {
   const [copied, setCopied] = useState(false)

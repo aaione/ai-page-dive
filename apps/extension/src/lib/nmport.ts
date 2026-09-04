@@ -4,7 +4,7 @@
  * 注意：connectNative 几乎不同步抛错，「host 未安装」以 onDisconnect 到达，
  * connected 只代表 port 对象存在，真实可用性由 ping→pong 探测判定。
  */
-import type { ExtToHost, HostToExt } from '@pagedive/shared'
+import type { ExtToHost, HostToExt } from '@ai-page-dive/shared'
 
 const HOST_NAME = 'com.pagedive.host'
 

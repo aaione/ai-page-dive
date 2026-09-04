@@ -1,4 +1,4 @@
-/** pagedive install：写 NM host manifest（macOS）+ CLI 探测输出 */
+/** ai-page-dive install：写 NM host manifest（macOS）+ CLI 探测输出 */
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -56,7 +56,7 @@ export async function install(extIds: string[]): Promise<void> {
     }
     const manifest = {
       name: HOST_NAME,
-      description: 'PageDive native host',
+      description: 'AI PageDive native host',
       path: wrapperPath,
       type: 'stdio',
       allowed_origins: origins,
@@ -65,7 +65,7 @@ export async function install(extIds: string[]): Promise<void> {
     console.log(`✅ NM host manifest 已写入 ${manifestPath}`)
   }
   if (!origins.length) {
-    console.log('⚠️  尚无 allowed_origins：开发期用 pagedive install --ext-id <扩展ID>')
+    console.log('⚠️  尚无 allowed_origins：开发期用 ai-page-dive install --ext-id <扩展ID>')
   }
 
   const agents = await probeAgents()
