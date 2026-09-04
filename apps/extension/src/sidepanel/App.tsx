@@ -48,6 +48,15 @@ export function App() {
   const [pageMeta, setPageMeta] = useState<PageMeta | null>(null)
 
   useEffect(() => {
+    // Esc 关 overlay（输入框/下拉自身的 Esc 处理在前，事件冒泡到此处才关面板）
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOverlay(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
     chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
       setHostOk(!!resp?.ok)
       if (resp?.ok) requestLists()
@@ -62,7 +71,7 @@ export function App() {
           // host 探测结果可能晚于 task-meta：保留 panel 已捕获的 model 不被覆盖
           setAgents((prev) => {
             const known = new Map(prev.filter((a) => a.model).map((a) => [a.id, a.model!]))
-            return m.agents.map((a) => (known.has(a.id) && !a.model ? { ...a, model: known.get(a.id) } : a))
+            return (m.agents as AgentStatus[]).map((a) => (known.has(a.id) && !a.model ? { ...a, model: known.get(a.id) } : a))
           })
           break
         case 'workflows': setWorkflows(m.items); break

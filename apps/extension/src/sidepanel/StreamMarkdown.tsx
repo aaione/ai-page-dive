@@ -17,6 +17,8 @@ export const StreamMarkdown = memo(function StreamMarkdown({
   const bufRef = useRef(text)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
+  // 吸底开关：用户上滚即停，滚回底部恢复（不打断回看前文）
+  const stickyRef = useRef(true)
 
   bufRef.current = text
 
@@ -42,10 +44,24 @@ export const StreamMarkdown = memo(function StreamMarkdown({
     if (timerRef.current) clearTimeout(timerRef.current)
   }, [])
 
-  // 流式期间吸底：向上找最近的可滚动祖先（.pd-content 才是滚动容器，
-  // 直接 parentElement 是 .pd-chat-assistant——写 scrollTop 是 no-op）
+  // 用户上滚暂停吸底、滚回底部附近恢复（滚动容器是 .pd-content；scroll 不冒泡，
+  // capture 到 window 上监听）
   useEffect(() => {
     if (done) return
+    const onScroll = (e: Event) => {
+      const el = e.target as HTMLElement | null
+      if (el?.classList?.contains('pd-content')) {
+        stickyRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+      }
+    }
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true })
+    return () => window.removeEventListener('scroll', onScroll, { capture: true })
+  }, [done])
+
+  // 流式期间吸底（仅当 sticky）：向上找最近的可滚动祖先（.pd-content 才是滚动
+  // 容器，直接 parentElement 是 .pd-chat-assistant——写 scrollTop 是 no-op）
+  useEffect(() => {
+    if (done || !stickyRef.current) return
     let el: HTMLElement | null = scrollerRef.current
     while (el && el.scrollHeight <= el.clientHeight) el = el.parentElement
     if (el) el.scrollTop = el.scrollHeight

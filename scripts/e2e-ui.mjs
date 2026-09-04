@@ -20,7 +20,7 @@ function install(extId) {
 
 async function launch() {
   return chromium.launchPersistentContext(PROFILE, {
-    executablePath: '/Users/apple/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     headless: false,
     viewport: { width: 1280, height: 800 },
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--no-first-run', '--no-default-browser-check'],
@@ -66,15 +66,17 @@ if (!probeOk || !hasClaudeBtn) {
 }
 
 // ── 断言 1：CLI 下拉切 claude + workflow 下拉切深度研读，总结完成 ──
-// CLI pill：aria-label="选择 CLI"，选项在 listbox 里
-await panel.getByRole('button', { name: '选择 CLI' }).click()
+// CLI pill：输入框上方内联行，aria-label="选择 AI CLI"
+await panel.getByRole('button', { name: '选择 AI CLI' }).click()
 await panel.getByRole('option', { name: /^claude/ }).click()
-// workflow pill：底部动作栏，aria-label="选择 workflow"，向上弹出
-await panel.getByRole('button', { name: '选择 workflow' }).click()
+// workflow pill：输入框内左侧，aria-label="选择总结模式"，向上弹出
+await panel.getByRole('button', { name: '选择总结模式' }).click()
 await panel.getByRole('option', { name: '深度研读' }).click()
 await page.bringToFront()
-await panel.getByRole('button', { name: '深度总结当前页' }).click({ timeout: 10_000 })
-console.log('▶ codex + deep 总结已点击')
+// 新 UI：chat 式输入 + Enter 发送
+await panel.getByRole('textbox', { name: '自定义指令' }).fill('总结这篇文章的核心要点')
+await panel.keyboard.press('Enter')
+console.log('▶ claude + deep 总结已发送')
 
 let summary = ''
 const deadline = Date.now() + 300_000

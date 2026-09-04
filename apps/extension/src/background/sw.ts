@@ -137,6 +137,12 @@ nmPort.onMessage((m) => {
     chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
     return
   }
+  // 任务终局：释放内存（含全量正文）+ 防后续 cancel 发过期 taskId
+  if (msg?.t === 'task-done' || msg?.t === 'task-error') {
+    if (currentTask && (msg.taskId === currentTask.taskId || msg.t === 'task-error')) {
+      currentTask = null
+    }
+  }
   // 捕获会话 id 供追问（claude init 事件捕获，task-done 兜底）
   if (msg?.t === 'task-meta' || msg?.t === 'task-done') {
     if (msg.sessionId) lastSession = { agentId: currentAgentId, sessionId: msg.sessionId }
@@ -234,6 +240,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     return { error: 'no-permission', detail: injectErr }
   }
   const page = await extractBest(tab.id!)
+  if ('error' in page) return { error: page.error }
 
   const { contentMarkdown, ...meta } = page
   const taskId = `t${Date.now().toString(36)}`

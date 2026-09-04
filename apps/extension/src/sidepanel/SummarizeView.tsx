@@ -17,12 +17,19 @@ interface Props {
 
 export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta }: Props) {
   const usable = agents.filter((a) => a.available)
+  const messages = stream.messages
   const [workflow, setWorkflow] = useState('default')
   const [input, setInput] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  // 打开面板/新对话后自动聚焦输入框（点击下拉不抢焦点：仅在消息从有到无时）
+  const prevMsgCount = useRef(0)
+  useEffect(() => {
+    if (prevMsgCount.current > 0 && messages.length === 0) inputRef.current?.focus()
+    prevMsgCount.current = messages.length
+  }, [messages.length])
   /** 追问轮实际执行会话的 CLI（SW 回带；头部展示与真实执行一致） */
   const [followAgent, setFollowAgent] = useState<string | null>(null)
   const effectiveAgent = agentId || usable[0]?.id || 'claude'
-  const messages = stream.messages
   const running = stream.activeId !== null
   const canFollowUp = messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text)
   const hasSession = canFollowUp
@@ -108,6 +115,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           workflows={wfs}
           input={input}
           onInputChange={setInput}
+          inputRef={inputRef}
           running={running}
           usableCount={usable.length}
           hasSession={hasSession}
@@ -288,7 +296,7 @@ export function ModelDropdown({
 
 function ActionBar({
   workflow, onWorkflowChange, workflows,
-  input, onInputChange,
+  input, onInputChange, inputRef,
   running, usableCount, hasSession,
   onStart, onCancel,
 }: {
@@ -297,6 +305,7 @@ function ActionBar({
   workflows: { name: string; description: string; builtin: boolean }[]
   input: string
   onInputChange: (v: string) => void
+  inputRef: React.RefObject<HTMLInputElement | null>
   running: boolean
   usableCount: number
   hasSession: boolean
@@ -358,6 +367,7 @@ function ActionBar({
       </div>
 
       <input
+        ref={inputRef}
         value={input}
         onChange={(e) => onInputChange(e.target.value)}
         onKeyDown={(e) => {

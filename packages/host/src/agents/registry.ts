@@ -85,7 +85,7 @@ function probeModel(id: string): string | undefined {
       return s.model || undefined
     }
     if (id === 'codex') {
-      const m = (read(join(home, '.codex/config.toml')) ?? '').match(/^model\s*=\s*"(.+)"$/m)
+      const m = (read(join(home, '.codex/config.toml')) ?? '').match(/^model\s*=\s*['"](.+?)['"]$/m)
       return m?.[1]
     }
     if (id === 'opencode') {
