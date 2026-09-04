@@ -29,9 +29,10 @@ let target: chrome.tabs.Tab | null = null
 // agents 列表缓存（合并最近模型后驻留 SW；SW 重启后首次 list-agents 仍走 host）
 let agentsCache: AgentStatus[] | null = null
 
-// 钉住（默认开）：点扩展图标直达 Side Panel。SW 内存态（无 storage 权限，
-// 重启回默认开——v1 语义即默认钉住）；panel 内可切换。
-let pinned = true
+// 钉住（默认关）：openPanelOnActionClick 模式下 action.onClicked 不触发，
+// activeTab 授权链断裂（点总结 → executeScript 被拒 → no-permission，playwright 实证）。
+// 默认走 onClicked → sidePanel.open() 路径：点图标即开面板且手势刷新授权。
+let pinned = false
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch(() => {})
 
 chrome.action.onClicked.addListener(async (tab) => {
@@ -160,12 +161,19 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   }
 
   // content script 需 modules → 动态 files 注入（activeTab 授权下用户手势有效）
+  let injectErr: string | null = null
   await chrome.scripting
     .executeScript({
       target: { tabId: tab.id! },
       files: ['content.js'],
     })
-    .catch(() => {})
+    .catch((e) => {
+      injectErr = String(e?.message ?? e)
+    })
+  if (injectErr) {
+    // 授权失效（无手势/已切页）：原样带回错误文本，panel 给重授权指引
+    return { error: 'no-permission', detail: injectErr }
+  }
   const page = (await chrome.tabs
     .sendMessage(tab.id!, { t: 'extract' })
     .catch(() => undefined)) as PageContent | { error: string } | undefined

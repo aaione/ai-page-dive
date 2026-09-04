@@ -165,7 +165,7 @@ export function App() {
       const msg =
         resp.error === 'no-tab' ? '没有可总结的页面（先在普通网页上点扩展图标）'
         : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
-        : resp.error === 'no-permission' ? '无提取权限：请先点击工具栏上的 PageDive 图标'
+        : resp.error === 'no-permission' ? '无提取权限：浏览器要求换页后重新授权——点击工具栏上的 PageDive 图标后重试'
         : resp.error === 'empty-content' ? '页面没有可提取的正文'
         : String(resp.error)
       setStream((s) => ({
