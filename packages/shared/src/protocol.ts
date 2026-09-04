@@ -57,6 +57,46 @@ export interface HistoryRevealMsg {
   path: string
 }
 
+// ---------- workflow 管理（目录即插件：~/.pagedive/workflows/<name>/WORKFLOW.md）----------
+
+/** 读单个 workflow 全文（frontmatter + 正文），供设置页编辑 */
+export interface WorkflowReadMsg {
+  t: 'workflow-read'
+  name: string
+}
+
+/** 新建/覆盖：写用户目录（shadow 内置同名） */
+export interface WorkflowSaveMsg {
+  t: 'workflow-save'
+  name: string
+  description: string
+  category?: string
+  body: string
+}
+
+/** 删除用户目录副本；内置的等价于「恢复默认」（重新露出内置版） */
+export interface WorkflowDeleteMsg {
+  t: 'workflow-delete'
+  name: string
+}
+
+/** Finder 打开 workflow 目录 */
+export interface WorkflowRevealMsg {
+  t: 'workflow-reveal'
+  name: string
+}
+
+// ---------- skills（~/.pagedive/skills/<name>/SKILL.md，同 workflow 目录即插件机制）----------
+
+export interface ListSkillsMsg {
+  t: 'list-skills'
+}
+
+export interface SkillRevealMsg {
+  t: 'skill-reveal'
+  name: string
+}
+
 export type ExtToHost =
   | PingMsg
   | ListAgentsMsg
@@ -68,6 +108,12 @@ export type ExtToHost =
   | HistoryReadMsg
   | HistoryDeleteMsg
   | HistoryRevealMsg
+  | WorkflowReadMsg
+  | WorkflowSaveMsg
+  | WorkflowDeleteMsg
+  | WorkflowRevealMsg
+  | ListSkillsMsg
+  | SkillRevealMsg
 
 // ---------- Host → Extension ----------
 
@@ -99,6 +145,34 @@ export interface WorkflowItem {
 export interface WorkflowsMsg {
   t: 'workflows'
   items: WorkflowItem[]
+}
+
+/** workflow-read 回包：完整 WORKFLOW.md 原文 */
+export interface WorkflowFileMsg {
+  t: 'workflow-file'
+  name: string
+  content: string
+}
+
+export interface WorkflowSavedMsg {
+  t: 'workflow-saved'
+  name: string
+}
+
+export interface WorkflowDeletedMsg {
+  t: 'workflow-deleted'
+  name: string
+}
+
+export interface SkillItem {
+  name: string
+  description: string
+  builtin: boolean
+}
+
+export interface SkillsMsg {
+  t: 'skills'
+  items: SkillItem[]
 }
 
 export interface TaskStatusMsg {
@@ -186,6 +260,10 @@ export type HostToExt =
   | PongMsg
   | AgentsMsg
   | WorkflowsMsg
+  | WorkflowFileMsg
+  | WorkflowSavedMsg
+  | WorkflowDeletedMsg
+  | SkillsMsg
   | TaskStatusMsg
   | TaskMetaMsg
   | TaskChunkMsg
