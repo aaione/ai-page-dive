@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AgentStatus, HistoryItem, HostToExt, WorkflowItem } from '@pagedive/shared'
+import type { AgentStatus, HistoryItem, HostToExt, WorkflowItem } from '@ai-page-dive/shared'
 import { Onboarding } from './Onboarding.js'
-import { SummarizeView } from './SummarizeView.js'
+import { SummarizeView, useDisabledClis } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
 import { Settings } from './Settings.js'
 
@@ -178,7 +178,7 @@ export function App() {
       const msg =
         resp.error === 'no-tab' ? '没有可总结的页面（先在普通网页上点扩展图标）'
         : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
-        : resp.error === 'no-permission' ? '无提取权限：浏览器要求换页后重新授权——点击工具栏上的 PageDive 图标后重试'
+        : resp.error === 'no-permission' ? '无提取权限：浏览器要求换页后重新授权——点击工具栏上的 AI PageDive 图标后重试'
         : resp.error === 'empty-content' ? '页面没有可提取的正文'
         : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——本次将开始全新总结'
         : String(resp.error)
@@ -224,7 +224,12 @@ export function App() {
 
   if (hostOk === false) return <Onboarding />
 
-  const effectiveAgent = agentId || agents.find((a) => a.available)?.id || 'claude'
+  // 设置页开关 CLI 后（pd-settings-changed）联动：手动选中被禁用时回退到首个可用 CLI
+  const disabledClis = useDisabledClis()
+  const effectiveAgent =
+    (agentId && !disabledClis.has(agentId) ? agentId : '')
+    || agents.find((a) => a.available && !disabledClis.has(a.id))?.id
+    || 'claude'
 
   return (
     <div className="pd-app">

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentStatus, WorkflowItem } from '@pagedive/shared'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { AgentStatus, WorkflowItem } from '@ai-page-dive/shared'
 import type { ChatMessage, PageMeta, TaskStreamState } from './App.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
@@ -15,8 +15,44 @@ interface Props {
   pageMeta: PageMeta | null
 }
 
+/** 读 localStorage 的 JSON string[]（容错：坏数据/非数组一律回退默认） */
+function readList(key: string, fallback: string[] = []): string[] {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
+    const v = JSON.parse(raw)
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : fallback
+  } catch {
+    return fallback
+  }
+}
+
+/** 被禁用 CLI 集合：mount 读一次 + Settings 保存后派发 pd-settings-changed 时再读 */
+export function useDisabledClis(): Set<string> {
+  const [disabled, setDisabled] = useState<Set<string>>(() => new Set(readList('pd-disabled-clis')))
+  useEffect(() => {
+    const sync = () => setDisabled(new Set(readList('pd-disabled-clis')))
+    window.addEventListener('pd-settings-changed', sync)
+    return () => window.removeEventListener('pd-settings-changed', sync)
+  }, [])
+  return disabled
+}
+
+/** 已启用 skills：mount 读一次 + 设置变更事件同步（发送 summarize 时取即时值） */
+function useEnabledSkills(): () => string[] {
+  const ref = useRef<string[]>(readList('pd-enabled-skills'))
+  useEffect(() => {
+    const sync = () => { ref.current = readList('pd-enabled-skills') }
+    window.addEventListener('pd-settings-changed', sync)
+    return () => window.removeEventListener('pd-settings-changed', sync)
+  }, [])
+  return useCallback(() => ref.current, [])
+}
+
 export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta }: Props) {
-  const usable = agents.filter((a) => a.available)
+  const disabledClis = useDisabledClis()
+  const getEnabledSkills = useEnabledSkills()
+  const usable = agents.filter((a) => a.available && !disabledClis.has(a.id))
   const messages = stream.messages
   const [workflow, setWorkflow] = useState('default')
   const [input, setInput] = useState('')
@@ -46,10 +82,11 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     if (!text || running || !usable.length) return
     beginTurn(text)
     setInput('')
+    const skills = getEnabledSkills()
     if (hasSession) {
       // 追问轮：agentId 由 SW 按会话归属决定，响应回带实际值——头部展示同步
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, instruction: text, followUp: true },
+        { t: 'summarize', agentId: effectiveAgent, instruction: text, followUp: true, skills },
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             if (resp.agentId) setFollowAgent(resp.agentId)
@@ -60,7 +97,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     } else {
       const wf = workflow === 'default' ? 'quick' : workflow
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text },
+        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills },
         (resp) => { if (!chrome.runtime.lastError && resp) onStartResult(resp) },
       )
     }
@@ -70,13 +107,38 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     chrome.runtime.sendMessage({ t: 'cancel' })
   }
 
+  /** 新会话：清 UI + 通知 SW（SW 侧对进行中任务执行取消） */
   function newChat() {
     beginSession()
     setInput('')
+    chrome.runtime.sendMessage({ t: 'new-session' }).catch(() => {})
   }
 
   return (
     <div className="pd-view">
+      {/* 顶栏：新会话 / CLI 下拉 / 模式下拉（右上角浮层工具条让位） */}
+      <div className="pd-topbar">
+        <button onClick={newChat} className="pd-new-chat-btn" title="开始新会话" aria-label="开始新会话">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11.3 2.6a1.6 1.6 0 0 1 2.3 2.3L5.6 12.9l-3 .7.7-3 8-8Z" />
+          </svg>
+          <span>新会话</span>
+        </button>
+        <ModelDropdown
+          value={hasSession ? (followAgent ?? effectiveAgent) : effectiveAgent}
+          onChange={onAgentChange}
+          items={usable.map((a) => ({ key: a.id, label: a.id, version: a.version, model: a.model }))}
+          fallback="无可用 CLI"
+          ariaLabel="选择 AI CLI"
+        />
+        <WorkflowDropdown
+          workflow={workflow}
+          onWorkflowChange={setWorkflow}
+          workflows={wfs}
+          hasSession={hasSession}
+        />
+      </div>
+
       <div className="pd-content" role="region" aria-live="polite">
         {messages.length === 0 && <Placeholder />}
         {messages.map((m) =>
@@ -99,20 +161,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
 
       <div className="pd-action-bar">
         {pageMeta && <PageTips meta={pageMeta} />}
-        {/* CLI 选择器：内联输入框上方（Gemini「Flash ⌄」式），追问轮沿用会话 agent */}
-        <div className="pd-cli-row">
-          <ModelDropdown
-            value={hasSession ? (followAgent ?? effectiveAgent) : effectiveAgent}
-            onChange={onAgentChange}
-            items={usable.map((a) => ({ key: a.id, label: a.id, version: a.version, model: a.model }))}
-            fallback="无可用 CLI"
-            ariaLabel="选择 AI CLI"
-          />
-        </div>
         <ActionBar
-          workflow={workflow}
-          onWorkflowChange={setWorkflow}
-          workflows={wfs}
           input={input}
           onInputChange={setInput}
           inputRef={inputRef}
@@ -125,6 +174,74 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       </div>
     </div>
   )
+}
+
+/** 顶栏模式（工作流）下拉：从 ActionBar 上移，追问轮禁用沿用首轮 */
+function WorkflowDropdown({
+  workflow, onWorkflowChange, workflows, hasSession,
+}: {
+  workflow: string
+  onWorkflowChange: (name: string) => void
+  workflows: { name: string; description: string; builtin: boolean }[]
+  hasSession: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={ref} className={`pd-workflow-dropdown ${hasSession ? 'inactive' : ''}`}>
+      <button
+        onClick={() => setWorkflowOpenGuarded()}
+        disabled={hasSession}
+        aria-label="选择总结模式"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title={hasSession ? '追问沿用首轮模式' : undefined}
+        className="pd-workflow-trigger"
+      >
+        <span className="pd-workflow-label">{WF_LABEL[workflow] ?? workflow}</span>
+        <svg viewBox="0 0 15 16" className={`pd-workflow-arrow ${open ? 'open' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m4 6.5 4 4 4-4" />
+        </svg>
+      </button>
+      {open && (
+        <ul role="listbox" className="pd-dropdown-menu pd-workflow-menu pd-fade-in-fast">
+          {workflows.map((w) => (
+            <li key={w.name} role="option" aria-selected={w.name === workflow}>
+              <button
+                onClick={() => { onWorkflowChange(w.name); setOpen(false) }}
+                className={`pd-dropdown-item ${w.name === workflow ? 'selected' : ''}`}
+              >
+                {w.name === workflow && <span className="pd-dropdown-check" aria-hidden="true" />}
+                <span className="pd-dropdown-item-label">{WF_LABEL[w.name] ?? w.name}</span>
+                {w.description && <span className="pd-dropdown-item-hint">{w.description}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+
+  function setWorkflowOpenGuarded() {
+    if (!hasSession) setOpen((o) => !o)
+  }
 }
 
 function AssistantMessage({
@@ -295,14 +412,10 @@ export function ModelDropdown({
 }
 
 function ActionBar({
-  workflow, onWorkflowChange, workflows,
   input, onInputChange, inputRef,
   running, usableCount, hasSession,
   onStart, onCancel,
 }: {
-  workflow: string
-  onWorkflowChange: (name: string) => void
-  workflows: { name: string; description: string; builtin: boolean }[]
   input: string
   onInputChange: (v: string) => void
   inputRef: React.RefObject<HTMLInputElement | null>
@@ -312,60 +425,8 @@ function ActionBar({
   onStart: () => void
   onCancel: () => void
 }) {
-  const [workflowOpen, setWorkflowOpen] = useState(false)
-  const workflowRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!workflowOpen) return
-    const onDoc = (e: MouseEvent) => {
-      if (workflowRef.current && !workflowRef.current.contains(e.target as Node)) setWorkflowOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setWorkflowOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDoc)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [workflowOpen])
-
   return (
-    <div ref={workflowRef} className="pd-action-bar-inner">
-      <div className={`pd-workflow-dropdown ${hasSession ? 'inactive' : ''}`}>
-        <button
-          onClick={() => setWorkflowOpen((o) => !o)}
-          disabled={hasSession}
-          aria-label="选择总结模式"
-          aria-haspopup="listbox"
-          aria-expanded={workflowOpen}
-          title={hasSession ? '追问沿用首轮模式' : undefined}
-          className="pd-workflow-trigger"
-        >
-          <span className="pd-workflow-label">{WF_LABEL[workflow] ?? workflow}</span>
-          <svg viewBox="0 0 15 16" className={`pd-workflow-arrow ${workflowOpen ? 'open' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m4 6.5 4 4 4-4" />
-          </svg>
-        </button>
-        {workflowOpen && (
-          <ul role="listbox" className="pd-dropdown-menu pd-workflow-menu pd-fade-in-fast">
-            {workflows.map((w) => (
-              <li key={w.name} role="option" aria-selected={w.name === workflow}>
-                <button
-                  onClick={() => { onWorkflowChange(w.name); setWorkflowOpen(false) }}
-                  className={`pd-dropdown-item ${w.name === workflow ? 'selected' : ''}`}
-                >
-                  {w.name === workflow && <span className="pd-dropdown-check" aria-hidden="true" />}
-                  <span className="pd-dropdown-item-label">{WF_LABEL[w.name] ?? w.name}</span>
-                  {w.description && <span className="pd-dropdown-item-hint">{w.description}</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
+    <div className="pd-action-bar-inner">
       <input
         ref={inputRef}
         value={input}
