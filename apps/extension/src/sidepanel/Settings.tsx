@@ -196,11 +196,14 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
 
   return (
     <div className="pd-set">
-      <button onClick={onClose} className="pd-settings-close" title="关闭设置" aria-label="关闭设置">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-          <path d="m4 4 8 8M12 4l-8 8" />
-        </svg>
-      </button>
+      <div className="pd-set-top">
+        <button onClick={onClose} className="pd-set-back" title="返回面板" aria-label="返回面板">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10 3 5 8l5 5" />
+          </svg>
+          设置
+        </button>
+      </div>
 
       <div className="pd-set-tabs" role="tablist">
         {tabs.map((t) => (
@@ -280,7 +283,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                       />
                     </div>
                   </div>
-                  <div className="pd-set-field" style={{ flex: 1, minHeight: 0, marginBottom: 0 }}>
+                  <div className="pd-set-field" style={{ marginBottom: 0 }}>
                     <span className="pd-set-label">正文（Markdown，即发送给 CLI 的模式指令）</span>
                     <textarea
                       className="pd-set-textarea"

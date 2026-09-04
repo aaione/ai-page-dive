@@ -13,32 +13,30 @@
   color: var(--color-pd-ink);
 }
 
-/* 右上角关闭（沿用 pd-settings-close 交互逻辑，样式在此重定义） */
-.pd-set .pd-settings-close {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  z-index: 5;
+/* 顶栏返回条：「‹ 设置」——设置是面板的子页面，返回语义优于右上角关闭 X */
+.pd-set-top {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
+}
+.pd-set-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  border: none;
   border-radius: 8px;
-  border: 1px solid var(--color-pd-line);
-  background: rgba(255,255,255,.04);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  backdrop-filter: blur(24px) saturate(170%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 8px 24px rgba(0,0,0,.35);
+  background: transparent;
+  font-family: var(--font-serif-read);
+  font-size: 13px;
   color: var(--color-pd-ink-2);
   cursor: pointer;
   transition: all 0.15s;
 }
-.pd-set .pd-settings-close:hover {
-  background: var(--color-pd-hover);
+.pd-set-back:hover {
   color: var(--color-pd-ink);
+  background: rgba(255,255,255,.06);
 }
-.pd-set .pd-settings-close svg {
+.pd-set-back svg {
   width: 13px;
   height: 13px;
 }
@@ -48,14 +46,14 @@
   display: flex;
   gap: 4px;
   align-self: flex-start;
-  margin-top: 14px;
+  margin-top: 10px;
   padding: 3px;
   border-radius: 9999px;
   border: 1px solid var(--color-pd-line);
   background: rgba(19,27,46,.55);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  backdrop-filter: blur(24px) saturate(170%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 12px 32px rgba(0,0,0,.40);
+  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  backdrop-filter: blur(36px) saturate(180%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 -1px 0 rgba(0,0,0,.16), 0 14px 40px rgba(0,0,0,.44);
 }
 .pd-set-tab {
   padding: 5px 14px;
@@ -77,12 +75,13 @@
   box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 2px 10px rgba(124,58,237,.30);
 }
 
-/* ── 内容区：淡入 ── */
+/* ── 内容区：整体滚动（pane 不限高——双重滚动曾是「模式」列表被截断的根因） ── */
 .pd-set-body {
   flex: 1;
   min-height: 0;
-  margin-top: 14px;
+  margin-top: 12px;
   overflow-y: auto;
+  padding-bottom: 8px;
 }
 @keyframes pd-set-fade-in {
   from { opacity: 0; transform: translateY(4px); }
@@ -91,7 +90,6 @@
 .pd-set-pane {
   display: flex;
   flex-direction: column;
-  height: 100%;
   animation: pd-set-fade-in 200ms ease-out both;
 }
 
@@ -100,9 +98,9 @@
   border-radius: 12px;
   border: 1px solid var(--color-pd-line);
   background: rgba(19,27,46,.50);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  backdrop-filter: blur(24px) saturate(170%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 16px 40px rgba(0,0,0,.40);
+  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  backdrop-filter: blur(36px) saturate(180%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 -1px 0 rgba(0,0,0,.16), 0 16px 48px rgba(0,0,0,.48), 0 2px 8px rgba(0,0,0,.32);
   padding: 12px;
 }
 .pd-set-panel + .pd-set-panel {
@@ -259,19 +257,15 @@
   text-align: center;
 }
 
-/* ── 模式 tab：左列表右编辑 ── */
+/* ── 模式 tab：列表在上、编辑器在下（整体随 pd-set-body 滚动） ── */
 .pd-set-modes {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  height: 100%;
-  min-height: 0;
 }
 .pd-set-wf-list {
   display: flex;
   flex-direction: column;
-  max-height: 38%;
-  overflow-y: auto;
 }
 .pd-set-wf-item {
   display: flex;
@@ -312,8 +306,6 @@
 
 /* 编辑表单 */
 .pd-set-editor {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -350,7 +342,7 @@
 }
 .pd-set-textarea {
   flex: 1;
-  min-height: 120px;
+  min-height: 180px;
   resize: none;
   padding: 10px 12px;
   border-radius: 8px;
