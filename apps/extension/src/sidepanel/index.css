@@ -24,19 +24,32 @@
   --font-mono-ui: ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
-/* ── Base：深空渐变 + 三色光斑（DESIGN.md Gradient Glassmorphism）──
+/* ── Base：深空渐变 + 高饱和光斑（磨砂玻璃要有东西可折射：光斑越亮越饱和，
+   blur 后的磨砂感越强）+ 全局噪点（feTurbulence data-URI，3% 颗粒防色带）──
    全局 serif：所有 UI 文本默认衬线，code/kbd/.pd-mono 保留 mono */
 html { height: 100%; }
 body {
   width: 100%;
   font-family: var(--font-serif-read);
   background:
-    radial-gradient(720px 420px at 85% -8%, rgba(124,58,237,.24) 0%, transparent 58%),
-    radial-gradient(560px 400px at -12% 108%, rgba(0,162,230,.20) 0%, transparent 58%),
-    radial-gradient(480px 320px at 50% 55%, rgba(34,211,238,.08) 0%, transparent 62%),
-    linear-gradient(160deg, #0F172A 0%, #131C33 45%, #1E1B4B 100%);
+    radial-gradient(640px 380px at 88% -10%, rgba(139,92,246,.55) 0%, rgba(139,92,246,.18) 38%, transparent 62%),
+    radial-gradient(560px 420px at -14% 106%, rgba(34,170,220,.45) 0%, rgba(34,170,220,.14) 40%, transparent 64%),
+    radial-gradient(420px 300px at 50% 48%, rgba(56,189,248,.10) 0%, transparent 60%),
+    linear-gradient(160deg, #0D1426 0%, #121B32 45%, #1B1840 100%);
   background-attachment: fixed;
 }
+/* 磨砂玻璃通用配方（--pd-glass-* 变量复用）：
+   高 blur + 高 saturate + 顶部 1px 亮线 + 底部暗缘 + 噪点 */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.pd-app { position: relative; z-index: 1; }
 code, kbd, pre { font-family: var(--font-mono-ui); }
 ::selection { background: rgba(124,58,237,.35); }
 * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.2) transparent; }
@@ -47,6 +60,20 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 .pd-serif { font-family: var(--font-serif-read); }
 .pd-mono { font-family: var(--font-mono-ui); font-variant-numeric: tabular-nums; }
 .pd-accent-text { color: var(--color-pd-primary); }
+
+/* 磨砂玻璃三档（ Raised / Overlay / Bubble ）：blur 40px + saturate 180% 起，
+   折光边缘 = inset 0 1px 0 顶部亮线 + 边框半透明白（模拟玻璃厚度） */
+.pd-glass-raised {
+  background: linear-gradient(180deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.045) 100%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255,255,255,.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.18),
+    inset 0 -1px 0 rgba(0,0,0,.18),
+    0 16px 48px rgba(0,0,0,.48),
+    0 2px 8px rgba(0,0,0,.32);
+}
 
 @keyframes pd-fade-in { from { opacity: 0 } to { opacity: 1 } }
 .pd-fade-in { animation: pd-fade-in 200ms ease-out both; }
@@ -68,15 +95,16 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   max-width: 85%;
   padding: 9px 14px;
   border-radius: 12px 12px 4px 12px;
-  background: rgba(124,58,237,.24);
+  background: linear-gradient(180deg, rgba(124,58,237,.30) 0%, rgba(124,58,237,.20) 100%);
   border: 1px solid rgba(167,139,250,.35);
   font-size: 12.5px;
   line-height: 1.7;
   color: var(--color-pd-ink);
   word-break: break-word;
   white-space: pre-wrap;
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(170%);
+  backdrop-filter: blur(32px) saturate(170%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 4px 16px rgba(0,0,0,.28);
 }
 .pd-chat-assistant {
   margin: 14px 0 20px;
@@ -165,7 +193,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   font-family: var(--font-serif-read);
 }
 
-/* ── 顶栏：[新会话] [CLI 下拉] [模式下拉]（右上角浮动工具条让出空间）── */
+/* ── 顶栏：[新对话] [CLI 下拉] [模式下拉]（右上角浮动工具条让出空间）── */
 .pd-topbar {
   display: flex;
   align-items: center;
@@ -251,11 +279,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   position: absolute;
   inset: 0;
   z-index: 20;
-  /* Elevation: Overlay */
-  background: rgba(11,17,32,.55);
-  -webkit-backdrop-filter: blur(32px) saturate(170%);
-  backdrop-filter: blur(32px) saturate(170%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
+  /* Elevation: Overlay：重磨砂（盖住下层全部细节，只透色不透形） */
+  background: rgba(11,17,32,.62);
+  -webkit-backdrop-filter: blur(48px) saturate(160%);
+  backdrop-filter: blur(48px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
 }
 
 /* ══════════════════════════════════════════════
@@ -266,19 +294,6 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   min-height: 0;
   overflow-y: auto;
   padding: 16px 18px;
-}
-
-/* ── Usage ── */
-.pd-usage {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(255,255,255,.06);
-  text-align: center;
-}
-.pd-usage .pd-mono {
-  font-size: 10.5px;
-  line-height: 1.6;
-  color: var(--color-pd-ink-2);
 }
 
 /* ── Error ── */
@@ -341,11 +356,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   margin: 0 4px 8px;
   padding: 6px 10px;
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,.04) 100%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
-  backdrop-filter: blur(28px) saturate(170%);
-  border: 1px solid rgba(255,255,255,.08);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 12px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
+  background: linear-gradient(180deg, rgba(255,255,255,.08) 0%, rgba(255,255,255,.04) 100%);
+  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  backdrop-filter: blur(36px) saturate(180%);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 -1px 0 rgba(0,0,0,.15), 0 8px 24px rgba(0,0,0,.32);
 }
 .pd-page-tips-favicon {
   width: 16px;
@@ -370,12 +385,16 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   gap: 8px;
   padding: 8px 10px;
   border-radius: 12px;
-  /* Elevation: Raised（高级磨砂：微渐变 + 发丝高光 + 多层深阴影） */
-  background: linear-gradient(180deg, rgba(255,255,255,.09) 0%, rgba(255,255,255,.05) 100%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
-  backdrop-filter: blur(28px) saturate(170%);
-  border: 1px solid rgba(255,255,255,.14);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 12px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
+  /* 磨砂玻璃 Raised：高 blur + 折光双层边缘 */
+  background: linear-gradient(180deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.045) 100%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255,255,255,.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.18),
+    inset 0 -1px 0 rgba(0,0,0,.18),
+    0 16px 48px rgba(0,0,0,.48),
+    0 2px 8px rgba(0,0,0,.32);
 }
 
 /* ── Input ── */
@@ -718,48 +737,68 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 44px;
-  padding: 0 18px;
+  min-height: 48px;
+  padding: 8px 16px;
   flex-shrink: 0;
 }
+/* 一体化搜索胶囊：图标 + 输入 + 清空，输入即搜（去「搜」按钮） */
+.pd-history-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,.04) 100%);
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.pd-history-search:focus-within {
+  border-color: rgba(167,139,250,.45);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 0 3px rgba(124,58,237,.12);
+}
 .pd-history-search-icon {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   flex-shrink: 0;
   color: var(--color-pd-ink-2);
 }
 .pd-history-input {
   flex: 1;
   min-width: 0;
-  height: 24px;
   background: transparent;
   border: none;
-  border-bottom: 1px solid rgba(255,255,255,.08);
   outline: none;
   font-size: 12px;
   color: var(--color-pd-ink);
-  padding-bottom: 4px;
-  transition: border-color 0.15s;
+  font-family: var(--font-serif-read);
 }
 .pd-history-input::placeholder {
-  color: var(--color-pd-ink-2);
+  color: rgba(148,163,184,.70);
 }
-.pd-history-input:focus {
-  border-bottom-color: var(--color-pd-primary);
-}
-.pd-history-search-btn {
-  padding: 4px 10px;
-  border-radius: 6px;
+.pd-history-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
   border: none;
-  font-size: 12px;
-  font-weight: 500;
- color: #fff;
-  background: linear-gradient(135deg, #7C3AED 0%, #00A2E6 100%);
+  border-radius: 9999px;
+  background: rgba(255,255,255,.10);
+  color: var(--color-pd-ink-2);
   cursor: pointer;
-  transition: filter 0.15s;
+  transition: all 0.12s;
 }
-.pd-history-search-btn:hover {
-  filter: brightness(1.1);
+.pd-history-clear:hover {
+  background: rgba(255,255,255,.18);
+  color: var(--color-pd-ink);
+}
+.pd-history-clear svg {
+  width: 9px;
+  height: 9px;
 }
 .pd-history-list {
   flex: 1;
@@ -793,6 +832,17 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   font-size: 12.5px;
   font-weight: 500;
   color: var(--color-pd-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 来源站点行（标题与元信息之间）：每个会话记录来源网站 */
+.pd-history-item-url {
+  margin-top: 1px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--color-pd-secondary);
+  opacity: .85;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -868,6 +918,48 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   width: 12px;
   height: 12px;
 }
+/* 详情页来源条：可点击回源站（title + host） */
+.pd-history-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 18px 8px;
+  padding: 8px 12px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  text-decoration: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,.04) 100%);
+  border: 1px solid rgba(255,255,255,.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+  transition: border-color 0.15s;
+}
+.pd-history-source:hover {
+  border-color: rgba(167,139,250,.45);
+}
+.pd-history-source svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--color-pd-secondary);
+}
+.pd-history-source-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--color-pd-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pd-history-source-host {
+  flex-shrink: 0;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--color-pd-ink-2);
+}
 .pd-history-detail-content {
   flex: 1;
   overflow-y: auto;
@@ -883,11 +975,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   padding: 8px 14px;
   flex-shrink: 0;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.14);
-  background: linear-gradient(180deg, rgba(255,255,255,.09) 0%, rgba(255,255,255,.05) 100%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
-  backdrop-filter: blur(28px) saturate(170%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 12px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.16);
+  background: linear-gradient(180deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.045) 100%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(0,0,0,.18), 0 12px 36px rgba(0,0,0,.42);
   font-size: 12px;
   font-weight: 500;
   color: var(--color-pd-ink);
@@ -1037,12 +1129,12 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   max-width: 300px;
   padding: 24px;
   border-radius: 12px;
-  /* Elevation: Raised（高级磨砂） */
-  background: linear-gradient(180deg, rgba(255,255,255,.09) 0%, rgba(255,255,255,.05) 100%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
-  backdrop-filter: blur(28px) saturate(170%);
-  border:  1px solid rgba(255,255,255,.14);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 12px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35);
+  /* 磨砂玻璃 Raised */
+  background: linear-gradient(180deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.045) 100%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  border:  1px solid rgba(255,255,255,.16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(0,0,0,.18), 0 16px 48px rgba(0,0,0,.48);
 }
 .pd-onboarding-title {
   font-family: var(--font-serif-read);

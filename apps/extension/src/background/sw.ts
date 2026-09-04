@@ -135,7 +135,7 @@ async function handleMessage(msg: any): Promise<unknown> {
     case 'cancel':
       return cancelCurrent()
     case 'new-session':
-      // 面板「新会话」：在跑的任务走既有取消路径，lastSession 清空——
+      // 面板「新对话」：在跑的任务走既有取消路径，lastSession 清空——
       // 下一轮总结全新开始（不再 resume 上一条 CLI 会话）
       if (currentTask) cancelCurrent()
       lastSession = null

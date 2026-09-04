@@ -107,7 +107,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     chrome.runtime.sendMessage({ t: 'cancel' })
   }
 
-  /** 新会话：清 UI + 通知 SW（SW 侧对进行中任务执行取消） */
+  /** 新对话：清 UI + 通知 SW（SW 侧对进行中任务执行取消） */
   function newChat() {
     beginSession()
     setInput('')
@@ -116,13 +116,15 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
 
   return (
     <div className="pd-view">
-      {/* 顶栏：新会话 / CLI 下拉 / 模式下拉（右上角浮层工具条让位） */}
+      {/* 顶栏：新对话 / CLI 下拉 / 模式下拉（右上角浮层工具条让位） */}
       <div className="pd-topbar">
-        <button onClick={newChat} className="pd-new-chat-btn" title="开始新会话" aria-label="开始新会话">
+        <button onClick={newChat} className="pd-new-chat-btn" title="开始新对话" aria-label="开始新对话">
+          {/* chat 气泡 + 加号：与消息底部「新对话」icon 同造型 */}
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M11.3 2.6a1.6 1.6 0 0 1 2.3 2.3L5.6 12.9l-3 .7.7-3 8-8Z" />
+            <path d="M13.5 7.5a5.5 5.5 0 0 1-8.2 4.8L2.5 13.5l1.2-2.8A5.5 5.5 0 1 1 13.5 7.5Z" />
+            <path d="M8 5.4v4.2M5.9 7.5h4.2" />
           </svg>
-          <span>新会话</span>
+          <span>新对话</span>
         </button>
         <ModelDropdown
           value={hasSession ? (followAgent ?? effectiveAgent) : effectiveAgent}
@@ -269,11 +271,6 @@ function AssistantMessage({
       ) : running ? (
         <div className="pd-chat-cursor" aria-hidden="true" />
       ) : null}
-      {msg.usage && !running && (
-        <div className="pd-usage">
-          <span className="pd-mono">tokens: ↓{msg.usage.inputTokens ?? '—'} ↑{msg.usage.outputTokens ?? '—'}</span>
-        </div>
-      )}
       {!running && msg.error && (
         <div className="pd-error" role="alert">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
