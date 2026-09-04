@@ -2,6 +2,15 @@ import { useEffect, useState } from 'react'
 import type { HistoryFileMsg, HistoryItem, HistoryListResultMsg, HostToExt } from '@ai-page-dive/shared'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
+/** URL → 站点名（favicon 不可用时的来源提示） */
+const hostOf = (u: string) => {
+  try {
+    return new URL(u).hostname.replace(/^www\./, '')
+  } catch {
+    return u
+  }
+}
+
 export function HistoryView({ onClose, onResume }: { onClose: () => void; onResume: (item: HistoryItem, body: string) => void }) {
   const [items, setItems] = useState<HistoryItem[]>([])
   const [query, setQuery] = useState('')
@@ -33,6 +42,22 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
           </svg>
           返回列表
         </button>
+        {viewingItem?.url && (
+          <a
+            href={viewingItem.url}
+            target="_blank"
+            rel="noreferrer"
+            className="pd-history-source"
+            title={viewingItem.url}
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="8" cy="8" r="6" />
+              <path d="M2 8h12M8 2c2 2.2 2 9.8 0 12M8 2C6 4.2 6 11.8 8 14" />
+            </svg>
+            <span className="pd-history-source-title">{viewingItem.title || hostOf(viewingItem.url)}</span>
+            <span className="pd-history-source-host">{hostOf(viewingItem.url)}</span>
+          </a>
+        )}
         <div className="pd-history-detail-content">
           <StreamMarkdown text={body} done />
         </div>
@@ -54,24 +79,34 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
   return (
     <div className="pd-history">
       <div className="pd-history-header">
+        <div className="pd-history-search">
+          <svg viewBox="0 0 16 16" className="pd-history-search-icon" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="m10.5 10.5 3 3" />
+          </svg>
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              refresh(e.target.value)
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && refresh()}
+            placeholder="搜索标题 / 网址…"
+            className="pd-history-input"
+            autoFocus
+          />
+          {query && (
+            <button onClick={() => { setQuery(''); refresh('') }} className="pd-history-clear" aria-label="清空搜索">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="m4 4 8 8M12 4l-8 8" />
+              </svg>
+            </button>
+          )}
+        </div>
         <button onClick={onClose} className="pd-icon-btn" title="关闭历史" aria-label="关闭历史">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="m4 4 8 8M12 4l-8 8" />
           </svg>
-        </button>
-        <svg viewBox="0 0 16 16" className="pd-history-search-icon" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-          <circle cx="7" cy="7" r="4.5" />
-          <path d="m10.5 10.5 3 3" />
-        </svg>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && refresh()}
-          placeholder="搜索标题 / URL…"
-          className="pd-history-input"
-        />
-        <button onClick={() => refresh()} className="pd-history-search-btn">
-          搜
         </button>
       </div>
       <ul className="pd-history-list">
@@ -85,6 +120,11 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
               className="pd-history-item-main"
             >
               <p className="pd-history-item-title">{it.title}</p>
+              {it.url && (
+                <p className="pd-history-item-url" title={it.url}>
+                  {hostOf(it.url)}
+                </p>
+              )}
               <p className="pd-history-item-meta pd-mono">
                 {it.agent} · {new Date(it.ts).toLocaleString('zh-CN')}
               </p>
