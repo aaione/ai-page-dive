@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import type { HistoryFileMsg, HistoryItem, HistoryListResultMsg, HostToExt } from '@pagedive/shared'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
-export function HistoryView({ onClose }: { onClose: () => void }) {
+export function HistoryView({ onClose, onResume }: { onClose: () => void; onResume: (item: HistoryItem, body: string) => void }) {
   const [items, setItems] = useState<HistoryItem[]>([])
   const [query, setQuery] = useState('')
   const [viewing, setViewing] = useState<HistoryFileMsg | null>(null)
+  // 当前查看项对应的列表元数据（含 sessionId）
+  const [viewingItem, setViewingItem] = useState<HistoryItem | null>(null)
 
   useEffect(() => {
     const listener = (m: HostToExt) => {
@@ -34,6 +36,17 @@ export function HistoryView({ onClose }: { onClose: () => void }) {
         <div className="pd-history-detail-content">
           <StreamMarkdown text={body} done />
         </div>
+        {viewingItem?.sessionId && (
+          <button
+            onClick={() => onResume(viewingItem, body)}
+            className="pd-history-resume"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2.5 8a5.5 5.5 0 0 1 9.5-3.8L14 6M14 2.5V6h-3.5M13.5 8a5.5 5.5 0 0 1-9.5 3.8L2 10M2 13.5V10h3.5" />
+            </svg>
+            继续对话
+          </button>
+        )}
       </div>
     )
   }
@@ -65,7 +78,10 @@ export function HistoryView({ onClose }: { onClose: () => void }) {
         {items.map((it) => (
           <li key={it.path} className="pd-history-item">
             <button
-              onClick={() => chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: it.path } })}
+              onClick={() => {
+                setViewingItem(it)
+                chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: it.path } })
+              }}
               className="pd-history-item-main"
             >
               <p className="pd-history-item-title">{it.title}</p>

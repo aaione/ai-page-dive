@@ -156,6 +156,8 @@ export interface HistoryItem {
   url: string
   agent: string
   ts: number
+  /** CLI 会话 id（有则支持「继续对话」resume） */
+  sessionId?: string
 }
 
 export interface HistoryListResultMsg {

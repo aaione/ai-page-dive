@@ -279,6 +279,7 @@ export class Task {
         status,
         usage: this.usage,
         durationMs: Date.now() - this.startedAt,
+        sessionId: this.meta?.sessionId,
       },
       this.accText,
     ).catch(() => {})

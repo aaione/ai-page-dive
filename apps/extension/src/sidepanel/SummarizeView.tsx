@@ -169,7 +169,7 @@ function MessageActions({ text, onNewChat }: { text: string; onNewChat: () => vo
   }
   return (
     <div className="pd-chat-actions">
-      <button onClick={copy} className="pid-chat-action-btn" title={copied ? '已复制' : '复制'} aria-label="复制">
+      <button onClick={copy} className="pd-chat-action-btn" title={copied ? '已复制' : '复制'} aria-label="复制">
         {copied ? (
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="m3 8.5 3.2 3L13 4.5" />
@@ -182,7 +182,7 @@ function MessageActions({ text, onNewChat }: { text: string; onNewChat: () => vo
         )}
       </button>
       <button onClick={download} className="pd-chat-action-btn" title="下载 markdown" aria-label="下载 markdown">
-        <svg viewBox="0 0 16 16" fill="none" stroke="bubble currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M8 2v8M8 10l-3-3M8 10l3-3M2.5 13.5h11" />
         </svg>
       </button>
@@ -201,7 +201,7 @@ export function ModelDropdown({
 }: {
   value: string
   onChange: (key: string) =>  void
-  items: { key: string; label: string; hint?: string }[]
+  items: { key: string; label: string; version?: string; model?: string }[]
   fallback?: string
   ariaLabel?: string
 }) {
@@ -226,7 +226,7 @@ export function ModelDropdown({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`pd-dropdown-trigger ${items.length ? '' : 'dllisabled'}`}
+        className={`pd-dropdown-trigger ${items.length ? '' : 'disabled'}`}
       >
         <span className="pd-dropdown-label">
           {items.length ? (selected?.label ?? value) : (fallback ?? value)}
@@ -247,7 +247,8 @@ export function ModelDropdown({
               >
                 {it.key === value && <span className="pd-dropdown-check" aria-hidden="true" />}
                 <span className="pd-dropdown-item-label pd-mono">{it.label}</span>
-                {it.hint && <span className="pd-dropdown-item-hint pd-mono">{it.hint}</span>}
+                {it.version && <span className="pd-dropdown-item-hint pd-mono">{it.version}</span>}
+                {it.model && <span className="pd-dropdown-item-hint pd-mono pd-dropdown-item-model">{it.model}</span>}
               </button>
             </li>
           ))}

@@ -1,37 +1,38 @@
 @import "tailwindcss";
 
 @theme {
-  --color-pd-bg: #0B1326;
+  --color-pd-bg: #0B1120;
   --color-pd-surface: #131B2E;
   --color-pd-surface-high: #222A3D;
-  --color-pd-ink: #DAE2FD;
-  --color-pd-ink-2: #CCC3D8;
-  --color-pd-line: rgba(255,255,255,.10);
-  --color-pd-primary: #D2BBFF;
+  --color-pd-ink: #E2E8F0;
+  --color-pd-ink-2: #94A3B8;
+  --color-pd-line: rgba(255,255,255,.08);
+  --color-pd-primary: #A78BFA;
   --color-pd-primary-solid: #7C3AED;
   --color-pd-primary-hover: #9D6BFF;
-  --color-pd-secondary: #89CEFF;
-  --color-pd-danger: #FFB4AB;
-  --color-pd-danger-bg: rgba(255,180,171,.10);
-  --color-pd-danger-text: #FFDAD6;
-  --color-pd-ok: #3CDDC7;
-  --color-pd-off: #4A4455;
-  --color-pd-code-bg: rgba(0,0,0,.20);
-  --color-pd-hover: rgba(255,255,255,.08);
+  --color-pd-secondary: #38BDF8;
+  --color-pd-danger: #F87171;
+  --color-pd-danger-bg: rgba(248,113,113,.10);
+  --color-pd-danger-text: #FECACA;
+  --color-pd-ok: #34D399;
+  --color-pd-off: #475569;
+  --color-pd-code-bg: #0D1117;
+  --color-pd-hover: rgba(255,255,255,.06);
 
   --font-serif-read: 'Noto Serif SC', 'Songti SC', Georgia, serif;
   --font-sans-ui: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', sans-serif;
   --font-mono-ui: ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
-/* ── Base ── */
+/* ── Base：深空渐变 + 三色光斑（DESIGN.md Gradient Glassmorphism）── */
 html { height: 100%; }
 body {
   width: 100%;
   background:
-    radial-gradient(900px 480px at 90% -10%, rgba(124,58,237,.16) 0%, transparent 55%),
-    radial-gradient(700px 420px at -15% 105%, rgba(0,162,230,.12) 0%, transparent 55%),
-    linear-gradient(155deg, #0F172A 0%, #131C33 48%, #1E1B4B 100%);
+    radial-gradient(720px 400px at 85% -8%, rgba(124,58,237,.18) 0%, transparent 55%),
+    radial-gradient(560px 380px at -12% 108%, rgba(0,162,230,.14) 0%, transparent 55%),
+    radial-gradient(480px 320px at 50% 55%, rgba(34,211,238,.05) 0%, transparent 60%),
+    linear-gradient(160deg, #0F172A 0%, #131C33 45%, #1E1B4B 100%);
   background-attachment: fixed;
 }
 ::selection { background: rgba(124,58,237,.35); }
@@ -52,11 +53,35 @@ body {
 @keyframes pd-pulse { 0%,100% { transform: scale(.7); opacity:.25 } 50% { transform: scale(1); opacity:1 } }
 .pd-dot { animation: pd-breathe 1.2s ease-in-out infinite; }
 
-@keyframes pd-slide { 0% { transform: translateX(-120%) } 100% { transform: translateX(420%) } }
+/* ══════════════════════════════════════════════
+   Glass elevation tokens（DESIGN.md 四层）
+   ══════════════════════════════════════════════ */
+.pd-glass-surface,
+.pd-glass-raised,
+.pd-glass-overlay {
+  position: relative;
+  border-radius: 12px;
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+}
+.pd-glass-surface::before,
+.pd-glass-raised::before,
+.pd-glass-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* 顶部 1px 高光：玻璃厚度感 */
+  background: linear-gradient(to bottom, rgba(255,255,255,.10), transparent 18%);
+}
+.pd-glass-surface { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.10); }
+.pd-glass-raised { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); }
+.pd-glass-overlay { background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.12); -webkit-backdrop-filter: blur(40px) saturate(150%); backdrop-filter: blur(40px) saturate(150%); box-shadow: inset 0 1px 0 rgba(255,255,255,.15); }
 
 /* ══════════════════════════════════════════════
    Chat（对话式消息流）
-   ══════════════════════════════════════════════ */
+   ══════════════════════════════*══════════════ */
 .pd-chat-user {
   display: flex;
   justify-content: flex-end;
@@ -65,14 +90,16 @@ body {
 .pd-chat-user p {
   max-width: 85%;
   padding: 9px 14px;
-  border-radius: 14px 14px 4px 14px;
+  border-radius: 12px 12px 4px 12px;
   background: rgba(124,58,237,.24);
-  border: 1px solid rgba(124,58,237,.35);
+  border: 1px solid rgba(167,139,250,.35);
   font-size: 12.5px;
   line-height: 1.7;
   color: var(--color-pd-ink);
   word-break: break-word;
   white-space: pre-wrap;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 .pd-chat-assistant {
   margin: 14px 0 20px;
@@ -85,7 +112,8 @@ body {
 }
 .pd-chat-model {
   font-size: 10.5px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--color-pd-ink-2);
 }
 .pd-chat-thinking {
@@ -122,10 +150,10 @@ body {
   display: flex;
   gap: 2px;
   margin-top: 4px;
-  opacity: 0;
+  opacity: .55;
   transition: opacity 0.15s;
 }
-.pd-chat-assistant:hover .pd-chat-actions { opacity: 1; }
+.pd-chat-assistant:hover .pd-chat-actions,
 .pd-chat-actions:focus-within { opacity: 1; }
 .pd-chat-action-btn {
   display: flex;
@@ -169,10 +197,9 @@ body {
   padding: 0 10px 0 12px;
   flex-shrink: 0;
   z-index: 10;
-  /* Elevation: Surface */
   background: rgba(255,255,255,.05);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
   border-bottom: 1px solid rgba(255,255,255,.10);
 }
 .pd-header-actions {
@@ -188,7 +215,7 @@ body {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 9999px;
+  border-radius: 6px;
   border: none;
   background: transparent;
   color: var(--color-pd-ink-2);
@@ -228,11 +255,9 @@ body {
   z-index: 20;
   padding-top: 44px;
   /* Elevation: Overlay */
-  background: rgba(255,255,255,.10);
-  -webkit-backdrop-filter: blur(40px);
-  backdrop-filter: blur(40px);
-  border: 1px solid rgba(255,255,255,.12);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.15);
+  background: rgba(11,17,32,.55);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  backdrop-filter: blur(40px) saturate(150%);
 }
 
 /* ══════════════════════════════════════════════
@@ -273,7 +298,7 @@ body {
 .pd-usage {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid rgba(255,255,255,.10);
+  border-top: 1px solid rgba(255,255,255,.06);
   text-align: center;
 }
 .pd-usage .pd-mono {
@@ -290,8 +315,10 @@ body {
   margin-top: 16px;
   padding: 10px 12px;
   border-left: 2px solid var(--color-pd-danger);
-  border-radius: 2px;
+  border-radius: 4px;
   background: var(--color-pd-danger-bg);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   font-size: 12px;
   line-height: 1.7;
   color: var(--color-pd-danger-text);
@@ -312,7 +339,7 @@ body {
   font-family: var(--font-serif-read);
   font-size: 22px;
   line-height: 1.5;
-  background: linear-gradient(135deg, #C7B8FF 0%, #9FD8FF 50%, #8F7BFF 100%);
+  background: linear-gradient(135deg, #C4B5FD 0%, #7DD3FC 50%, #A78BFA 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -339,9 +366,10 @@ body {
   border-radius: 12px;
   /* Elevation: Raised */
   background: rgba(255,255,255,.08);
-  -webkit-backdrop-filter: blur(24px);
-  backdrop-filter: blur(24px);
-  border: 1px solid rgba(255,255,255,.20);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
 }
 
 /* ── Input ── */
@@ -357,7 +385,7 @@ body {
   font-family: var(--font-sans-ui);
 }
 .pd-input::placeholder {
-  color: rgba(204,195,216,.70);
+  color: rgba(148,163,184,.70);
 }
 .pd-input:disabled {
   opacity: 0.5;
@@ -430,7 +458,7 @@ body {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  border-radius: 9999px;
+  border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
   font-size: 12px;
@@ -441,8 +469,8 @@ body {
   font-family: var(--font-sans-ui);
 }
 .pd-dropdown-trigger:hover {
-  border-color: rgba(255,255,255,.60);
-  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.25);
+  background: rgba(255,255,255,.06);
 }
 .pd-dropdown-trigger.disabled {
   cursor: default;
@@ -481,28 +509,31 @@ body {
   transform: rotate(180deg);
 }
 
+/* 菜单：Overlay 层玻璃 + 实底兜底（backdrop-filter 失效时仍可读） */
 .pd-dropdown-menu {
   position: absolute;
-  z-index: 30;
-  width: 176px;
-  padding: 4px 0;
+  z-index: 100;
+  min-width: 208px;
+  max-width: 280px;
+  padding: 4px;
   margin-top: 6px;
-  border-radius: 8px;
+  border-radius: 10px;
   list-style: none;
-  /* Elevation: Overlay */
-  background: rgba(255,255,255,.10);
-  -webkit-backdrop-filter: blur(40px);
-  backdrop-filter: blur(40px);
+  /* Overlay glass + 深底兜底：截图中“纯透明弹层压在内容上”的乱源 */
+  background: linear-gradient(180deg, rgba(30,41,59,.92) 0%, rgba(15,23,42,.96) 100%);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  backdrop-filter: blur(40px) saturate(150%);
   border: 1px solid rgba(255,255,255,.12);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.15);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 8px 32px rgba(0,0,0,.35);
 }
 .pd-dropdown-item {
   position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
-  padding: 6px 12px;
+  padding: 7px 10px;
   border: none;
+  border-radius: 6px;
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -524,10 +555,11 @@ body {
   height: 60%;
   border-radius: 9999px;
   background: var(--color-pd-primary);
-  box-shadow: 0 0 6px rgba(124,58,237,.8);
+  box-shadow: 0 0 6px rgba(167,139,250,.8);
 }
 .pd-dropdown-item-label {
   font-size: 12px;
+  font-weight: 500;
   color: var(--color-pd-ink);
 }
 .pd-dropdown-item-label.pd-mono {
@@ -535,9 +567,18 @@ body {
 }
 .pd-dropdown-item-hint {
   font-size: 10px;
-  line-height: 1.4;
+  line-height: 1.5;
   color: var(--color-pd-ink-2);
   margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 三行信息：label / version / model 各占一行，左对齐紧凑 */
+.pd-dropdown-item-hint.pd-mono {
+  font-family: var(--font-mono-ui);
+  font-size: 9.5px;
+  opacity: .85;
 }
 
 /* ── Model dropdown (header) ── */
@@ -555,7 +596,7 @@ body {
   align-items: center;
   gap: 2px;
   padding: 4px 8px;
-  border-radius: 9999px;
+  border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
   font-size: 12px;
@@ -567,8 +608,8 @@ body {
   white-space: nowrap;
 }
 .pd-workflow-trigger:hover {
-  border-color: rgba(255,255,255,.60);
-  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.25);
+  background: rgba(255,255,255,.06);
 }
 .pd-workflow-label {
   max-width: 80px;
@@ -603,7 +644,7 @@ body {
 .pd-md p { margin: 1.6em 0; }
 .pd-md h1, .pd-md h2, .pd-md h3, .pd-md h4 {
   font-family: var(--font-serif-read);
-  color: #FFFFFF;
+  color: #F1F5F9;
   font-weight: 600;
   line-height: 1.5;
 }
@@ -613,10 +654,10 @@ body {
   margin-top: 1.8em; margin-bottom: 0.7em; padding-top: 0.6em;
 }
 .pd-md[data-done="true"] h1,
-.pd-md[data-done="true"] h2 { border-top: 1px solid rgba(255,255,255,.10); }
+.pd-md[data-done="true"] h2 { border-top: 1px solid rgba(255,255,255,.06); }
 .pd-md h3 { font-size: 14.5px; margin-top: 1.4em; margin-bottom: 0.4em; }
 .pd-md h4 { font-size: 14px; margin-top: 1.2em; margin-bottom: 0.4em; }
-.pd-md strong { font-weight: 600; color: #FFFFFF; }
+.pd-md strong { font-weight: 600; color: #F8FAFC; }
 .pd-md ul { list-style: disc; padding-left: 1.4em; }
 .pd-md ol { list-style: decimal; padding-left: 1.4em; }
 .pd-md li::marker { color: var(--color-pd-primary); }
@@ -656,7 +697,7 @@ body {
 .pd-md td { border-bottom: 1px solid rgba(255,255,255,.05); padding: 4px 8px; }
 .pd-md th:last-child, .pd-md td:last-child { padding-right: 0; }
 .pd-md a { color: var(--color-pd-secondary); text-decoration: underline; }
-.pd-md hr { border: 0; border-top: 1px solid rgba(255,255,255,.10); margin: 1.8em 0; }
+.pd-md hr { border: 0; border-top: 1px solid rgba(255,255,255,.06); margin: 1.8em 0; }
 .pd-md .pd-table-scroll {
   overflow-x: auto;
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
@@ -710,11 +751,11 @@ body {
 }
 .pd-history-search-btn {
   padding: 4px 10px;
-  border-radius: 9999px;
+  border-radius: 6px;
   border: none;
   font-size: 12px;
   font-weight: 500;
-  color: #fff;
+ color: #fff;
   background: linear-gradient(135deg, #7C3AED 0%, #00A2E6 100%);
   cursor: pointer;
   transition: filter 0.15s;
@@ -739,7 +780,7 @@ body {
   transition: background 0.1s;
 }
 .pd-history-item:hover {
-  background: rgba(255,255,255,.08);
+  background: rgba(255,255,255,.06);
 }
 .pd-history-item-main {
   flex: 1;
@@ -773,7 +814,7 @@ body {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 9999px;
+  border-radius: 6px;
   border: none;
   background: transparent;
   color: var(--color-pd-ink-2);
@@ -834,8 +875,36 @@ body {
   overflow-y: auto;
   padding: 0 18px 20px;
 }
+/* 继续对话：玻璃 raised 按钮（历史详情页） */
+.pd-history-resume {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0 18px 14px;
+  padding: 8px 14px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.08);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-pd-ink);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pd-history-resume:hover {
+  border-color: rgba(167,139,250,.5);
+  background: rgba(124,58,237,.18);
+}
+.pd-history-resume svg {
+  width: 13px;
+  height: 13px;
+}
 
-/* ══════════════════════════════════════════════
+/* ═══════════════ Write═════════════════════════
    Settings View
    ══════════════════════════════════════════════ */
 .pd-settings {
@@ -852,7 +921,7 @@ body {
   width: 24px;
   height: 24px;
   align-self: flex-end;
-  border-radius: 9999px;
+  border-radius: 6px;
   border: none;
   background: transparent;
   color: var(--color-pd-ink-2);
@@ -947,14 +1016,14 @@ body {
 .pd-settings-description code {
   font-family: var(--font-mono-ui);
   font-size: 11px;
-  background: rgba(0,0,0,.20);
+  background: rgba(0,0,0,.30);
   border-radius: 3px;
   padding: 0.1em 0.3em;
 }
 
 /* ══════════════════════════════════════════════
    Onboarding
-   ══════════════════════════════════════════════ */
+   ══════════════════════════════════*═══════════ */
 .pd-onboarding {
   display: flex;
   flex-direction: column;
@@ -965,15 +1034,16 @@ body {
   text-align: center;
 }
 .pd-onboarding-card {
-  width: 100%;
+  width:  100%;
   max-width: 300px;
   padding: 24px;
   border-radius: 12px;
   /* Elevation: Raised */
   background: rgba(255,255,255,.08);
-  -webkit-backdrop-filter: blur(24px);
-  backdrop-filter: blur(24px);
-  border: 1px solid rgba(255,255,255,.20);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+  border:  1px solid rgba(255,255,255,.14);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
 }
 .pd-onboarding-title {
   font-family: var(--font-serif-read);

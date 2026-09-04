@@ -39,13 +39,6 @@ export function App() {
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [stream, setStream] = useState<TaskStreamState>(BLANK)
   const [agentId, setAgentId] = useState('')
-  const [pinned, setPinned] = useState(true)
-
-  function togglePinned() {
-    const next = !pinned
-    setPinned(next)
-    chrome.runtime.sendMessage({ t: 'set-pinned', value: next }).catch(() => {})
-  }
 
   useEffect(() => {
     chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
@@ -188,6 +181,20 @@ export function App() {
   /** 新任务开始（总结首轮）：清空消息重新开聊天 */
   const beginSession = useCallback(() => setStream(BLANK), [])
 
+  /** 历史详情「继续对话」：装载历史正文为一条 assistant 消息 + 通知 SW 恢复会话 */
+  const resumeHistory = useCallback((item: { agent: string; sessionId?: string }, body: string) => {
+    setOverlay(null)
+    setAgentId(item.agent)
+    setStream({
+      taskId: null,
+      messages: [{ id: `h${item.ts}`, role: 'assistant', text: body }],
+      activeId: null,
+      phase: '',
+      done: true,
+    })
+    chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId }).catch(() => {})
+  }, [])
+
   if (hostOk === false) return <Onboarding />
 
   const usable = agents.filter((a) => a.available)
@@ -202,7 +209,8 @@ export function App() {
           items={usable.map((a) => ({
             key: a.id,
             label: a.id,
-            hint: a.model ?? (a.version || undefined),
+            version: a.version || undefined,
+            model: a.model,
           }))}
           fallback="未检测到 CLI"
           ariaLabel="选择 CLI 模型"
@@ -230,27 +238,6 @@ export function App() {
               <path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" />
             </svg>
           </button>
-          <button
-            onClick={togglePinned}
-            className={`pd-icon-btn ${pinned ? 'active' : ''}`}
-            title={pinned ? '已钉住：点击图标直接打开面板' : '未钉住：点击图标打开面板需先点击'}
-            aria-label={pinned ? '取消钉住' : '钉住'}
-            aria-pressed={pinned}
-          >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9.5 1.5 14.5 6.5 12.6 8.4 11.9 7.7 8.2 11.4 8.5 13.2 8 13.7 2.3 8 2.8 7.5 4.6 7.8 8.3 4.1 7.6 3.4 9.5 1.5Z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => window.close()}
-            className="pd-icon-btn"
-            title="关闭"
-            aria-label="关闭"
-          >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m4 4 8 8M12 4l-8 8" />
-            </svg>
-          </button>
         </div>
       </header>
 
@@ -260,7 +247,7 @@ export function App() {
 
       {overlay === 'history' && (
         <div className="pd-overlay pd-fade-in-fast">
-          <HistoryView onClose={() => setOverlay(null)} />
+          <HistoryView onClose={() => setOverlay(null)} onResume={resumeHistory} />
         </div>
       )}
       {overlay === 'settings' && (

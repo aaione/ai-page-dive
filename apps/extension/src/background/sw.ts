@@ -74,6 +74,14 @@ async function handleMessage(msg: any): Promise<unknown> {
       }
       return startSummarize(msg.agentId as string, msg.workflow as string, instruction)
     }
+    case 'resume-history': {
+      // 历史详情「继续对话」：装载历史会话（SW 记 lastSession），后续 followUp 走 --resume
+      const { agentId, sessionId } = msg
+      if (!agentId || !sessionId) return { error: 'bad-request' }
+      lastSession = { agentId, sessionId }
+      currentAgentId = agentId
+      return { ok: true }
+    }
     case 'cancel':
       if (currentTask) {
         nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })

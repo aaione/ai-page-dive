@@ -23,6 +23,8 @@ export interface HistoryMeta {
   status: 'done' | 'interrupted' | 'error'
   usage?: { inputTokens?: number; outputTokens?: number }
   durationMs?: number
+  /** CLI 会话 id：历史详情页「继续对话」用（claude --resume） */
+  sessionId?: string
 }
 
 export function slugify(s: string): string {
@@ -72,6 +74,7 @@ export async function saveHistory(
     `ts: ${Math.floor(Date.now() / 1000)}`,
     meta.usage ? `usage: ${JSON.stringify(meta.usage)}` : null,
     meta.durationMs != null ? `duration_ms: ${meta.durationMs}` : null,
+    meta.sessionId ? `session_id: ${meta.sessionId}` : null,
     '---',
     '',
   ]
@@ -132,6 +135,7 @@ async function readFrontmatter(path: string): Promise<Omit<HistoryItem, 'path'> 
     url: get('url'),
     agent: get('agent') || '?',
     ts: Number(get('ts')) * 1000 || (await stat(path)).mtimeMs,
+    sessionId: get('session_id') || undefined,
   }
 }
 
