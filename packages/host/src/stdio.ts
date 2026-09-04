@@ -1,10 +1,11 @@
 /** --stdio 模式：NM 主循环（Chrome 起 host 的入口形态，也供冒烟测试用） */
-import type { ExtToHost } from '@pagedive/shared'
+import type { ExtToHost } from '@ai-page-dive/shared'
 import { createFrameReader, writeFrame } from './nm.js'
 import { probeAgents } from './agents/registry.js'
 import { deleteHistory, listHistory, readHistory, revealInFinder } from './history.js'
 import { Task } from './task.js'
-import { listWorkflows } from './workflows.js'
+import { listSkills, revealSkill } from './skills.js'
+import { deleteWorkflow, listWorkflows, readWorkflow, revealWorkflow, saveWorkflow } from './workflows.js'
 
 const HOST_VERSION = '0.1.0'
 /** history-file 单帧安全上限（NM 1MB 限制留余量） */
@@ -98,6 +99,40 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
       case 'history-reveal':
         try {
           revealInFinder(msg.path)
+        } catch (e: any) {
+          send({ t: 'error', code: 'reveal-fail', message: String(e?.message ?? e) })
+        }
+        break
+      case 'workflow-read':
+        readWorkflow(msg.name)
+          .then((content) => {
+            if (content === undefined) throw new Error(`workflow not found: ${msg.name}`)
+            send({ t: 'workflow-file', name: msg.name, content })
+          })
+          .catch((e) => send({ t: 'error', code: 'not-found', message: String(e?.message ?? e) }))
+        break
+      case 'workflow-save':
+        saveWorkflow(msg)
+          .then(() => send({ t: 'workflow-saved', name: msg.name }))
+          .catch((e) => send({ t: 'error', code: 'bad-name', message: String(e?.message ?? e) }))
+        break
+      case 'workflow-delete':
+        deleteWorkflow(msg.name)
+          .then(() => send({ t: 'workflow-deleted', name: msg.name }))
+          .catch((e) => send({ t: 'error', code: 'bad-name', message: String(e?.message ?? e) }))
+        break
+      case 'workflow-reveal':
+        // revealWorkflow 目录不存在时 reject（不静默建副本），此处回 error 帧
+        revealWorkflow(msg.name).catch((e) =>
+          send({ t: 'error', code: 'reveal-fail', message: String(e?.message ?? e) }),
+        )
+        break
+      case 'list-skills':
+        listSkills().then((items) => send({ t: 'skills', items }))
+        break
+      case 'skill-reveal':
+        try {
+          revealSkill(msg.name)
         } catch (e: any) {
           send({ t: 'error', code: 'reveal-fail', message: String(e?.message ?? e) })
         }

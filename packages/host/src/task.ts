@@ -5,12 +5,13 @@
 import { mkdir, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import type { AgentEvent, TaskInput } from '@pagedive/shared'
-import { MAX_CHUNK } from '@pagedive/shared'
+import type { AgentEvent, TaskInput } from '@ai-page-dive/shared'
+import { MAX_CHUNK } from '@ai-page-dive/shared'
 import { createClaudeParser } from './agents/claude.js'
 import { createCodexParser } from './agents/codex.js'
 import { createOpencodeParser } from './agents/opencode.js'
 import { getAgent } from './agents/registry.js'
+import { getSkillBodies } from './skills.js'
 import { buildHistoryPath, saveHistory } from './history.js'
 import { makeAgentCwd, spawnCli, type SpawnedProc } from './spawn.js'
 import { scheduleCleanup, writeContentFile } from './tmpfile.js'
@@ -116,6 +117,11 @@ export class Task {
     const wfName = this.input.workflow ?? 'quick'
     const wf = await getWorkflow(wfName)
 
+    // 技能注入：非 resume 轮读取启用技能正文（读取失败的已在 getSkillBodies 内跳过）
+    const skillBodies = !isResume && this.input.skills?.length
+      ? await getSkillBodies(this.input.skills)
+      : undefined
+
     const parser =
       def.streamFormat === 'claude-stream-json' ? createClaudeParser()
       : def.streamFormat === 'opencode-jsonl' ? createOpencodeParser()
@@ -139,7 +145,7 @@ export class Task {
     }
     const prompt = isResume
       ? (this.input.instruction ?? '')
-      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wf?.body)
+      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wf?.body, skillBodies)
 
     this.startedAt = Date.now()
     this.cb.onStatus('spawned')
@@ -315,12 +321,13 @@ async function linkIntoCwd(contentFile: string, cwd: string): Promise<void> {
   } catch { /* EEXIST 等：沙箱内已有同名，直接用 */ }
 }
 
-/** prompt 组装：instruction（用户输入）优先，其次 workflow 正文 */
+/** prompt 组装：instruction（用户输入）优先，其次 workflow 正文；技能为可选增强指令 */
 export function buildPrompt(
   page: TaskInput['page'],
   contentFile: string,
   workflow: string,
   workflowBody?: string,
+  skills?: { name: string; body: string }[],
 ): string {
   const task =
     workflowBody ??
@@ -336,6 +343,12 @@ export function buildPrompt(
   ]
     .filter(Boolean)
     .join('  ')
+  // 技能段：每个技能一行小标题 + 正文，--- 分隔；用户启用的可选增强指令（风格/输出格式等）
+  const skillsSection = skills?.length
+    ? `\n## 技能\n以下为用户启用的增强指令，在不与任务冲突的前提下遵循：\n\n${skills
+        .map((s) => `### ${s.name}\n${s.body}`)
+        .join('\n\n---\n\n')}\n`
+    : ''
   return `你是深度阅读助手。请完成以下任务。
 
 ## 网页元数据
@@ -345,7 +358,7 @@ ${meta}
 完整正文（markdown，约 ${page.approxTokens} tokens）已写入本地文件：
 ${contentFile}
 请读取该文件全文后再作答，不要只读开头。
-
+${skillsSection}
 ## 任务
 ${task}
 `
