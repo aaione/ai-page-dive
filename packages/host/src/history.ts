@@ -1,11 +1,28 @@
-/** 历史落盘：~/.pagedive/history/年/月/日/时间戳-slug.md（frontmatter 元数据） */
+/** 历史落盘：~/.ai-page-dive/history/年/月/日/时间戳-slug.md（frontmatter 元数据）
+ * 多轮对话：同一 CLI 会话的追问轮 append 到首轮文件，pd:user/pd:assistant
+ * HTML 注释分段（对 markdown 渲染不可见，解析简单且不会被正文伪造的标记骗到
+ * ——正文里的标记会被转义/包进代码块；即便伪造也只是显示分层问题，无安全面） */
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
+import { existsSync, renameSync } from 'node:fs'
 import type { HistoryItem } from '@ai-page-dive/shared'
 
-const ROOT = join(homedir(), '.pagedive', 'history')
+/** v1 目录名 → v2：一次性迁移（rename 原子，已存在则逐项并入） */
+function rootDir(): string {
+  const home = homedir()
+  const oldDir = join(home, '.pagedive')
+  const newDir = join(home, '.ai-page-dive')
+  if (existsSync(oldDir) && !existsSync(newDir)) {
+    try {
+      renameSync(oldDir, newDir)
+    } catch { /* 并发/权限失败：退回旧目录可用 */ }
+  }
+  return newDir
+}
+
+const ROOT = join(rootDir(), 'history')
 
 /** 路径校验：resolve 消除 .. 与同前缀绕过（history-evil/ 等） */
 function assertInRoot(p: string): void {
@@ -81,6 +98,18 @@ export async function saveHistory(
     .filter((l) => l !== null)
     .join('\n')
   await writeFile(path, frontmatter + body + '\n', { mode: 0o600 })
+}
+
+/** 追问轮 append 到首轮历史文件（多轮对话完整记录） */
+export async function appendHistoryTurn(
+  path: string,
+  turn: { user: string; assistant: string },
+): Promise<void> {
+  assertInRoot(path)
+  await writeFile(path, `\n<!-- pd:user -->\n${turn.user}\n\n<!-- pd:assistant -->\n${turn.assistant}\n`, {
+    flag: 'a',
+    mode: 0o600,
+  })
 }
 
 /** 扫描历史目录，按 ts 倒序，query 子串过滤 title/url */

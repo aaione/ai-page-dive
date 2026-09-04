@@ -2,9 +2,9 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildHistoryPath, escapeYamlForTest, saveHistory, slugify } from '../src/history.js'
+import { appendHistoryTurn, buildHistoryPath, escapeYamlForTest, saveHistory, slugify } from '../src/history.js'
 
-// history ROOT 指向 ~/.pagedive——测试隔离：monkeypatch homedir 不可行（模块级常量），
+// history ROOT 指向 ~/.ai-page-dive——测试隔离：monkeypatch homedir 不可行（模块级常量），
 // 故本组只测纯函数与写入格式；listHistory 的扫描逻辑由 M3 冒烟覆盖。
 // ponytail: 若后续需要集成测试，把 ROOT 改成可注入。
 
@@ -61,5 +61,26 @@ describe('saveHistory 写入格式', () => {
     expect(raw).not.toContain('workflow')
     expect(raw).not.toContain('usage')
     expect(raw).not.toContain('duration_ms')
+  })
+
+  it('appendHistoryTurn：追问轮以 pd:user/pd:assistant 标记 append（纯格式校验）', async () => {
+    // appendHistoryTurn 有 assertInRoot 守卫（真实 ROOT 在 ~ 下，tmp 目录进不去），
+    // 故用 saveHistory 同源格式直接构造等价文件后校验追加格式约定
+    const p3 = join(dir, '2026', '09', '01', '100002-c.md')
+    await saveHistory(p3, { title: 'C', url: 'u', agent: 'claude', status: 'done' }, '首轮回答')
+    // 格式约定：\n<!-- pd:user -->\n{user}\n\n<!-- pd:assistant -->\n{assistant}\n
+    const turn = `\n<!-- pd:user -->\n追问1\n\n<!-- pd:assistant -->\n回答1\n`
+    const { appendFile } = await import('node:fs/promises')
+    await appendFile(p3, turn, 'utf8')
+    const raw = await readFile(p3, 'utf8')
+    expect(raw.indexOf('首轮回答')).toBeLessThan(raw.indexOf('<!-- pd:user -->'))
+    expect(raw).toContain('<!-- pd:user -->\n追问1')
+    expect(raw).toContain('<!-- pd:assistant -->\n回答1')
+  })
+
+  it('appendHistoryTurn：路径逃逸被拒', async () => {
+    await expect(
+      appendHistoryTurn('/tmp/evil/x.md', { user: 'u', assistant: 'a' }),
+    ).rejects.toThrow('outside history root')
   })
 })

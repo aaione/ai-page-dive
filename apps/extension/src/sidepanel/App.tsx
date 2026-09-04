@@ -202,15 +202,15 @@ export function App() {
   /** 新任务开始（总结首轮）：清空消息重新开聊天 */
   const beginSession = useCallback(() => setStream(BLANK), [])
 
-  /** 历史详情「继续对话」：装载历史正文为一条 assistant 消息 + 通知 SW 恢复会话 */
+  /** 历史详情「继续对话」：解析 pd:user/pd:assistant 分段还原多轮气泡 + 通知 SW 恢复会话 */
   const resumeHistory = useCallback((item: HistoryItem, body: string) => {
     setOverlay(null)
     setAgentId(item.agent)
-    const text = body.trim()
+    const msgs: ChatMessage[] = parseHistoryTurns(body)
     setStream({
       taskId: null,
-      messages: text
-        ? [{ id: `h${item.ts}`, role: 'assistant' as const, text }]
+      messages: msgs.length
+        ? msgs
         // 空正文（error 历史）：给出占位说明，避免空白气泡 + 误判 hasSession
         : [{ id: `h${item.ts}`, role: 'assistant' as const, text: '（该记录无正文——发送消息将开始全新总结）', error: '该历史记录状态为失败，无对话上下文可续', isError: true }],
       activeId: null,
@@ -219,7 +219,7 @@ export function App() {
     })
     // tips 条同步为该历史条目的来源页
     if (item.title || item.url) setPageMeta({ title: item.title ?? '', url: item.url ?? '' })
-    chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId }).catch(() => {})
+    chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path }).catch(() => {})
   }, [])
 
   if (hostOk === false) return <Onboarding />
@@ -276,6 +276,29 @@ export function App() {
       )}
     </div>
   )
+}
+
+/**
+ * 历史正文 → 多轮消息。host 落盘格式：首轮 assistant 全文在前，
+ * 追问轮以 <!-- pd:user --> / <!-- pd:assistant --> 注释分段。
+ * 旧格式（无标记）整体作为一条 assistant 消息。
+ */
+function parseHistoryTurns(body: string): ChatMessage[] {
+  const raw = body.trim()
+  if (!raw) return []
+  const msgs: ChatMessage[] = []
+  // 首段（到第一个 pd:user 标记前）= 首轮 assistant 回答
+  const parts = raw.split(/<!-- pd:(user|assistant) -->/)
+  if (parts[0].trim()) {
+    msgs.push({ id: 'h0', role: 'assistant', text: parts[0].trim() })
+  }
+  // split 产物交替：[text, tag, text, tag, text…]，tag 后的 text 属于该角色
+  for (let i = 1; i < parts.length; i += 2) {
+    const role = parts[i] === 'user' ? 'user' : 'assistant'
+    const text = (parts[i + 1] ?? '').trim()
+    if (text) msgs.push({ id: `h${i}`, role, text })
+  }
+  return msgs
 }
 
 const PHASE_LABEL: Record<string, string> = {

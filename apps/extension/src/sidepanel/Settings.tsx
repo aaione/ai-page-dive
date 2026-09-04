@@ -223,7 +223,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               <div className="pd-set-panel">
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
                   <p className="pd-set-hint" style={{ margin: 0, flex: 1 }}>
-                    总结模式即插件：目录在 <code>~/.pagedive/workflows/</code>
+                    总结模式即插件：目录在 <code>~/.ai-page-dive/workflows/</code>
                   </p>
                   <button className="pd-set-btn primary" onClick={newWorkflow}>＋ 新建模式</button>
                 </div>
@@ -346,7 +346,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
           <div className="pd-set-pane">
             <div className="pd-set-panel">
               <p className="pd-set-hint">
-                总结时启用中的技能会注入 prompt。在 <code>~/.pagedive/skills/&lt;名称&gt;/SKILL.md</code> 创建技能：
+                总结时启用中的技能会注入 prompt。在 <code>~/.ai-page-dive/skills/&lt;名称&gt;/SKILL.md</code> 创建技能：
                 frontmatter 写 <code>name</code>/<code>description</code>，正文即技能指令。
               </p>
               {skills.length ? (
@@ -376,7 +376,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                 </div>
               ) : (
                 <p className="pd-set-empty">
-                  还没有技能。在 <code>~/.pagedive/skills/&lt;名称&gt;/SKILL.md</code> 创建你的第一个技能——
+                  还没有技能。在 <code>~/.ai-page-dive/skills/&lt;名称&gt;/SKILL.md</code> 创建你的第一个技能——
                   frontmatter 写 name / description，正文即技能指令，总结时启用中的技能会注入 prompt。
                 </p>
               )}
@@ -395,7 +395,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                 付费墙站点会尽力提取当前已渲染内容（等价于你手动复制），不会绕过访问控制。
               </p>
               <p>
-                历史记录保存在 <code>~/.pagedive/history/</code>。
+                历史记录保存在 <code>~/.ai-page-dive/history/</code>。
               </p>
             </div>
           </div>

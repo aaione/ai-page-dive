@@ -13,8 +13,8 @@ const HOST_NAME = 'com.pagedive.host'
  */
 async function writeHostWrapper(hostEntry: string): Promise<string> {
   const nodeBin = process.execPath
-  const wrapper = join(homedir(), '.pagedive', 'host-wrapper.sh')
-  await mkdir(join(homedir(), '.pagedive'), { recursive: true })
+  const wrapper = join(homedir(), '.ai-page-dive', 'host-wrapper.sh')
+  await mkdir(join(homedir(), '.ai-page-dive'), { recursive: true })
   await writeFile(wrapper, `#!/bin/sh\nexec "${nodeBin}" "${hostEntry}" --stdio\n`, { mode: 0o755 })
   await chmod(wrapper, 0o755)
   return wrapper

@@ -57,7 +57,9 @@ export interface TaskInput {
   instruction?: string
   /** 追问轮：续接 CLI 会话（此时无正文/工作流，prompt 只剩 instruction） */
   resumeSessionId?: string
-  /** 启用的技能名（host 读 ~/.pagedive/skills 正文拼进 prompt） */
+  /** 追问轮：首轮历史文件路径（本轮 user/assistant append 进同一文件，还原多轮对话） */
+  historyPath?: string
+  /** 启用的技能名（host 读 ~/.ai-page-dive/skills 正文拼进 prompt） */
   skills?: string[]
   page: Omit<PageContent, 'contentMarkdown'>
 }

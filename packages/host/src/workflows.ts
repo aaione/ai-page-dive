@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { WorkflowItem } from '@ai-page-dive/shared'
 
-const USER_DIR = join(homedir(), '.pagedive', 'workflows')
+const USER_DIR = join(homedir(), '.ai-page-dive', 'workflows')
 const BUILTIN_DIR = join(import.meta.dirname, '..', 'builtins')
 
 export interface LoadedWorkflow extends WorkflowItem {

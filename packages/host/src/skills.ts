@@ -1,11 +1,11 @@
-/** skills 懒扫描：~/.pagedive/skills/<name>/SKILL.md（目录即插件，与 workflows 同构） */
+/** skills 懒扫描：~/.ai-page-dive/skills/<name>/SKILL.md（目录即插件，与 workflows 同构） */
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import type { SkillItem } from '@ai-page-dive/shared'
 
-const DIR = join(homedir(), '.pagedive', 'skills')
+const DIR = join(homedir(), '.ai-page-dive', 'skills')
 // 当前无内置技能目录；留位：后续内置目录放入数组即自动并入扫描（false 标记用户侧）
 const BUILTIN_SKILL_DIRS: string[] = []
 

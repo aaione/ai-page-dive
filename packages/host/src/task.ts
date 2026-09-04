@@ -12,7 +12,7 @@ import { createCodexParser } from './agents/codex.js'
 import { createOpencodeParser } from './agents/opencode.js'
 import { getAgent } from './agents/registry.js'
 import { getSkillBodies } from './skills.js'
-import { buildHistoryPath, saveHistory } from './history.js'
+import { appendHistoryTurn, buildHistoryPath, saveHistory } from './history.js'
 import { makeAgentCwd, spawnCli, type SpawnedProc } from './spawn.js'
 import { scheduleCleanup, writeContentFile } from './tmpfile.js'
 import { getWorkflow } from './workflows.js'
@@ -23,7 +23,7 @@ const TASK_TIMEOUT_MS = 10 * 60_000
  * CLI 会话 id → 首轮 spawn cwd 的映射（追问用，内存加速）。
  * claude 的会话记录按 cwd 分区存储（~/.claude/projects/<cwd 编码>/），
  * resume 轮 cwd 不一致会报 No conversation found。
- * 兜底：miss 时用固定工作区 ~/.pagedive/agent-workspace/（host 重启后仍可复现）
+ * 兜底：miss 时用固定工作区 ~/.ai-page-dive/agent-workspace/（host 重启后仍可复现）
  */
 const sessionCwds = new Map<string, string>()
 
@@ -31,7 +31,7 @@ const sessionCwds = new Map<string, string>()
 let stableCwd: string | null = null
 async function getStableAgentCwd(): Promise<string> {
   if (stableCwd) return stableCwd
-  const dir = join(homedir(), '.pagedive', 'agent-workspace')
+  const dir = join(homedir(), '.ai-page-dive', 'agent-workspace')
   await mkdir(dir, { recursive: true })
   return (stableCwd = dir)
 }
@@ -130,7 +130,7 @@ export class Task {
     // opencode 需先知道 cwd 才能组 argv（--dir 钉死工作区）+ 软链正文 + 相对路径 prompt。
     // claude 会话按 cwd 分区存储（~/.claude/projects/<cwd 编码>/）：cwd 必须跨 host 重启
     // 可复现，否则 --resume 报 No conversation found——统一用固定工作区
-    // ~/.pagedive/agent-workspace/，sessionCwds 仅作内存加速
+    // ~/.ai-page-dive/agent-workspace/，sessionCwds 仅作内存加速
     let agentCwd = def.filePathInPrompt && !isResume ? await makeAgentCwd() : undefined
     if (isResume) {
       const remembered = sessionCwds.get(this.input.resumeSessionId!)
@@ -225,7 +225,7 @@ export class Task {
           this.doneSent = true
           clearTimeout(this.timeoutTimer)
           this.proc?.reap()
-          this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
+          if (!this.input.resumeSessionId) this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
           void this.persist('error')
           this.cb.onDone({
             historyPath: this.historyPath,
@@ -265,7 +265,10 @@ export class Task {
       rm(this.proc.cwd, { recursive: true, force: true }).catch(() => {})
     }
     const durationMs = Date.now() - this.startedAt
-    this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
+    // 追问轮不建新历史路径（append 首轮文件）
+    if (!this.input.resumeSessionId) {
+      this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
+    }
     if (this.cancelled || signal === 'SIGTERM' || signal === 'SIGKILL') {
       await this.persist('interrupted')
       this.cb.onError('cancelled', 'task cancelled')
@@ -291,8 +294,16 @@ export class Task {
 
   private async persist(status: 'done' | 'interrupted' | 'error'): Promise<void> {
     if (!this.input) return
-    // 追问轮不单独落盘：它属于首轮会话的延续，不是独立总结
-    if (this.input.resumeSessionId) return
+    // 追问轮：user + assistant append 到首轮历史文件（多轮对话完整记录）
+    if (this.input.resumeSessionId) {
+      if (this.input.historyPath && this.accText) {
+        await appendHistoryTurn(this.input.historyPath, {
+          user: this.input.instruction ?? '',
+          assistant: this.accText,
+        }).catch(() => {})
+      }
+      return
+    }
     await saveHistory(
       this.historyPath,
       {

@@ -16,8 +16,8 @@ claude -p --output-format stream-json / codex exec --json
 ```
 
 - 提取管线：Readability → DOMPurify → Turndown(GFM)，arXiv 适配器打样，innerText 兜底
-- 历史：`~/.pagedive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）
-- workflow：`~/.pagedive/workflows/<name>/WORKFLOW.md`（正文即 prompt，shadow 内置）
+- 历史：`~/.ai-page-dive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）
+- workflow：`~/.ai-page-dive/workflows/<name>/WORKFLOW.md`（正文即 prompt，shadow 内置）
 
 ## 开发
 

@@ -33,7 +33,7 @@ describe('stdio 路由', () => {
 
   it('history-read 路径逃逸被拒', async () => {
     const { handle, sent } = makeSession()
-    handle({ t: 'history-read', path: '/Users/x/.pagedive/history-evil/x.md' })
+    handle({ t: 'history-read', path: '/Users/x/.ai-page-dive/history-evil/x.md' })
     await new Promise(r => setTimeout(r, 50))
     expect(sent[0]).toMatchObject({ t: 'error', code: 'read-fail' })
   })

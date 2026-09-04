@@ -63,7 +63,7 @@ describe('Task 状态机', () => {
     expect(cbs.chunks.map(c => c[0])).toEqual(['第一段', '第二段'])
     expect(cbs.chunks.map(c => c[1])).toEqual([0, 1])
     expect(cbs.done?.isError).toBe(false)
-    expect(cbs.done?.historyPath).toMatch(/\.pagedive\/history\/\d{4}\/\d{2}\/\d{2}\/.*\.md$/)
+    expect(cbs.done?.historyPath).toMatch(/\.ai-page-dive\/history\/\d{4}\/\d{2}\/\d{2}\/.*\.md$/)
     const raw = await readFile(cbs.done.historyPath, 'utf8')
     expect(raw).toContain('status: done')
     expect(raw).toContain('第一段第二段')

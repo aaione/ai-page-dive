@@ -14,8 +14,9 @@ let currentTask: {
   content: string
 } | null = null
 
-// 上一轮完成的会话（追问用）：agent + CLI 会话 id
-let lastSession: { agentId: string; sessionId: string } | null = null
+// 上一轮完成的会话（追问用）：agent + CLI 会话 id + 首轮历史文件路径。
+// historyPath：追问轮 append 进同一文件——历史详情还原完整多轮对话
+let lastSession: { agentId: string; sessionId: string; historyPath?: string } | null = null
 // 当前任务用的 agent（task-meta 到达时此刻的 agent 即会话归属）
 let currentAgentId = 'claude'
 // 每个 CLI 最近使用的模型（下拉展示用）：agentId → model。
@@ -118,16 +119,16 @@ async function handleMessage(msg: any): Promise<unknown> {
       // SW 休眠丢 lastSession 时明确报错——静默降级为新总结会让用户误以为在追问
       if (msg.followUp === true) {
         if (!lastSession) return { error: 'session-lost' }
-        const r = startFollowUp(lastSession.agentId, lastSession.sessionId, instruction ?? '')
+        const r = startFollowUp(lastSession.agentId, lastSession.sessionId, instruction ?? '', lastSession.historyPath)
         return { ...r, agentId: lastSession.agentId }
       }
       return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills)
     }
     case 'resume-history': {
       // 历史详情「继续对话」：装载历史会话（SW 记 lastSession），后续 followUp 走 --resume
-      const { agentId, sessionId } = msg
+      const { agentId, sessionId, historyPath } = msg
       if (!agentId || !sessionId) return { error: 'bad-request' }
-      lastSession = { agentId, sessionId }
+      lastSession = { agentId, sessionId, historyPath }
       currentAgentId = agentId
       return { ok: true }
     }
@@ -182,9 +183,10 @@ nmPort.onMessage((m) => {
       currentTask = null
     }
   }
-  // 捕获会话 id 供追问（claude init 事件捕获，task-done 兜底）
+  // 捕获会话 id 供追问（claude init 事件捕获，task-done 兜底）；historyPath 续存
+  // （追问轮 task-done 带回首轮文件路径，覆盖亦无损——路径不变）
   if (msg?.t === 'task-meta' || msg?.t === 'task-done') {
-    if (msg.sessionId) lastSession = { agentId: currentAgentId, sessionId: msg.sessionId }
+    if (msg.sessionId) lastSession = { agentId: currentAgentId, sessionId: msg.sessionId, historyPath: msg.historyPath ?? lastSession?.historyPath }
     // 记住该 CLI 最近模型，merge 进 agents 缓存即刻下发（下拉展示 claude · GLM-5.2）
     if (msg.model) {
       lastModels.set(currentAgentId, msg.model)
@@ -203,14 +205,14 @@ nmPort.onDisconnect(() => {
 })
 
 /** 追问轮：上下文在 CLI 会话里，host 直接 resume，无提取/无正文 */
-function startFollowUp(agentId: string, sessionId: string, instruction: string) {
+function startFollowUp(agentId: string, sessionId: string, instruction: string, historyPath?: string) {
   if (!instruction.trim()) return { error: 'empty-instruction' }
   const taskId = `t${Date.now().toString(36)}`
   // 追问轮也占任务位（taskId）：进行中可取消
   const ok = nmPort.send({
     t: 'task-start',
     task: {
-      taskId, agentId, resumeSessionId: sessionId, instruction,
+      taskId, agentId, resumeSessionId: sessionId, historyPath, instruction,
       page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 },
     },
   })
@@ -293,7 +295,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
 
   const ok = nmPort.send({
     t: 'task-start',
-    // skills：panel 选中的技能名，host 读 ~/.pagedive/skills 正文拼进 prompt
+    // skills：panel 选中的技能名，host 读 ~/.ai-page-dive/skills 正文拼进 prompt
     task: { taskId, agentId, workflow, instruction, skills, page: meta },
   })
   if (!ok) {

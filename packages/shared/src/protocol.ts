@@ -57,7 +57,7 @@ export interface HistoryRevealMsg {
   path: string
 }
 
-// ---------- workflow 管理（目录即插件：~/.pagedive/workflows/<name>/WORKFLOW.md）----------
+// ---------- workflow 管理（目录即插件：~/.ai-page-dive/workflows/<name>/WORKFLOW.md）----------
 
 /** 读单个 workflow 全文（frontmatter + 正文），供设置页编辑 */
 export interface WorkflowReadMsg {
@@ -86,7 +86,7 @@ export interface WorkflowRevealMsg {
   name: string
 }
 
-// ---------- skills（~/.pagedive/skills/<name>/SKILL.md，同 workflow 目录即插件机制）----------
+// ---------- skills（~/.ai-page-dive/skills/<name>/SKILL.md，同 workflow 目录即插件机制）----------
 
 export interface ListSkillsMsg {
   t: 'list-skills'
