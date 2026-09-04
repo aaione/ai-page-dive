@@ -64,7 +64,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       }
       // probe 失败时带上 NM 断连错误（forbidden=ID 未登记 vs not found=host 未装）
       const r = await nmPort.probe()
-      return r.ok ? r : { ok: false, nmError: nmPort.lastError }
+      return r.ok ? r : { ok: false, nmError: nmPort.lastError, page: pageMeta() }
     }
     case 'summarize': {
       const instruction = msg.instruction as string | undefined
@@ -82,6 +82,8 @@ async function handleMessage(msg: any): Promise<unknown> {
       currentAgentId = agentId
       return { ok: true }
     }
+    case 'get-page-meta':
+      return { page: pageMeta() }
     case 'cancel':
       if (currentTask) {
         nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })
@@ -154,6 +156,14 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string) 
   return { ok: true, taskId }
 }
 
+/** 当前总结目标页元数据（tips 条展示用）；target 无 url 时（无 tabs 权限）fallback tab query */
+function pageMeta(): { title: string; url: string; favIconUrl?: string } | null {
+  if (target?.url && !/^(chrome|edge|about|chrome-extension):/.test(target.url)) {
+    return { title: target.title ?? '', url: target.url, favIconUrl: target.favIconUrl }
+  }
+  return null
+}
+
 async function startSummarize(agentId: string, workflow: string, instruction?: string) {
   // target：action 点击的 tab（activeTab 授权随手势生效）。SW 重启丢态或 panel
   // 直接点按钮时 fallback 到当前活跃 tab——无授权的 tab 注入会失败并提示，
@@ -193,6 +203,9 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   const taskId = `t${Date.now().toString(36)}`
   currentAgentId = agentId
   currentTask = { taskId, page: meta, content: contentMarkdown }
+
+  // 提取成功 → 下发目标页元数据（panel tips 条「正在分享 …」）
+  chrome.runtime.sendMessage({ t: 'page-meta', page: { title: tab.title ?? meta.title, url: tab.url ?? meta.url, favIconUrl: tab.favIconUrl } }).catch(() => {})
 
   const ok = nmPort.send({
     t: 'task-start',

@@ -32,6 +32,12 @@ const BLANK: TaskStreamState = {
   taskId: null, messages: [], activeId: null, phase: '', done: false,
 }
 
+export interface PageMeta {
+  title: string
+  url: string
+  favIconUrl?: string
+}
+
 export function App() {
   const [overlay, setOverlay] = useState<Overlay>(null)
   const [hostOk, setHostOk] = useState<boolean | null>(null)
@@ -39,14 +45,19 @@ export function App() {
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [stream, setStream] = useState<TaskStreamState>(BLANK)
   const [agentId, setAgentId] = useState('')
+  const [pageMeta, setPageMeta] = useState<PageMeta | null>(null)
 
   useEffect(() => {
     chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
       setHostOk(!!resp?.ok)
       if (resp?.ok) requestLists()
+      if (resp?.page) setPageMeta(resp.page)
     })
-    const listener = (m: HostToExt) => {
+    const listener = (m: any) => {
       switch (m.t) {
+        case 'page-meta':
+          setPageMeta(m.page)
+          break
         case 'agents':
           // host 探测结果可能晚于 task-meta：保留 panel 已捕获的 model 不被覆盖
           setAgents((prev) => {
@@ -182,7 +193,7 @@ export function App() {
   const beginSession = useCallback(() => setStream(BLANK), [])
 
   /** 历史详情「继续对话」：装载历史正文为一条 assistant 消息 + 通知 SW 恢复会话 */
-  const resumeHistory = useCallback((item: { agent: string; sessionId?: string }, body: string) => {
+  const resumeHistory = useCallback((item: { agent: string; sessionId?: string; title?: string; url?: string }, body: string) => {
     setOverlay(null)
     setAgentId(item.agent)
     setStream({
@@ -192,6 +203,8 @@ export function App() {
       phase: '',
       done: true,
     })
+    // tips 条同步为该历史条目的来源页
+    if (item.title || item.url) setPageMeta({ title: item.title ?? '', url: item.url ?? '' })
     chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId }).catch(() => {})
   }, [])
 
@@ -242,7 +255,7 @@ export function App() {
       </header>
 
       <main className="pd-main">
-        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} />
+        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} />
       </main>
 
       {overlay === 'history' && (

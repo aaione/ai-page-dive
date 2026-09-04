@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WorkflowItem } from '@pagedive/shared'
-import type { ChatMessage, TaskStreamState } from './App.js'
+import type { ChatMessage, PageMeta, TaskStreamState } from './App.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
 interface Props {
@@ -12,9 +12,10 @@ interface Props {
   onStartResult: (resp: { error?: string; [k: string]: unknown }) => void
   beginTurn: (text: string) => void
   beginSession: () => void
+  pageMeta: PageMeta | null
 }
 
-export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession }: Props) {
+export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta }: Props) {
   const usable = agents.filter((a) => a.available)
   const [workflow, setWorkflow] = useState('default')
   const [input, setInput] = useState('')
@@ -82,6 +83,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       </div>
 
       <div className="pd-action-bar">
+        {pageMeta && <PageTips meta={pageMeta} />}
         <ActionBar
           workflow={workflow}
           onWorkflowChange={setWorkflow}
@@ -349,6 +351,32 @@ function ActionBar({
           </svg>
         )}
       </button>
+    </div>
+  )
+}
+
+/** 输入框上方 tips 条：「正在分享 "页面标题"」（参考 Gemini 插件，上下文透明化） */
+function PageTips({ meta }: { meta: PageMeta }) {
+  const host = (() => {
+    try {
+      return new URL(meta.url).hostname.replace(/^www\./, '')
+    } catch {
+      return ''
+    }
+  })()
+  return (
+    <div className="pd-page-tips" role="status">
+      {meta.favIconUrl ? (
+        <img src={meta.favIconUrl} alt="" className="pd-page-tips-favicon" />
+      ) : (
+        <svg viewBox="0 0 16 16" className="pd-page-tips-favicon" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+          <circle cx="8" cy="8" r="6" />
+          <path d="M2 8h12M8 2c2 2.2 2 9.8 0 12M8 2C6 4.2 6 11.8 8 14" />
+        </svg>
+      )}
+      <span className="pd-page-tips-text">
+        正在分享 “{meta.title || host || meta.url}”{host ? ` · ${host}` : ''}
+      </span>
     </div>
   )
 }
