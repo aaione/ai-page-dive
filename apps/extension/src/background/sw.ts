@@ -1,11 +1,11 @@
 /**
  * SW 编排中枢：action 点击开 Side Panel → 提取 → task-start/content → 转发流。
  * 消息面（与 Side Panel 的 runtime 通信）刻意最小：
- *   panel → SW: {t:'summarize', agentId, workflow} / {t:'cancel'} / {t:'panel-ready'} / {t:'nm', msg}
+ *   panel → SW: {t:'summarize', agentId, workflow, skills?} / {t:'cancel'} / {t:'new-session'} / {t:'panel-ready'} / {t:'nm', msg}
  *   SW → panel: 直接转发 host 的 HostToExt 帧
  */
 import { nmPort } from '../lib/nmport.js'
-import type { AgentStatus, ExtToHost, HostToExt, PageContent } from '@pagedive/shared'
+import type { AgentStatus, ExtToHost, HostToExt, PageContent } from '@ai-page-dive/shared'
 
 // ponytail: 单任务状态（SW 可能重启丢内存态，重启后靠 panel 重新 ping 恢复 UI）
 let currentTask: {
@@ -35,26 +35,44 @@ let agentsCache: AgentStatus[] | null = null
 let pinned = false
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch(() => {})
 
+// 面板作用域 = tab 维度：全局默认禁用，action 点击时对该 tab 单独启用。
+// 效果（Chrome 原生行为）：切到未授权的 tab 时面板自动隐藏，切回 panelTabId
+// 时自动恢复显示——无需在这里做显隐逻辑。
+chrome.sidePanel.setOptions({ enabled: false }).catch(() => {})
+
+// 面板归属的 tab（点开面板的那次 action 点击所在页）。总结目标 = 该 tab，
+// 不随用户切换 tab 而跟随变化。
+let panelTabId: number | null = null
+
 chrome.action.onClicked.addListener(async (tab) => {
   target = tab
+  panelTabId = tab.id ?? null
+  // 先对该 tab 启用 side panel（覆盖全局 enabled:false），再打开
+  await chrome.sidePanel.setOptions({ tabId: tab.id!, enabled: true }).catch(() => {})
   await chrome.sidePanel.open({ tabId: tab.id! }).catch(() => {})
 })
 
-// side panel 跨 tab 常驻：切 tab 时跟随更新总结目标 + 推送 page-meta（tips 条同步）。
-// 无 tabs 权限时新 tab 的 url 不可见（activeTab 仅手势页可读）→ target 置 null，
-// 总结按钮走 fallback 注入 → 被 Chrome 拒绝 → 提示点图标重新授权，不越权。
+// 面板只在 panelTabId 上可见，onActivated 无需跟随切 tab 改 target；
+// 切回 panelTabId 时刷新一次 page-meta（tips 条同步，导航后 meta 可能已变）。
 const isNormalPage = (u?: string) => !!u && !/^(chrome|edge|about|chrome-extension):/.test(u)
-function followTab(tab: chrome.tabs.Tab | null) {
-  target = isNormalPage(tab?.url) ? tab : null
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  if (panelTabId !== tabId) return
   chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta() }).catch(() => {})
-}
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  followTab(await chrome.tabs.get(tabId).catch(() => null))
 })
 // 目标 tab 内导航：activeTab 授权随导航失效（url 变不可见），保持 target 由
 // 注入兜底；url 仍可见（同源导航）则刷新 meta
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-  if (target?.id === tabId && info.status === 'complete') followTab(tab)
+  if (target?.id === tabId && info.status === 'complete' && isNormalPage(tab.url)) {
+    target = tab
+    chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta() }).catch(() => {})
+  }
+})
+// 面板 tab 被关闭：重置作用域（运行中任务交给既有 cancel 语义，不强杀）
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (panelTabId === tabId) {
+    panelTabId = null
+    target = null
+  }
 })
 
 // 注意：MV3 中 async listener 的返回值会被较新 Chrome 直接当响应回传（Promise 化），
@@ -71,13 +89,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 async function handleMessage(msg: any): Promise<unknown> {
   switch (msg?.t) {
     case 'panel-ready': {
-      // 面板打开时对齐：target = 当前活跃普通页（panel dock 的页 = 打开面板时
-      // action 手势授权过的那个 tab）。panel 自身/浏览器内页不算。
-      const [active] = await chrome.tabs
-        .query({ active: true, lastFocusedWindow: true })
-        .catch(() => [])
-      if (active?.id && active.url && !/^(chrome|edge|about|chrome-extension):/.test(active.url)) {
-        target = active
+      // 面板打开时对齐：面板 dock 在 panelTabId 上（= 打开面板时 action 手势
+      // 授权过的那个 tab）。SW 重启丢 panelTabId 态时 fallback 当前活跃普通页。
+      if (!panelTabId || !target) {
+        const [active] = await chrome.tabs
+          .query({ active: true, lastFocusedWindow: true })
+          .catch(() => [])
+        if (active?.id && active.url && !/^(chrome|edge|about|chrome-extension):/.test(active.url)) {
+          panelTabId = active.id
+          target = active
+        }
       }
       // probe 失败时带上 NM 断连错误（forbidden=ID 未登记 vs not found=host 未装）
       const r = await nmPort.probe()
@@ -86,6 +107,7 @@ async function handleMessage(msg: any): Promise<unknown> {
     }
     case 'summarize': {
       const instruction = msg.instruction as string | undefined
+      const skills = msg.skills as string[] | undefined
       // 追问轮：复用上一轮 CLI 会话（claude --resume），不重新提取页面。
       // SW 休眠丢 lastSession 时明确报错——静默降级为新总结会让用户误以为在追问
       if (msg.followUp === true) {
@@ -93,7 +115,7 @@ async function handleMessage(msg: any): Promise<unknown> {
         const r = startFollowUp(lastSession.agentId, lastSession.sessionId, instruction ?? '')
         return { ...r, agentId: lastSession.agentId }
       }
-      return startSummarize(msg.agentId as string, msg.workflow as string, instruction)
+      return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills)
     }
     case 'resume-history': {
       // 历史详情「继续对话」：装载历史会话（SW 记 lastSession），后续 followUp 走 --resume
@@ -104,11 +126,13 @@ async function handleMessage(msg: any): Promise<unknown> {
       return { ok: true }
     }
     case 'cancel':
-      if (currentTask) {
-        nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })
-        return { ok: true }
-      }
-      return undefined
+      return cancelCurrent()
+    case 'new-session':
+      // 面板「新会话」：在跑的任务走既有取消路径，lastSession 清空——
+      // 下一轮总结全新开始（不再 resume 上一条 CLI 会话）
+      if (currentTask) cancelCurrent()
+      lastSession = null
+      return { ok: true }
     case 'set-pinned':
       pinned = !!msg.value
       chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch(() => {})
@@ -121,6 +145,15 @@ async function handleMessage(msg: any): Promise<unknown> {
         return { ok: true }
       }
       return { ok: nmPort.send(msg.msg as ExtToHost) }
+  }
+  return undefined
+}
+
+/** 取消进行中任务（new-session 复用）；返回 undefined 表示无任务在跑 */
+function cancelCurrent() {
+  if (currentTask) {
+    nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })
+    return { ok: true }
   }
   return undefined
 }
@@ -209,7 +242,7 @@ function pageMeta(): { title: string; url: string; favIconUrl?: string } | null 
   return null
 }
 
-async function startSummarize(agentId: string, workflow: string, instruction?: string) {
+async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[]) {
   // target：action 点击的 tab（activeTab 授权随手势生效）。SW 重启丢态或 panel
   // 直接点按钮时 fallback 到当前活跃 tab——无授权的 tab 注入会失败并提示，
   // 不会造成越权（executeScript 直接被 Chrome 拒绝）。
@@ -254,7 +287,8 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
 
   const ok = nmPort.send({
     t: 'task-start',
-    task: { taskId, agentId, workflow, instruction, page: meta },
+    // skills：panel 选中的技能名，host 读 ~/.pagedive/skills 正文拼进 prompt
+    task: { taskId, agentId, workflow, instruction, skills, page: meta },
   })
   if (!ok) {
     currentTask = null
