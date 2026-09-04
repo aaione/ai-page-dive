@@ -64,7 +64,8 @@ async function handleMessage(msg: any): Promise<unknown> {
       }
       // probe 失败时带上 NM 断连错误（forbidden=ID 未登记 vs not found=host 未装）
       const r = await nmPort.probe()
-      return r.ok ? r : { ok: false, nmError: nmPort.lastError, page: pageMeta() }
+      // tips 条元数据无论 probe 成败都带回（panel 已开就有目标页）
+      return { ...r, ...(r.ok ? {} : { nmError: nmPort.lastError }), page: pageMeta() }
     }
     case 'summarize': {
       const instruction = msg.instruction as string | undefined
@@ -82,8 +83,6 @@ async function handleMessage(msg: any): Promise<unknown> {
       currentAgentId = agentId
       return { ok: true }
     }
-    case 'get-page-meta':
-      return { page: pageMeta() }
     case 'cancel':
       if (currentTask) {
         nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })
@@ -142,7 +141,7 @@ nmPort.onDisconnect(() => {
 function startFollowUp(agentId: string, sessionId: string, instruction: string) {
   if (!instruction.trim()) return { error: 'empty-instruction' }
   const taskId = `t${Date.now().toString(36)}`
-  currentTask = null // 追问轮不占任务位（panel 侧 streaming 状态由 chunk 驱动）
+  // 追问轮也占任务位（taskId）：进行中可取消
   const ok = nmPort.send({
     t: 'task-start',
     task: {
@@ -151,6 +150,7 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string) 
     },
   })
   if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
+  currentTask = { taskId, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '' }
   // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）
   nmPort.send({ t: 'task-content', taskId, seq: 0, text: '', done: true })
   return { ok: true, taskId }
