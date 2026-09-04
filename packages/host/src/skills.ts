@@ -1,4 +1,5 @@
-/** skills 懒扫描：~/.ai-page-dive/skills/<name>/SKILL.md（目录即插件，与 workflows 同构） */
+/** skills 懒扫描：~/.ai-page-dive/skills/<name>/SKILL.md（目录即插件，与 workflows 同构）
+ * 内置技能在 builtins-skills/（随 npm 包分发，默认关），用户目录 shadow 同名 */
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -6,8 +7,7 @@ import { spawn } from 'node:child_process'
 import type { SkillItem } from '@ai-page-dive/shared'
 
 const DIR = join(homedir(), '.ai-page-dive', 'skills')
-// 当前无内置技能目录；留位：后续内置目录放入数组即自动并入扫描（false 标记用户侧）
-const BUILTIN_SKILL_DIRS: string[] = []
+const BUILTIN_SKILL_DIRS = [join(import.meta.dirname, '..', 'builtins-skills')]
 
 /** SKILL.md 原文 → {description, body}（纯函数，export 供测试；description 缺省用目录名） */
 export function parseSkillMd(raw: string, fallbackName: string): { description: string; body: string } {
@@ -35,12 +35,19 @@ export async function listSkills(): Promise<SkillItem[]> {
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** 读取启用技能的正文（供 prompt 注入）；读取失败的静默跳过 */
+/** 读取启用技能的正文（供 prompt 注入）；读取失败的静默跳过。
+ * 用户目录优先（shadow），未命中再查内置目录 */
 export async function getSkillBodies(names: string[]): Promise<{ name: string; body: string }[]> {
   const out: { name: string; body: string }[] = []
   for (const name of names) {
     // name 即目录名：不允许路径穿越（/、.. 等在目录名语义下天然不存在）
-    const raw = await readFile(join(DIR, name, 'SKILL.md'), 'utf8').catch(() => undefined)
+    let raw = await readFile(join(DIR, name, 'SKILL.md'), 'utf8').catch(() => undefined)
+    if (raw === undefined) {
+      for (const d of BUILTIN_SKILL_DIRS) {
+        raw = await readFile(join(d, name, 'SKILL.md'), 'utf8').catch(() => undefined)
+        if (raw !== undefined) break
+      }
+    }
     if (raw === undefined) continue
     const body = parseSkillMd(raw, name).body
     if (body) out.push({ name, body })
