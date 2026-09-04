@@ -35,10 +35,14 @@ let agentsCache: AgentStatus[] | null = null
 let pinned = false
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch(() => {})
 
-// 面板作用域 = tab 维度：全局默认禁用，action 点击时对该 tab 单独启用。
-// 效果（Chrome 原生行为）：切到未授权的 tab 时面板自动隐藏，切回 panelTabId
-// 时自动恢复显示——无需在这里做显隐逻辑。
-chrome.sidePanel.setOptions({ enabled: false }).catch(() => {})
+// 面板作用域 = tab 维度：action 点击的 tab 记为 panelTabId（该 tab 关闭时重置）。
+//
+// ⚠️ 不要用「全局 setOptions({enabled:false}) + 点击时 per-tab enable」实现切 tab
+// 隐藏：sidePanel.open({tabId}) 要求该 tab 上本扩展的面板已 active（用户激活过），
+// 全局 enabled:false 使所有 tab 永远不满足 → open 被 Chrome 拒
+// "No active side panel for tabId"（fresh/reload 后必现，真机 probe 实证），
+// 且 per-tab setOptions 无法制造 active 态。切 tab 的面板显隐由 Chrome 自身
+// 「panel 是 window 级」行为承担，panelTabId 只用于总结目标与 page-meta 刷新。
 
 // 面板归属的 tab（点开面板的那次 action 点击所在页）。总结目标 = 该 tab，
 // 不随用户切换 tab 而跟随变化。
@@ -47,12 +51,11 @@ let panelTabId: number | null = null
 chrome.action.onClicked.addListener((tab) => {
   target = tab
   panelTabId = tab.id ?? null
-  // 同步连发、绝不 await：sidePanel.open 要求 user gesture，跨一次 setOptions 的
-  // IPC round-trip 手势链即断（reload 扩展后 SW 冷启动、round-trip 变慢时必现），
-  // 错误被 catch 吞掉就表现为「点图标没反应」。同 turn 两条消息按序进 Chrome
-  // 队列，open 处理时该 tab 的 enabled:true 已生效
-  void chrome.sidePanel.setOptions({ tabId: tab.id!, enabled: true })
-  void chrome.sidePanel.open({ tabId: tab.id! })
+  // 直接 open：不夹 setOptions / 不吞错。open 要求 user gesture（onClicked 自带）
+  // 且该 tab 面板可用——全局 enabled 默认 true，见上方作用域注释
+  chrome.sidePanel.open({ tabId: tab.id! }).catch((e: unknown) => {
+    console.warn('[pd] sidePanel.open failed:', e)
+  })
 })
 
 // 面板只在 panelTabId 上可见，onActivated 无需跟随切 tab 改 target；
