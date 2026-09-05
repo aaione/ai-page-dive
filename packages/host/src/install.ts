@@ -2,7 +2,8 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { probeAgents } from './agents/registry.js'
 
 const HOST_NAME = 'com.pagedive.host'
@@ -29,8 +30,9 @@ export function macOSManifestDirs(): string[] {
 }
 
 export async function install(extIds: string[]): Promise<void> {
-  // host 入口：本文件编译产物的真实路径（解析 npm global symlink）
-  const hostPath = resolve(import.meta.dirname, 'index.js')
+  // host 入口：本文件编译产物的真实路径（解析 npm global symlink）。
+  // fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18
+  const hostPath = resolve(dirname(fileURLToPath(import.meta.url)), 'index.js')
   if (!existsSync(hostPath)) {
     throw new Error(`host entry not found: ${hostPath}`)
   }
@@ -48,7 +50,10 @@ export async function install(extIds: string[]): Promise<void> {
     await mkdir(dir, { recursive: true })
     try {
       const prev = JSON.parse(await readFile(manifestPath, 'utf8'))
-      origins = prev.allowed_origins ?? []
+      // 跨目录累计 union（追加不覆盖）：末目录 prev 不能重置前面目录已登记的 ID
+      for (const o of prev.allowed_origins ?? []) {
+        if (!origins.includes(o)) origins.push(o)
+      }
     } catch { /* 首次 */ }
     for (const id of extIds) {
       const origin = `chrome-extension://${id}/`

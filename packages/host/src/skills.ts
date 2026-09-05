@@ -2,12 +2,14 @@
  * 内置技能在 builtins-skills/（随 npm 包分发，默认关），用户目录 shadow 同名 */
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import type { SkillItem } from '@ai-page-dive/shared'
 
 const DIR = join(homedir(), '.ai-page-dive', 'skills')
-const BUILTIN_SKILL_DIRS = [join(import.meta.dirname, '..', 'builtins-skills')]
+// fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18
+const BUILTIN_SKILL_DIRS = [join(dirname(fileURLToPath(import.meta.url)), '..', 'builtins-skills')]
 
 /** SKILL.md 原文 → {description, body}（纯函数，export 供测试；description 缺省用目录名） */
 export function parseSkillMd(raw: string, fallbackName: string): { description: string; body: string } {

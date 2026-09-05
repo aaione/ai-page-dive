@@ -6,7 +6,6 @@ import { mkdir, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { AgentEvent, TaskInput } from '@ai-page-dive/shared'
-import { MAX_CHUNK } from '@ai-page-dive/shared'
 import { createClaudeParser } from './agents/claude.js'
 import { createCodexParser } from './agents/codex.js'
 import { createOpencodeParser } from './agents/opencode.js'
@@ -18,6 +17,10 @@ import { scheduleCleanup, writeContentFile } from './tmpfile.js'
 import { getWorkflow } from './workflows.js'
 
 const TASK_TIMEOUT_MS = 10 * 60_000
+
+/** NM 单帧分片上限。与 packages/shared/src/protocol.ts 的 MAX_CHUNK 保持同步
+ * （host 单包发布后此值为本地拷贝——改分片大小时两处同改） */
+const MAX_CHUNK = 512 * 1024
 
 /**
  * CLI 会话 id → 首轮 spawn cwd 的映射（追问用，内存加速）。
@@ -143,9 +146,15 @@ export class Task {
       await linkIntoCwd(contentFile, agentCwd)
       fileForPrompt = def.filePathInPrompt({ contentFile, contentRelPath: basename(contentFile), agentCwd })
     }
+    // 占位符只展开 workflow 正文：用户 instruction 可能合法含 {xx} 字面量，不展开
+    const wfBody = !isResume && wf?.body && !this.input.instruction
+      ? expandWorkflowPlaceholders(wf.body, page, fileForPrompt)
+      : wf?.body
+    // 大纲从内存正文提取（resume 轮上下文在 CLI 会话里，不需要）
+    const outline = !isResume ? buildOutline(this.contentParts.join('')) : undefined
     const prompt = isResume
       ? (this.input.instruction ?? '')
-      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wf?.body, skillBodies, this.input.lang)
+      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wfBody, skillBodies, this.input.lang, outline)
 
     this.startedAt = Date.now()
     this.cb.onStatus('spawned')
@@ -332,20 +341,9 @@ async function linkIntoCwd(contentFile: string, cwd: string): Promise<void> {
   } catch { /* EEXIST 等：沙箱内已有同名，直接用 */ }
 }
 
-/** prompt 组装：instruction（用户输入）优先，其次 workflow 正文；技能为可选增强指令；lang 为输出语言偏好 */
-export function buildPrompt(
-  page: TaskInput['page'],
-  contentFile: string,
-  workflow: string,
-  workflowBody?: string,
-  skills?: { name: string; body: string }[],
-  lang?: string,
-): string {
-  const task =
-    workflowBody ??
-    DEFAULT_TASKS[workflow] ??
-    `请深度总结这个网页。（workflow: ${workflow} 未找到，使用默认）`
-  const meta = [
+/** 网页元数据单行拼装（{meta} 占位符与「## 网页元数据」段共用） */
+function pageMetaLine(page: TaskInput['page']): string {
+  return [
     `标题: ${page.title}`,
     `URL: ${page.url}`,
     page.byline && `作者: ${page.byline}`,
@@ -355,12 +353,68 @@ export function buildPrompt(
   ]
     .filter(Boolean)
     .join('  ')
+}
+
+/**
+ * workflow 正文占位符展开（{url} {title} {file} {meta}）。
+ * 只替换四个已知占位符，未知（含大小写变体）原样保留。
+ */
+export function expandWorkflowPlaceholders(
+  body: string,
+  page: TaskInput['page'],
+  contentFile: string,
+): string {
+  return body.replace(
+    /\{(url|title|file|meta)\}/g,
+    (_, k: string) =>
+      k === 'url' ? page.url
+      : k === 'title' ? page.title
+      : k === 'file' ? contentFile
+      : pageMetaLine(page),
+  )
+}
+
+/** 正文 H1-H3 标题大纲（长文分段读取导航）。无标题返回 ''；60 条 / 2000 字符双截断防 prompt 稀释 */
+export function buildOutline(content: string): string {
+  const lines = content.split('\n').slice(0, 400)
+  const out: string[] = []
+  let total = 0
+  for (const line of lines) {
+    const m = line.match(/^(#{1,3})\s+(.+)$/)
+    if (!m) continue
+    const indent = '  '.repeat(m[1].length - 1)
+    const item = `${indent}- ${m[2].trim()}`
+    if (total + item.length > 2000 || out.length >= 60) break
+    out.push(item)
+    total += item.length
+  }
+  return out.join('\n')
+}
+
+/** prompt 组装：instruction（用户输入）优先，其次 workflow 正文；技能为可选增强指令；lang 为输出语言偏好 */
+export function buildPrompt(
+  page: TaskInput['page'],
+  contentFile: string,
+  workflow: string,
+  workflowBody?: string,
+  skills?: { name: string; body: string }[],
+  lang?: string,
+  outline?: string,
+): string {
+  const task =
+    workflowBody ??
+    DEFAULT_TASKS[workflow] ??
+    `请深度总结这个网页。（workflow: ${workflow} 未找到，使用默认）`
+  const meta = pageMetaLine(page)
   // 技能段：每个技能一行小标题 + 正文，--- 分隔；用户启用的可选增强指令（风格/输出格式等）
   const skillsSection = skills?.length
     ? `\n## 技能\n以下为用户启用的增强指令，在不与任务冲突的前提下遵循：\n\n${skills
         .map((s) => `### ${s.name}\n${s.body}`)
         .join('\n\n---\n\n')}\n`
     : ''
+  // 正文导航（可选）：长文 H1-H3 大纲，给 agent 分段读取参考
+  const outlineSection =
+    outline ? `\n## 正文导航\n以下为正文 H1-H3 标题大纲（无行号，仅供分段读取参考）：\n${outline}\n` : ''
   // 输出语言（缺省自动）：固定尾部指令，优先级高于技能段
   const langSection =
     lang === 'zh' ? `\n无论正文是什么语言，始终使用中文回答。\n`
@@ -375,7 +429,7 @@ ${meta}
 完整正文（markdown，约 ${page.approxTokens} tokens）已写入本地文件：
 ${contentFile}
 请读取该文件全文后再作答，不要只读开头。
-${skillsSection}
+${outlineSection}${skillsSection}
 ## 任务
 ${task}
 ${langSection}`

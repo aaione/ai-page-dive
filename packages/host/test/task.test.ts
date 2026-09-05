@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Task, buildPrompt } from '../src/task.js'
+import { Task, buildOutline, buildPrompt, expandWorkflowPlaceholders } from '../src/task.js'
 
 // 集成式状态机测试：用假 CLI（node 脚本）代替真 claude/codex
 const FAKE_CLI = async (mode: string) => {
@@ -129,6 +129,41 @@ describe('Task 状态机', () => {
     const auto = buildPrompt(PAGE as any, '/tmp/f.md', 'quick')
     expect(auto).not.toContain('始终使用中文回答')
     expect(auto).not.toContain('Always respond in English')
+  })
+
+  it('expandWorkflowPlaceholders：四占位符展开，未知/大小写变体原样保留', () => {
+    const out = expandWorkflowPlaceholders(
+      '看 {url} 和 {title}，正文在 {file}，元数据 {meta}；未知 {foo} 与 {URL} 不动',
+      PAGE as any,
+      '/tmp/f.md',
+    )
+    expect(out).toContain('https://a.com/x')
+    expect(out).toContain('T') // title
+    expect(out).toContain('/tmp/f.md')
+    expect(out).toContain('标题: T')
+    expect(out).toContain('{foo}')
+    expect(out).toContain('{URL}')
+    expect(out).not.toContain('{url}')
+    expect(out).not.toContain('{file}')
+  })
+
+  it('buildOutline：H1-H3 层级缩进，60 条/2000 字符截断，无标题返回空串', () => {
+    const md = ['# 一级', '正文', '## 二级', '### 三级', '#### 四级不收', '普通 # 行内不匹配'].join('\n')
+    const outline = buildOutline(md)
+    expect(outline).toBe('- 一级\n  - 二级\n    - 三级')
+    expect(buildOutline('没有标题的正文')).toBe('')
+    // 截断：65 个 H1 条目只收 60 条
+    const many = Array.from({ length: 65 }, (_, i) => `# 标题${i}`).join('\n')
+    expect(buildOutline(many).split('\n')).toHaveLength(60)
+  })
+
+  it('buildPrompt：outline 非空注入「正文导航」段，空/缺省不注入', () => {
+    const withOutline = buildPrompt(PAGE as any, '/tmp/f.md', 'quick', undefined, undefined, undefined, '- 引言\n  - 方法')
+    expect(withOutline).toContain('## 正文导航')
+    expect(withOutline).toContain('- 引言')
+    const without = buildPrompt(PAGE as any, '/tmp/f.md', 'quick')
+    expect(without).not.toContain('## 正文导航')
+    expect(buildPrompt(PAGE as any, '/tmp/f.md', 'quick', undefined, undefined, undefined, '')).not.toContain('## 正文导航')
   })
 
   it('instruction 优先于 workflow 正文（默认模式）', async () => {

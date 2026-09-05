@@ -1,15 +1,27 @@
 {
-  "name": "@ai-page-dive/host",
+  "name": "ai-page-dive",
   "version": "0.1.0",
-  "private": true,
+  "description": "PageDive native messaging host — 零依赖薄壳，桥接 Chrome 扩展与本机 AI CLI（claude / codex）",
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "bin": {
     "ai-page-dive": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "builtins",
+    "builtins-skills",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "tsc -p tsconfig.json"
   },
-  "dependencies": {
+  "devDependencies": {
     "@ai-page-dive/shared": "workspace:*"
   }
 }

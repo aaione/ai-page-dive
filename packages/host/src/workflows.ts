@@ -2,11 +2,13 @@
 import { spawn } from 'node:child_process'
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { WorkflowItem } from '@ai-page-dive/shared'
 
 const USER_DIR = join(homedir(), '.ai-page-dive', 'workflows')
-const BUILTIN_DIR = join(import.meta.dirname, '..', 'builtins')
+// fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18
+const BUILTIN_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'builtins')
 
 export interface LoadedWorkflow extends WorkflowItem {
   /** 正文即 prompt（占位符 {url} {file} {title} {meta}） */

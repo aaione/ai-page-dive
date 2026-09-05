@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "114",
   "name": "AI PageDive",
   "version": "0.1.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoTox8/iIq5rnlPhBz4oWDCmSAhzGN0awGorjESYlp054yz424x8kdon1zXVEWbXPKjjcK6NBZCgYCgNChxAJkEvZWKSlsflk9/02Hian0a7zUi9+ZBZf3RH1vnD+4PjGXClO6JEMRNmBGczj5d+vIdnbCVpSTvOjtinx2yEdjOiMFXJiEJIjeZdwDtiVdMC0jGyeXV9j8aVnAy0EDqFrmHTocsICgQgyGykf2SQpeSKkt53CJOGpgRteAmgha9ot7UJIC2c3S6lfSp7K164pre5GUlHTHbSxxuBnH33w9FoTkWOZCjF7rrBW0DuHSScSocDrKr+2TOiykHkPkKUOjwIDAQAB",

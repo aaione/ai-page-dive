@@ -62,7 +62,8 @@ export function Onboarding() {
         </button>
         {copied && <p className="pd-onboarding-copied">已复制 ✓</p>}
         <p className="pd-onboarding-note">
-          装好后 ⌘Q 完全退出 Chrome 再打开（Chrome 只在启动时加载本机组件）。
+          终端看到 <code>✅</code> 即回本页，会自动进入（无需重启浏览器）；
+          超过 1 分钟未进入，再 ⌘Q 完全退出 Chrome 重开。
           <br />
           <strong>内容只在本机处理，不经过任何服务器。</strong>
         </p>
