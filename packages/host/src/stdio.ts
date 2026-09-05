@@ -166,7 +166,6 @@ export function runNative(): void {
   process.stdin.on('data', createFrameReader(handle))
   process.stdin.on('end', () => {
     reapAll()
-    setTimeout(() => process.exit(0), 200).unref()
     process.exit(0)
   })
   process.on('SIGTERM', () => {

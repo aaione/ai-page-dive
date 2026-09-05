@@ -1196,6 +1196,35 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   font-size: 11px;
   color: var(--color-pd-secondary);
 }
+/* 终端失败兜底（npm 未装 / EACCES）：默认折叠，命令报错才展开看 */
+.pd-onboarding-faq {
+  margin-top: 10px;
+  text-align: left;
+  font-size: 10.5px;
+  line-height: 1.8;
+  color: var(--color-pd-ink-2);
+}
+.pd-onboarding-faq summary {
+  cursor: pointer;
+  color: var(--color-pd-secondary);
+  user-select: none;
+}
+.pd-onboarding-faq summary:hover {
+  filter: brightness(1.25);
+}
+.pd-onboarding-faq p {
+  margin: 6px 0 0;
+}
+.pd-onboarding-faq code {
+  font-family: var(--font-mono-ui);
+  font-size: 10px;
+  background: rgba(0,0,0,.30);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+}
+.pd-onboarding-faq a {
+  color: var(--color-pd-secondary);
+}
 .pd-onboarding-note strong {
   font-weight: 600;
   color: #fff;

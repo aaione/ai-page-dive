@@ -61,6 +61,17 @@ export function Onboarding() {
           </svg>
         </button>
         {copied && <p className="pd-onboarding-copied">已复制 ✓</p>}
+        <details className="pd-onboarding-faq">
+          <summary>命令报错了？</summary>
+          <p>
+            <code>npm: command not found</code> → 先装 Node.js（
+            <a href="https://nodejs.org" target="_blank" rel="noreferrer">nodejs.org</a> 或 <code>brew install node</code>）再重试。
+          </p>
+          <p>
+            <code>EACCES</code> / 权限错误 → 全局目录不可写，<code>sudo npm i -g ai-page-dive</code>，
+            或改用 nvm/Homebrew 的 Node（无需 sudo）。
+          </p>
+        </details>
         <p className="pd-onboarding-note">
           终端看到 <code>✅</code> 即回本页，会自动进入（无需重启浏览器）；
           超过 1 分钟未进入，再 ⌘Q 完全退出 Chrome 重开。
