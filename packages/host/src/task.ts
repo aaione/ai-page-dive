@@ -376,10 +376,16 @@ export function expandWorkflowPlaceholders(
 
 /** 正文 H1-H3 标题大纲（长文分段读取导航）。无标题返回 ''；60 条 / 2000 字符双截断防 prompt 稀释 */
 export function buildOutline(content: string): string {
-  const lines = content.split('\n').slice(0, 400)
   const out: string[] = []
   let total = 0
-  for (const line of lines) {
+  let inCode = false
+  for (const line of content.split('\n')) {
+    // 代码围栏内的 # 注释行不是标题
+    if (/^```/.test(line)) {
+      inCode = !inCode
+      continue
+    }
+    if (inCode) continue
     const m = line.match(/^(#{1,3})\s+(.+)$/)
     if (!m) continue
     const indent = '  '.repeat(m[1].length - 1)

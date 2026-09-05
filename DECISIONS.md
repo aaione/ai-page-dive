@@ -7,7 +7,7 @@
 | # | 决策位 | 结论 |
 |---|---|---|
 | 1 | 定位 | **零配置一键深度阅读 agent**（候选 A）。适配层是底层能力顺带产出，垂直场景由 workflow 生态承载 |
-| 2 | 命名 | **PageDive**（弃用 read-one）。npm 包 `pagedive`，安装命令 `ai-page-dive install`。项目目录：`/Users/apple/work/hs/ai-feature/page-dive/` |
+| 2 | 命名 | **PageDive**（弃用 read-one）。npm 包 `ai-page-dive`，安装命令 `ai-page-dive install`。项目目录：`/Users/apple/work/hs/ai-feature/page-dive/` |
 | 3 | 通信底座 | **Native Messaging 薄 host + Side Panel 主 UI**。否决 localhost daemon 主通道（Chrome 147 LNA 政策风险）。host 预留 `--daemon` 升级位。权限：`activeTab` + `scripting` + `nativeMessaging` + `sidePanel`，不申请 `<all_urls>` |
 | 4 | 历史记录 | **host 侧 markdown 落盘 + 档 B+**：`~/.ai-page-dive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）+ 历史列表/查看/删除/Finder 定位 + 过滤 + 标题/URL 搜索。全文搜索/导入导出/对话关联 → v2 |
 | 5 | CLI 适配 | **v1 = claude + codex 双适配器**。AgentDef 接口按六家（claude/codex/opencode/gemini/qwen/dsh）字段并集设计，只实现两家。`claude -p --output-format stream-json --verbose`；`codex exec --json -o <file>`。prompt 一律走 stdin |
