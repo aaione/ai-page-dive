@@ -222,8 +222,6 @@ export function App() {
     chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path }).catch(() => {})
   }, [])
 
-  if (hostOk === false) return <Onboarding />
-
   // 设置页开关 CLI 后（pd-settings-changed）联动：手动选中被禁用时回退到默认 CLI，再到首个可用
   const disabledClis = useDisabledClis()
   const [defaultCli, setDefaultCli] = useState('')
@@ -238,6 +236,9 @@ export function App() {
     || (defaultCli && !disabledClis.has(defaultCli) && agents.some((a) => a.id === defaultCli && a.available) ? defaultCli : '')
     || agents.find((a) => a.available && !disabledClis.has(a.id))?.id
     || 'claude'
+
+  // 早退必须在所有 hooks 之后：hostOk 从 null 翻 false 会减少 hook 数量，React 直接崩树白屏
+  if (hostOk === false) return <Onboarding />
 
   return (
     <div className="pd-app">
