@@ -145,7 +145,7 @@ export class Task {
     }
     const prompt = isResume
       ? (this.input.instruction ?? '')
-      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wf?.body, skillBodies)
+      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wf?.body, skillBodies, this.input.lang)
 
     this.startedAt = Date.now()
     this.cb.onStatus('spawned')
@@ -332,13 +332,14 @@ async function linkIntoCwd(contentFile: string, cwd: string): Promise<void> {
   } catch { /* EEXIST 等：沙箱内已有同名，直接用 */ }
 }
 
-/** prompt 组装：instruction（用户输入）优先，其次 workflow 正文；技能为可选增强指令 */
+/** prompt 组装：instruction（用户输入）优先，其次 workflow 正文；技能为可选增强指令；lang 为输出语言偏好 */
 export function buildPrompt(
   page: TaskInput['page'],
   contentFile: string,
   workflow: string,
   workflowBody?: string,
   skills?: { name: string; body: string }[],
+  lang?: string,
 ): string {
   const task =
     workflowBody ??
@@ -360,6 +361,11 @@ export function buildPrompt(
         .map((s) => `### ${s.name}\n${s.body}`)
         .join('\n\n---\n\n')}\n`
     : ''
+  // 输出语言（缺省自动）：固定尾部指令，优先级高于技能段
+  const langSection =
+    lang === 'zh' ? `\n无论正文是什么语言，始终使用中文回答。\n`
+    : lang === 'en' ? `\nAlways respond in English, regardless of the page language.\n`
+    : ''
   return `你是深度阅读助手。请完成以下任务。
 
 ## 网页元数据
@@ -372,7 +378,7 @@ ${contentFile}
 ${skillsSection}
 ## 任务
 ${task}
-`
+${langSection}`
 }
 
 const DEFAULT_TASKS: Record<string, string> = {

@@ -121,6 +121,16 @@ describe('Task 状态机', () => {
     expect(p2).toContain('/tmp/f.md')
   })
 
+  it('buildPrompt：lang 拼尾部指令，缺省自动无指令', () => {
+    const zh = buildPrompt(PAGE as any, '/tmp/f.md', 'quick', undefined, undefined, 'zh')
+    expect(zh).toContain('始终使用中文回答')
+    const en = buildPrompt(PAGE as any, '/tmp/f.md', 'quick', undefined, undefined, 'en')
+    expect(en).toContain('Always respond in English')
+    const auto = buildPrompt(PAGE as any, '/tmp/f.md', 'quick')
+    expect(auto).not.toContain('始终使用中文回答')
+    expect(auto).not.toContain('Always respond in English')
+  })
+
   it('instruction 优先于 workflow 正文（默认模式）', async () => {
     // ESM 模块 namespace 只读，不能桩 spawnCli——改为让假 CLI 把收到的 stdin
     // 写到临时文件，跑完读回断言 prompt 内容

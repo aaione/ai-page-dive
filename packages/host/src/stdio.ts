@@ -2,7 +2,7 @@
 import type { ExtToHost } from '@ai-page-dive/shared'
 import { createFrameReader, writeFrame } from './nm.js'
 import { probeAgents } from './agents/registry.js'
-import { deleteHistory, listHistory, readHistory, revealInFinder } from './history.js'
+import { deleteHistory, listHistory, readHistory, revealHistoryRoot, revealInFinder } from './history.js'
 import { Task } from './task.js'
 import { listSkills, revealSkill } from './skills.js'
 import { deleteWorkflow, listWorkflows, readWorkflow, revealWorkflow, saveWorkflow } from './workflows.js'
@@ -99,6 +99,13 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
       case 'history-reveal':
         try {
           revealInFinder(msg.path)
+        } catch (e: any) {
+          send({ t: 'error', code: 'reveal-fail', message: String(e?.message ?? e) })
+        }
+        break
+      case 'history-reveal-root':
+        try {
+          revealHistoryRoot()
         } catch (e: any) {
           send({ t: 'error', code: 'reveal-fail', message: String(e?.message ?? e) })
         }

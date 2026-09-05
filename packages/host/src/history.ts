@@ -182,3 +182,9 @@ export function revealInFinder(path: string): void {
   assertInRoot(path)
   spawn('open', ['-R', path], { stdio: 'ignore', detached: true }).unref()
 }
+
+/** 打开历史根目录（设置页「打开历史目录」：目录即备份，拖走即导出） */
+export function revealHistoryRoot(): void {
+  mkdir(ROOT, { recursive: true }).catch(() => {})
+  spawn('open', [ROOT], { stdio: 'ignore', detached: true }).unref()
+}

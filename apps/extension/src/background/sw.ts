@@ -115,6 +115,7 @@ async function handleMessage(msg: any): Promise<unknown> {
     case 'summarize': {
       const instruction = msg.instruction as string | undefined
       const skills = msg.skills as string[] | undefined
+      const lang = msg.lang as string | undefined
       // 追问轮：复用上一轮 CLI 会话（claude --resume），不重新提取页面。
       // SW 休眠丢 lastSession 时明确报错——静默降级为新总结会让用户误以为在追问
       if (msg.followUp === true) {
@@ -122,7 +123,7 @@ async function handleMessage(msg: any): Promise<unknown> {
         const r = startFollowUp(lastSession.agentId, lastSession.sessionId, instruction ?? '', lastSession.historyPath)
         return { ...r, agentId: lastSession.agentId }
       }
-      return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills)
+      return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills, lang)
     }
     case 'resume-history': {
       // 历史详情「继续对话」：装载历史会话（SW 记 lastSession），后续 followUp 走 --resume
@@ -250,7 +251,7 @@ function pageMeta(): { title: string; url: string; favIconUrl?: string } | null 
   return null
 }
 
-async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[]) {
+async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string) {
   // target：action 点击的 tab（activeTab 授权随手势生效）。SW 重启丢态或 panel
   // 直接点按钮时 fallback 到当前活跃 tab——无授权的 tab 注入会失败并提示，
   // 不会造成越权（executeScript 直接被 Chrome 拒绝）。
@@ -296,7 +297,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   const ok = nmPort.send({
     t: 'task-start',
     // skills：panel 选中的技能名，host 读 ~/.ai-page-dive/skills 正文拼进 prompt
-    task: { taskId, agentId, workflow, instruction, skills, page: meta },
+    task: { taskId, agentId, workflow, instruction, skills, lang, page: meta },
   })
   if (!ok) {
     currentTask = null

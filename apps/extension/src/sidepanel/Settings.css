@@ -239,6 +239,76 @@
 }
 .pd-set-dot.available { background: var(--color-pd-ok); }
 .pd-set-dot.unavailable { background: var(--color-pd-off); }
+/* 默认 CLI 星标 */
+.pd-set-star {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-pd-ink-2);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pd-set-star:hover:not(:disabled) {
+  background: rgba(255,255,255,.08);
+  color: var(--color-pd-primary);
+}
+.pd-set-star.on {
+  color: #FBBF24;
+}
+.pd-set-star.on:hover {
+  color: #FCD34D;
+}
+.pd-set-star:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.pd-set-star svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 总结语言选择（CLI tab 底部） */
+.pd-set-lang-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.05);
+}
+.pd-set-lang-opts {
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--color-pd-line);
+  background: rgba(0,0,0,.22);
+}
+.pd-set-lang-opt {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: var(--font-serif-read);
+  font-size: 11px;
+  color: var(--color-pd-ink-2);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.pd-set-lang-opt:hover {
+  color: var(--color-pd-ink);
+}
+.pd-set-lang-opt.active {
+  background: linear-gradient(135deg, rgba(167,139,250,.32), rgba(124,58,237,.28));
+  color: var(--color-pd-ink);
+}
 .pd-set-badge {
   padding: 1px 6px;
   border-radius: 9999px;

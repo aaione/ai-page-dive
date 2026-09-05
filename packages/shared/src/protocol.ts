@@ -57,6 +57,11 @@ export interface HistoryRevealMsg {
   path: string
 }
 
+/** 打开历史根目录（设置页「打开历史目录」） */
+export interface HistoryRevealRootMsg {
+  t: 'history-reveal-root'
+}
+
 // ---------- workflow 管理（目录即插件：~/.ai-page-dive/workflows/<name>/WORKFLOW.md）----------
 
 /** 读单个 workflow 全文（frontmatter + 正文），供设置页编辑 */
@@ -108,6 +113,7 @@ export type ExtToHost =
   | HistoryReadMsg
   | HistoryDeleteMsg
   | HistoryRevealMsg
+  | HistoryRevealRootMsg
   | WorkflowReadMsg
   | WorkflowSaveMsg
   | WorkflowDeleteMsg

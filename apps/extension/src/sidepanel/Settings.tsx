@@ -40,6 +40,14 @@ function readStrList(key: string): string[] {
   }
 }
 
+function readStr(key: string): string {
+  try {
+    return localStorage.getItem(key) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 function writeStrList(key: string, list: string[]) {
   localStorage.setItem(key, JSON.stringify(list))
   window.dispatchEvent(new Event('pd-settings-changed'))
@@ -58,8 +66,21 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [enabledSkills, setEnabledSkills] = useState<string[]>(() => readStrList('pd-enabled-skills'))
 
-  // ── CLI 开关 ──
+  // ── CLI 开关 / 默认 CLI / 语言偏好 ──
   const [disabledClis, setDisabledClis] = useState<string[]>(() => readStrList('pd-disabled-clis'))
+  const [defaultCli, setDefaultCli] = useState(() => readStr('pd-default-cli'))
+  const [lang, setLang] = useState(() => readStr('pd-sum-lang'))
+
+  /** 单值设置写入 + 广播（App/SummarizeView 监听 pd-settings-changed 联动） */
+  function setSetting(key: string, v: string) {
+    try {
+      if (v) localStorage.setItem(key, v)
+      else localStorage.removeItem(key)
+    } catch { /* quota */ }
+    if (key === 'pd-default-cli') setDefaultCli(v)
+    if (key === 'pd-sum-lang') setLang(v)
+    window.dispatchEvent(new Event('pd-settings-changed'))
+  }
 
   useEffect(() => {
     // mount 即拉列表（host 回包经 SW 广播，App.tsx 同帧双收无害）
@@ -182,6 +203,11 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
 
   function revealSkill(name: string) {
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'skill-reveal', name } }, () => void chrome.runtime.lastError)
+  }
+
+  /** 打开历史根目录（Finder）：目录即备份，拖走即导出 */
+  function revealHistoryDir() {
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-reveal-root' } }, () => void chrome.runtime.lastError)
   }
 
   const tabs: { key: Tab; label: string }[] = useMemo(
@@ -311,11 +337,12 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
         {tab === 'clis' && (
           <div className="pd-set-pane">
             <div className="pd-set-panel">
-              <p className="pd-set-hint">关闭仅从主界面下拉隐藏，不影响本机安装。</p>
+              <p className="pd-set-hint">⭐ 为新对话默认 CLI；关闭仅从主界面下拉隐藏，不影响本机安装。</p>
               {agents.length ? (
                 <div className="pd-set-rows">
                   {agents.map((a) => {
                     const off = disabledClis.includes(a.id)
+                    const isDefault = defaultCli === a.id
                     return (
                       <div key={a.id} className="pd-set-row">
                         <span className={`pd-set-dot ${a.available ? 'available' : 'unavailable'}`} />
@@ -327,6 +354,18 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                             </span>
                           </div>
                         </div>
+                        <button
+                          className={`pd-set-star ${isDefault ? 'on' : ''}`}
+                          onClick={() => setSetting('pd-default-cli', isDefault ? '' : a.id)}
+                          title={isDefault ? '取消默认' : '设为新对话默认'}
+                          aria-label={isDefault ? `取消 ${a.id} 默认` : `设 ${a.id} 为默认`}
+                          aria-pressed={isDefault}
+                          disabled={!a.available}
+                        >
+                          <svg viewBox="0 0 16 16" fill={isDefault ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round">
+                            <path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6L8 1.8Z" />
+                          </svg>
+                        </button>
                         <button
                           className={`pd-set-switch ${!off ? 'on' : ''}`}
                           onClick={() => toggleCli(a.id)}
@@ -341,6 +380,22 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               ) : (
                 <p className="pd-set-empty">尚未探测到本机 CLI</p>
               )}
+              <div className="pd-set-lang-row">
+                <span className="pd-set-label" style={{ margin: 0 }}>总结语言</span>
+                <div className="pd-set-lang-opts" role="radiogroup" aria-label="总结输出语言">
+                  {([['', '自动'], ['zh', '中文'], ['en', 'English']] as const).map(([v, label]) => (
+                    <button
+                      key={v || 'auto'}
+                      className={`pd-set-lang-opt ${(lang || '') === v ? 'active' : ''}`}
+                      onClick={() => setSetting('pd-sum-lang', v)}
+                      role="radio"
+                      aria-checked={(lang || '') === v}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -400,6 +455,12 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               <p>
                 历史记录保存在 <code>~/.ai-page-dive/history/</code>。
               </p>
+              <div className="pd-set-actions" style={{ marginTop: 14 }}>
+                <button className="pd-set-btn" onClick={revealHistoryDir}>打开历史目录</button>
+                <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })}>
+                  自定义快捷键
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -61,5 +61,7 @@ export interface TaskInput {
   historyPath?: string
   /** 启用的技能名（host 读 ~/.ai-page-dive/skills 正文拼进 prompt） */
   skills?: string[]
+  /** 总结输出语言（如 'zh'/'en'；缺省跟语言自动判断） */
+  lang?: string
   page: Omit<PageContent, 'contentMarkdown'>
 }

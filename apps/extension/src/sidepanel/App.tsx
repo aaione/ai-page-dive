@@ -224,10 +224,18 @@ export function App() {
 
   if (hostOk === false) return <Onboarding />
 
-  // 设置页开关 CLI 后（pd-settings-changed）联动：手动选中被禁用时回退到首个可用 CLI
+  // 设置页开关 CLI 后（pd-settings-changed）联动：手动选中被禁用时回退到默认 CLI，再到首个可用
   const disabledClis = useDisabledClis()
+  const [defaultCli, setDefaultCli] = useState('')
+  useEffect(() => {
+    const sync = () => { try { setDefaultCli(localStorage.getItem('pd-default-cli') ?? '') } catch { /* */ } }
+    sync()
+    window.addEventListener('pd-settings-changed', sync)
+    return () => window.removeEventListener('pd-settings-changed', sync)
+  }, [])
   const effectiveAgent =
     (agentId && !disabledClis.has(agentId) ? agentId : '')
+    || (defaultCli && !disabledClis.has(defaultCli) && agents.some((a) => a.id === defaultCli && a.available) ? defaultCli : '')
     || agents.find((a) => a.available && !disabledClis.has(a.id))?.id
     || 'claude'
 

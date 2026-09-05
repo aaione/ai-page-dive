@@ -49,9 +49,33 @@ function useEnabledSkills(): () => string[] {
   return useCallback(() => ref.current, [])
 }
 
+/** 设置项 hook：localStorage 单值 + pd-settings-changed 事件同步 */
+export function useSetting(key: string): [string, (v: string) => void] {
+  const [v, setV] = useState(() => {
+    try { return localStorage.getItem(key) ?? '' } catch { return '' }
+  })
+  useEffect(() => {
+    const sync = () => {
+      try { setV(localStorage.getItem(key) ?? '') } catch { /* quota 等 */ }
+    }
+    window.addEventListener('pd-settings-changed', sync)
+    return () => window.removeEventListener('pd-settings-changed', sync)
+  }, [key])
+  const set = useCallback((nv: string) => {
+    try {
+      if (nv) localStorage.setItem(key, nv)
+      else localStorage.removeItem(key)
+    } catch { /* ignore */ }
+    window.dispatchEvent(new Event('pd-settings-changed'))
+  }, [key])
+  return [v, set]
+}
+
 export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta }: Props) {
   const disabledClis = useDisabledClis()
   const getEnabledSkills = useEnabledSkills()
+  const [defaultCli] = useSetting('pd-default-cli')
+  const [sumLang] = useSetting('pd-sum-lang')
   const usable = agents.filter((a) => a.available && !disabledClis.has(a.id))
   const messages = stream.messages
   const [workflow, setWorkflow] = useState('default')
@@ -65,7 +89,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   }, [messages.length])
   /** 追问轮实际执行会话的 CLI（SW 回带；头部展示与真实执行一致） */
   const [followAgent, setFollowAgent] = useState<string | null>(null)
-  const effectiveAgent = agentId || usable[0]?.id || 'claude'
+  // 回退链：本轮手选 > 设置的默认 CLI > 第一个可用
+  const effectiveAgent = agentId || (usable.some((a) => a.id === defaultCli) ? defaultCli : '') || usable[0]?.id || 'claude'
   const running = stream.activeId !== null
   const canFollowUp = messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text)
   const hasSession = canFollowUp
@@ -97,7 +122,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     } else {
       const wf = workflow === 'default' ? 'quick' : workflow
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills },
+        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined },
         (resp) => { if (!chrome.runtime.lastError && resp) onStartResult(resp) },
       )
     }
