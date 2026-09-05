@@ -445,6 +445,13 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
         {tab === 'about' && (
           <div className="pd-set-pane">
             <div className="pd-set-panel pd-set-about">
+              <div className="pd-set-about-head">
+                <img src="icon-128.png" alt="AI PageDive logo" className="pd-set-logo" />
+                <div className="pd-set-about-name">
+                  <strong>AI PageDive</strong>
+                  <span className="pd-set-ver">v{chrome.runtime.getManifest().version}</span>
+                </div>
+              </div>
               <p>
                 AI PageDive 只在本机调用你自己登录的官方 CLI（claude / codex / opencode），
                 <strong>不接触任何凭证、不代理流量、不额外收费</strong>；总结用量计入你的 CLI 订阅。

@@ -444,6 +444,33 @@
 }
 
 /* ── 关于 tab ── */
+.pd-set-about-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.pd-set-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  /* 原图无透明通道：抠出紫渐变方块外的白边视觉 */
+  box-shadow: 0 4px 16px rgba(124,58,237,.35), inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.pd-set-about-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pd-set-about-name strong {
+  font-size: 15px;
+  color: var(--color-pd-ink);
+}
+.pd-set-ver {
+  font-family: var(--font-mono-ui);
+  font-size: 10.5px;
+  color: var(--color-pd-ink-2);
+}
 .pd-set-about p {
   margin: 0 0 10px;
   font-size: 12px;
