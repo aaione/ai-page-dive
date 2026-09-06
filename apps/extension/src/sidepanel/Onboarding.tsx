@@ -74,10 +74,10 @@ export function Onboarding() {
           </p>
           <p>
             <code>EACCES</code> / 权限错误 → 改用 nvm/Homebrew 的 Node 重装（无需 sudo，推荐）；
-            或 <code>sudo npm i -g ai-page-dive</code> 后，再以普通用户执行面板上的第二条登记命令。
+            或 <code>sudo npm i -g ai-page-dive</code> 后，再以普通用户执行面板当前显示的登记命令。
           </p>
           <p>
-            用 <code>pnpm</code>？全局安装默认不执行安装钩子——装完直接执行上面的 <code>ai-page-dive install</code> 部分即可。
+            用 <code>pnpm</code>？全局安装默认不执行安装钩子——装完直接执行面板当前显示的 <code>ai-page-dive install</code> 命令即可。
           </p>
         </details>
         <p className="pd-onboarding-note">

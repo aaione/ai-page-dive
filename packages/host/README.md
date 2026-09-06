@@ -12,6 +12,10 @@ npm i -g ai-page-dive && ai-page-dive install --ext-id <扩展ID>
 
 `install` 幂等：写 NM host manifest（`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`）+ 探测本机 CLI。扩展端的 Onboarding 页会给出完整命令（含扩展 ID）。
 
+### 自动注册（postinstall）
+
+`npm i -g` 安装完成后会尝试**自动注册** NM host（仅 macOS + 非 root + 检测到 Chrome 数据目录时；失败静默降级，绝不影响安装成功）。注册后许可名单（allowed_origins）为空属预期——回到扩展面板，按提示执行一条登记命令即可。设 `PAGEDIVE_SKIP_POSTINSTALL=1` 可跳过自动注册。pnpm 全局安装默认不执行安装钩子，请手动跑 `install`。
+
 ## 用法
 
 装好后打开 Chrome 扩展 [AI PageDive](https://github.com/aaione/page-dive) 的侧边栏即可，无需再管本包。

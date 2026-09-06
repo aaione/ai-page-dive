@@ -2,7 +2,7 @@
 // 设计约束（D10 定案）：只用 node: 内置；永不抛错、永不阻塞安装；
 // 只在「包管理器全局安装 + macOS + 非 root + dist 已构建」时静默注册 NM host。
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, sep } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerManifests } from '../install.js'
 
@@ -21,14 +21,16 @@ function pointToPanel(): void {
 /**
  * 全局安装判定（纯 pkgDir 启发式 + lifecycle env）：
  * - npm -g：npm_config_global === 'true'（npm 7+ 可靠）
- * - pnpm -g（approve-builds 放行后）：包目录落在 PNPM_HOME 全局根下（带路径分隔符边界）
+ * - pnpm -g（approve-builds 放行后）：包目录落在 PNPM_HOME 全局根下（带路径分隔符边界；
+ *   resolve 规范化吃掉 PNPM_HOME 尾斜杠——shell 配置常见形态）
  * - yarn v1 -g：包目录落在 ~/.config/yarn/global/node_modules 下
  * monorepo pnpm install / CI / 本地 npm i / file: 链接均不满足 → false
+ * export 供测试（main 只传 process.env 与模块级 pkgDir）。
  */
-function detectGlobalInstall(): boolean {
-  if (process.env.npm_config_global === 'true') return true
-  const pnpmHome = process.env.PNPM_HOME
-  if (pnpmHome && (pkgDir === pnpmHome || pkgDir.startsWith(pnpmHome + sep))) return true
+export function detectGlobalInstall(env: NodeJS.ProcessEnv, pkgDir: string): boolean {
+  if (env.npm_config_global === 'true') return true
+  const pnpmHome = env.PNPM_HOME ? resolve(env.PNPM_HOME) : undefined
+  if (pnpmHome && pkgDir.startsWith(pnpmHome + sep)) return true
   // yarn v1 全局：~/.config/yarn/global/node_modules/<pkg>（macOS 路径）
   if (pkgDir.includes(`${sep}yarn${sep}global${sep}node_modules${sep}`)) return true
   return false
@@ -36,7 +38,7 @@ function detectGlobalInstall(): boolean {
 
 /** 顶层全局判定：npm i -g <宿主> 时嵌套依赖也会看到 npm_config_global——
  * 顶层全局包的父目录是 node_modules，且其上一级没有另一个包的 package.json */
-function isTopLevelGlobal(): boolean {
+export function isTopLevelGlobal(pkgDir: string): boolean {
   const parent = dirname(pkgDir)
   if (!parent.endsWith(`${sep}node_modules`)) return false
   const grandparentPkg = join(dirname(parent), 'package.json')
@@ -55,8 +57,8 @@ async function main(): Promise<void> {
 
   // 1) 全局判定先行（最重要的一条顺序约束）：本地/monorepo/CI 一律静默，
   //    连「平台不支持」也不打印——Linux 贡献者的 npm install 不该看到 macOS 营销
-  if (!detectGlobalInstall()) return
-  if (!isTopLevelGlobal()) return
+  if (!detectGlobalInstall(process.env, pkgDir)) return
+  if (!isTopLevelGlobal(pkgDir)) return
 
   // 2) CI/Docker：无人阅读，静默（root 守卫的两行指引在 CI 里只是日志噪音）
   if (process.env.CI) return

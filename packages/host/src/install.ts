@@ -44,8 +44,9 @@ export function macOSManifestDirs(): string[] {
  */
 export async function registerManifests(extIds: string[], quiet = false): Promise<string[]> {
   // host 入口：本文件编译产物的真实路径（解析 npm global symlink）。
-  // fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18
-  const hostPath = resolve(dirname(fileURLToPath(import.meta.url)), 'index.js')
+  // fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18。
+  // PAGEDIVE_HOST_ENTRY：测试注入（vitest 跑 src/ 源码时 dist 入口不存在）
+  const hostPath = process.env.PAGEDIVE_HOST_ENTRY ?? resolve(dirname(fileURLToPath(import.meta.url)), 'index.js')
   if (!existsSync(hostPath)) {
     throw new Error(`host entry not found: ${hostPath}`)
   }
@@ -68,8 +69,9 @@ export async function registerManifests(extIds: string[], quiet = false): Promis
       for (const o of prev.allowed_origins ?? []) {
         if (!origins.includes(o)) origins.push(o)
       }
-      // 静默重指向排查线索：旧 manifest 指向别处（如开发仓库 → 全局包）
-      if (quiet && typeof prev.path === 'string' && prev.path !== wrapperPath) {
+      // 重指向排查线索：旧 manifest 指向别处（如开发仓库 → 全局包）。
+      // 手动 install 排查时同样需要看到（受众恰是主动跑命令的人）
+      if (typeof prev.path === 'string' && prev.path !== wrapperPath) {
         console.log(`[ai-page-dive] NM host 重定向: ${prev.path} → ${wrapperPath}`)
       }
     } catch { /* 首次 */ }
