@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 
-/** 自愈命令：动态带当前扩展 ID——install 幂等 + origins 追加不覆盖，
- * 一条命令通吃「host 未装 / ID 未登记 / 两者都缺」三种失败 */
-const cmd = `npm i -g ai-page-dive && ai-page-dive install --ext-id ${chrome.runtime.id}`
+/** 自愈命令：动态带当前扩展 ID——install 幂等 + origins 追加不覆盖 */
+const extId = chrome.runtime.id
+/** not-installed：host 未装，一条命令通吃「未装 / ID 未登记 / 双缺」（postinstall 被跳过时的兜底） */
+const installCmd = `npm i -g ai-page-dive && ai-page-dive install --ext-id ${extId}`
+/** forbidden：postinstall 已自动注册 host（origins 为空），只差补登记 */
+const registerCmd = `ai-page-dive install --ext-id ${extId}`
 
 export function Onboarding() {
   const [copied, setCopied] = useState(false)
@@ -26,7 +29,7 @@ export function Onboarding() {
   }, [])
 
   const copy = () => {
-    navigator.clipboard.writeText(cmd).then(() => {
+    navigator.clipboard.writeText(forbidden ? registerCmd : installCmd).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     })
@@ -52,9 +55,11 @@ export function Onboarding() {
             </>
           )}
         </p>
-        <p className="pd-onboarding-label">复制这一行到终端执行（需已装 Node.js）：</p>
+        <p className="pd-onboarding-label">
+          {forbidden ? '复制这一行到终端执行：' : '复制这一行到终端执行（需已装 Node.js）：'}
+        </p>
         <button onClick={copy} className="pd-onboarding-cmd" title="点击复制">
-          <span className="pd-onboarding-cmd-text">{cmd}</span>
+          <span className="pd-onboarding-cmd-text">{forbidden ? registerCmd : installCmd}</span>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <rect x="5.5" y="5.5" width="8" height="8" rx="1" />
             <path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" />
@@ -68,8 +73,11 @@ export function Onboarding() {
             <a href="https://nodejs.org" target="_blank" rel="noreferrer">nodejs.org</a> 或 <code>brew install node</code>）再重试。
           </p>
           <p>
-            <code>EACCES</code> / 权限错误 → 全局目录不可写，<code>sudo npm i -g ai-page-dive</code>，
-            或改用 nvm/Homebrew 的 Node（无需 sudo）。
+            <code>EACCES</code> / 权限错误 → 改用 nvm/Homebrew 的 Node 重装（无需 sudo，推荐）；
+            或 <code>sudo npm i -g ai-page-dive</code> 后，再以普通用户执行面板上的第二条登记命令。
+          </p>
+          <p>
+            用 <code>pnpm</code>？全局安装默认不执行安装钩子——装完直接执行上面的 <code>ai-page-dive install</code> 部分即可。
           </p>
         </details>
         <p className="pd-onboarding-note">

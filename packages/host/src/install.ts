@@ -1,6 +1,6 @@
 /** ai-page-dive install：写 NM host manifest（macOS）+ CLI 探测输出 */
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,13 +10,18 @@ const HOST_NAME = 'com.pagedive.host'
 
 /**
  * NM host 由 Chrome 以极简 PATH（/usr/bin:/bin:…）exec——nvm/brew 的 node 不在
- * 其中，#!/usr/bin/env node 会失败。生成写死当前 node 绝对路径的 wrapper。
+ * 其中，#!/usr/bin/env node 会失败。生成写死当前 node 绝对路径的 wrapper；
+ * 该路径失效时（nvm 切版本/卸载）回退 PATH 上的 node，面板再引导重装刷新。
  */
 async function writeHostWrapper(hostEntry: string): Promise<string> {
   const nodeBin = process.execPath
   const wrapper = join(homedir(), '.ai-page-dive', 'host-wrapper.sh')
   await mkdir(join(homedir(), '.ai-page-dive'), { recursive: true })
-  await writeFile(wrapper, `#!/bin/sh\nexec "${nodeBin}" "${hostEntry}" --stdio\n`, { mode: 0o755 })
+  await writeFile(
+    wrapper,
+    `#!/bin/sh\n[ -x "${nodeBin}" ] || exec /usr/bin/env node "${hostEntry}" --stdio\nexec "${nodeBin}" "${hostEntry}" --stdio\n`,
+    { mode: 0o755 },
+  )
   await chmod(wrapper, 0o755)
   return wrapper
 }
@@ -29,7 +34,15 @@ export function macOSManifestDirs(): string[] {
   )
 }
 
-export async function install(extIds: string[]): Promise<void> {
+/**
+ * 安静版注册（install 与 postinstall 共用）：写 wrapper + 各目录 manifest。
+ * - origins 跨目录累计 union（追加不覆盖，末目录 prev 不丢已登记 ID）
+ * - manifest 原子写（tmp + rename）：中途崩溃不留半写 JSON
+ * - 旧 manifest path 变化时提示（开发态切全局包时的排查线索）
+ * - 返回实际写入的 manifest 路径（postinstall 据此区分真成功/Chrome 未装）
+ * 顺序约束：wrapper 必须先于所有 manifest 写入（半成功时 manifest 不指向死 wrapper）。
+ */
+export async function registerManifests(extIds: string[], quiet = false): Promise<string[]> {
   // host 入口：本文件编译产物的真实路径（解析 npm global symlink）。
   // fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18
   const hostPath = resolve(dirname(fileURLToPath(import.meta.url)), 'index.js')
@@ -44,6 +57,7 @@ export async function install(extIds: string[]): Promise<void> {
   // E2E/开发：额外 NM 目录（如 CFT 的 user-data-dir/NativeMessagingHosts）
   const extra = process.env.PAGEDIVE_EXTRA_NM_DIR
   const dirs = [...macOSManifestDirs(), ...(extra ? [extra] : [])]
+  const written: string[] = []
   for (const dir of dirs) {
     if (!existsSync(join(dir, '..'))) continue
     const manifestPath = join(dir, `${HOST_NAME}.json`)
@@ -53,6 +67,10 @@ export async function install(extIds: string[]): Promise<void> {
       // 跨目录累计 union（追加不覆盖）：末目录 prev 不能重置前面目录已登记的 ID
       for (const o of prev.allowed_origins ?? []) {
         if (!origins.includes(o)) origins.push(o)
+      }
+      // 静默重指向排查线索：旧 manifest 指向别处（如开发仓库 → 全局包）
+      if (quiet && typeof prev.path === 'string' && prev.path !== wrapperPath) {
+        console.log(`[ai-page-dive] NM host 重定向: ${prev.path} → ${wrapperPath}`)
       }
     } catch { /* 首次 */ }
     for (const id of extIds) {
@@ -66,10 +84,20 @@ export async function install(extIds: string[]): Promise<void> {
       type: 'stdio',
       allowed_origins: origins,
     }
-    await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
-    console.log(`✅ NM host manifest 已写入 ${manifestPath}`)
+    // 原子写：同目录 tmp + rename，崩溃时旧 manifest 完整
+    await writeFile(`${manifestPath}.tmp`, JSON.stringify(manifest, null, 2) + '\n')
+    await rename(`${manifestPath}.tmp`, manifestPath)
+    written.push(manifestPath)
+    if (!quiet) console.log(`✅ NM host manifest 已写入 ${manifestPath}`)
   }
-  if (!origins.length) {
+  return written
+}
+
+export async function install(extIds: string[]): Promise<void> {
+  const written = await registerManifests(extIds)
+  if (!written.length) {
+    console.log('⚠️  未发现 Chrome 数据目录（Chrome 从未启动过？）——启动一次 Chrome 后重新运行 install')
+  } else if (!written.some((p) => JSON.parse(readFileSyncSafe(p)).allowed_origins?.length)) {
     console.log('⚠️  尚无 allowed_origins：开发期用 ai-page-dive install --ext-id <扩展ID>')
   }
 
@@ -77,5 +105,14 @@ export async function install(extIds: string[]): Promise<void> {
   console.log('本机 CLI 探测：')
   for (const a of agents) {
     console.log(a.available ? `  ✅ ${a.id} ${a.version ?? ''}` : `  ⛔ ${a.id} 未安装`)
+  }
+}
+
+function readFileSyncSafe(p: string): any {
+  // 小工具：install() 内部读回刚写的 manifest（失败当空处理）
+  try {
+    return JSON.parse(readFileSync(p, 'utf8'))
+  } catch {
+    return {}
   }
 }
