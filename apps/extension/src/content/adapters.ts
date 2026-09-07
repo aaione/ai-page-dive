@@ -10,15 +10,20 @@ const arxiv: Adapter = (url, doc) => {
   if (!/^(www\.)?arxiv\.org$/.test(url.hostname)) return null
   if (!/\/abs\//.test(url.pathname)) return null
   const q = (s: string) => doc.querySelector<HTMLElement>(s)?.innerText.trim() ?? ''
-  const abstract = q('blockquote.abstract') || q('.abstract')
-  const title = q('h1.title') || doc.title
-  const authors = q('.authors')
+  // arXiv 的 h1.title/.authors/blockquote 内含 <span class="descriptor"> 前缀
+  // （"Title:" / "Authors:" / "Abstract:"），innerText 会带出——剥掉再拼
+  const strip = (s: string, label: string) => s.replace(new RegExp(`^${label}:\\s*`, 'i'), '')
+  const abstract = strip(q('blockquote.abstract') || q('.abstract'), 'Abstract')
+  const title = strip(q('h1.title') || doc.title, 'Title')
+  const authorsRaw = strip(q('.authors'), 'Authors')
   if (!abstract) return null
-  const md = `# ${title}\n\n${authors}\n\n## Abstract\n\n${abstract}`
+  const md = [`# ${title}`, authorsRaw && `_${authorsRaw}_`, `## Abstract`, '', abstract]
+    .filter((l) => l !== '')
+    .join('\n\n')
   return {
     url: url.href,
     title,
-    byline: authors.replace(/^Authors:/i, '').trim() || undefined,
+    byline: authorsRaw || undefined,
     siteName: 'arxiv.org',
     lang: 'en',
     extractor: 'adapter:arxiv',

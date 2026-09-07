@@ -42,8 +42,9 @@ export class NmPort {
     return this.lastDisconnectError
   }
 
-  /** 真实可用性探测：发 ping 等 pong（node 冷启动可慢，默认 8s） */
-  probe(timeoutMs = 8000): Promise<{ ok: boolean; error?: string }> {
+  /** 真实可用性探测：发 ping 等 pong（node 冷启动可慢，默认 8s）。
+   * hostVersion 透出供诊断（host/扩展更新节奏脱钩，旧 host 对新消息静默无响应） */
+  probe(timeoutMs = 8000): Promise<{ ok: boolean; error?: string; hostVersion?: string }> {
     return new Promise((resolve) => {
       if (!this.connect()) return resolve({ ok: false, error: 'connect failed' })
       const timer = setTimeout(() => {
@@ -54,7 +55,7 @@ export class NmPort {
         if (m.t === 'pong') {
           clearTimeout(timer)
           unlisten()
-          resolve({ ok: true })
+          resolve({ ok: true, hostVersion: m.hostVersion })
         }
       }
       const onDisc = () => {

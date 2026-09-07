@@ -11,6 +11,7 @@ import type { AgentStatus, ExtToHost, HostToExt, PageContent } from '@ai-page-di
 let currentTask: {
   taskId: string
   page: Omit<PageContent, 'contentMarkdown'>
+  /** 正文发送完成后即清空——SW 常驻数 MB 死重只会抬高被回收概率 */
   content: string
 } | null = null
 
@@ -61,7 +62,7 @@ chrome.action.onClicked.addListener((tab) => {
 
 // 面板只在 panelTabId 上可见，onActivated 无需跟随切 tab 改 target；
 // 切回 panelTabId 时刷新一次 page-meta（tips 条同步，导航后 meta 可能已变）。
-const isNormalPage = (u?: string) => !!u && !/^(chrome|edge|about|chrome-extension):/.test(u)
+const isNormalPage = (u?: string) => !!u && !/^(chrome|edge|about|chrome-extension|devtools|view-source|file|data|blob):/.test(u)
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   if (panelTabId !== tabId) return
   chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta() }).catch(() => {})
@@ -102,7 +103,7 @@ async function handleMessage(msg: any): Promise<unknown> {
         const [active] = await chrome.tabs
           .query({ active: true, lastFocusedWindow: true })
           .catch(() => [])
-        if (active?.id && active.url && !/^(chrome|edge|about|chrome-extension):/.test(active.url)) {
+        if (active?.id && isNormalPage(active.url)) {
           panelTabId = active.id
           target = active
         }
@@ -126,9 +127,11 @@ async function handleMessage(msg: any): Promise<unknown> {
       return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills, lang)
     }
     case 'resume-history': {
-      // 历史详情「继续对话」：装载历史会话（SW 记 lastSession），后续 followUp 走 --resume
+      // 历史详情「继续对话」：装载历史会话（SW 记 lastSession），后续 followUp 走 --resume。
+      // 在途任务先取消——否则旧任务的尾随 chunk 污染恢复的对话（panel taskId 已重置 null 放行一切）
       const { agentId, sessionId, historyPath } = msg
       if (!agentId || !sessionId) return { error: 'bad-request' }
+      if (currentTask) cancelCurrent()
       lastSession = { agentId, sessionId, historyPath }
       currentAgentId = agentId
       return { ok: true }
@@ -178,12 +181,18 @@ nmPort.onMessage((m) => {
     chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
     return
   }
-  // 任务终局：释放内存（含全量正文）+ 防后续 cancel 发过期 taskId
-  if (msg?.t === 'task-done' || msg?.t === 'task-error') {
-    if (currentTask && (msg.taskId === currentTask.taskId || msg.t === 'task-error')) {
-      currentTask = null
-    }
+  // 任务终局：释放内存 + 防后续 cancel 发过期 taskId。严格按 taskId 匹配——
+  // 旧任务晚到的 task-error 会清掉新任务的取消句柄（`|| msg.t === 'task-error''
+  // 兜底无依据：task-error 帧协议上必带 taskId）
+  if (
+    (msg?.t === 'task-done' || msg?.t === 'task-error') &&
+    currentTask &&
+    msg.taskId === currentTask.taskId
+  ) {
+    currentTask = null
   }
+  // host 心跳帧：仅保活（消息活动重置 SW idle 计时器），不转发给 panel
+  if (msg?.t === 'heartbeat') return
   // 捕获会话 id 供追问（claude init 事件捕获，task-done 兜底）；historyPath 续存
   // （追问轮 task-done 带回首轮文件路径，覆盖亦无损——路径不变）
   if (msg?.t === 'task-meta' || msg?.t === 'task-done') {
@@ -245,7 +254,7 @@ async function extractBest(tabId: number): Promise<PageContent | { error: string
 
 /** 当前总结目标页元数据（tips 条展示用）；target 无 url 时（无 tabs 权限）fallback tab query */
 function pageMeta(): { title: string; url: string; favIconUrl?: string } | null {
-  if (target?.url && !/^(chrome|edge|about|chrome-extension):/.test(target.url)) {
+  if (target?.url && isNormalPage(target.url)) {
     return { title: target.title ?? '', url: target.url, favIconUrl: target.favIconUrl }
   }
   return null
@@ -260,8 +269,9 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0] ?? null
   }
   if (!tab?.id) return { error: 'no-tab' }
-  // chrome:// 等受限页面无法注入
-  if (/^(chrome|edge|about|chrome-extension):/.test(tab.url ?? '')) {
+  // chrome:// 等受限页面无法注入（file/view-source/data 同样不可注入，
+  // 归入 unsupported 而非误导用户的 no-permission）
+  if (!isNormalPage(tab.url)) {
     return { error: 'unsupported-page', url: tab.url }
   }
 
@@ -304,16 +314,27 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     return { error: 'host-not-found', lastError: nmPort.lastError }
   }
 
-  // 正文分片 ≤512KB
+  // 正文分片 ≤512KB 字节维度（CJK 3 字节/字符，按字符切会击穿 NM 1MB——
+  // 与 host 侧 sendChunk 同一标准：字符数起步、超字节就二分收缩）
   const CH = 512 * 1024
-  for (let i = 0, seq = 0; i < contentMarkdown.length; i += CH, seq++) {
+  let i = 0
+  let seq = 0
+  while (i < contentMarkdown.length) {
+    let end = Math.min(i + CH, contentMarkdown.length)
+    while (end > i && new Blob([contentMarkdown.slice(i, end)]).size > CH) {
+      end = Math.floor((i + end) / 2)
+    }
     nmPort.send({
       t: 'task-content',
       taskId,
       seq,
-      text: contentMarkdown.slice(i, i + CH),
-      done: i + CH >= contentMarkdown.length,
+      text: contentMarkdown.slice(i, end),
+      done: end >= contentMarkdown.length,
     })
+    i = end
+    seq++
   }
+  // 正文已全量送达 host：SW 不再需要这份内存（保留 taskId/page 供取消与终局对账）
+  currentTask.content = ''
   return { ok: true, taskId }
 }

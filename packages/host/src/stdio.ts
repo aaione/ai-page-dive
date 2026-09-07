@@ -65,9 +65,11 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         if (!t) return send({ t: 'error', code: 'no-task', message: `unknown task ${msg.taskId}` })
         t.appendContent(msg.text, msg.done)
         if (t.contentReady()) {
-          t.run().catch((e) =>
-            send({ t: 'error', code: 'internal', message: String(e?.message ?? e) }),
-          )
+          // run 早期失败也带 taskId 走 task-error：SW/panel 按任务终局清理，不再挂空
+          t.run().catch((e) => {
+            tasks.delete(msg.taskId)
+            send({ t: 'task-error', taskId: msg.taskId, code: 'spawn-fail', message: String(e?.message ?? e) })
+          })
         }
         break
       }
@@ -160,21 +162,29 @@ export function runNative(): void {
     }
   }
   const { handle, tasks } = runStdio(send)
+
+  // 任务期心跳（SW 保活）：Chrome 105+ 仅 port 上的消息活动重置 SW 30s idle 计时器，
+  // merely-open 的 port 不豁免回收——CLI 深度思考期 stdout 可 >30s 静默，若无周期帧
+  // SW 被杀 → NM port 关闭 → 本进程 stdin end → 任务静默死亡
+  let beat = 0
+  setInterval(() => {
+    if (!tasks.size) return
+    send({ t: 'heartbeat', seq: beat++ })
+  }, 20_000).unref()
+
+  // 收割窗口：SIGTERM 发出后给 3.2s（reap 的 SIGKILL 兜底 3s）让进程树死透 + 在途
+  // persist('interrupted') 落盘完成，再退出。之前立即 exit 使 SIGKILL 兜底永不触发
   const reapAll = () => {
     for (const t of tasks.values()) t.cancel()
   }
+  const shutdown = () => {
+    reapAll()
+    setTimeout(() => process.exit(0), 3_200)
+    // 3.2s 后强制退出；期间事件循环自然驱动 persist / SIGKILL 定时器
+  }
   process.stdin.on('data', createFrameReader(handle))
-  process.stdin.on('end', () => {
-    reapAll()
-    process.exit(0)
-  })
-  process.on('SIGTERM', () => {
-    reapAll()
-    process.exit(0)
-  })
-  process.on('SIGINT', () => {
-    reapAll()
-    process.exit(0)
-  })
+  process.stdin.on('end', shutdown)
+  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', shutdown)
   process.stdin.resume()
 }

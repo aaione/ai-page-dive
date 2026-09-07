@@ -20,6 +20,8 @@ export interface ChatMessage {
 }
 
 export interface TaskStreamState {
+  /** 当前绑定任务；null = 无任务。过期帧拒绝：null 只接受「首帧绑定」，
+   * 已绑定后不同 taskId 一律丢弃——防取消后旧任务尾随帧劫持新一轮 */
   taskId: string | null
   messages: ChatMessage[]
   /** 正在生成的 assistant 消息 id */
@@ -58,6 +60,9 @@ export function App() {
 
   useEffect(() => {
     chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
+      // SW 唤醒失败/通道异常：lastError 非空且 resp undefined——不等于「host 未装」，
+      // 保持 null（loading 态）等下一轮探测，不误导用户进安装引导
+      if (chrome.runtime.lastError) return
       setHostOk(!!resp?.ok)
       if (resp?.ok) requestLists()
       if (resp?.page) setPageMeta(resp.page)
@@ -92,7 +97,8 @@ export function App() {
           break
         case 'task-chunk': {
           setStream((s) => {
-            if (s.taskId !== null && s.taskId !== m.taskId) return s // 过期 chunk
+            // 首帧绑定或已绑定同任务；绑定后不同 taskId = 过期帧（取消后尾随），丢弃
+            if (s.taskId !== null && s.taskId !== m.taskId) return s
             const activeId = s.activeId ?? `a${m.taskId}`
             const messages = [...s.messages]
             const idx = messages.findIndex((x) => x.id === activeId)
@@ -106,7 +112,7 @@ export function App() {
           // status 先于首 chunk 到达（thinking 期数秒）：也置 activeId + 占位消息，
           // 否则 running=false → 环形 loading / 停止钮 / 光标都不出现
           setStream((s) => {
-            if (s.taskId !== m.taskId && s.taskId !== null) return s
+            if (s.taskId !== null && s.taskId !== m.taskId) return s
             const activeId = s.activeId ?? `a${m.taskId}`
             const messages = s.messages.some((x) => x.id === activeId)
               ? s.messages
@@ -139,15 +145,21 @@ export function App() {
           break
         case 'task-error':
           setStream((s) => {
+            // 过期帧（绑定的是别的任务）：不劫持新一轮状态，仅收尾还在 streaming 的气泡
+            if (s.taskId !== null && s.taskId !== m.taskId) {
+              return {
+                ...s,
+                messages: s.messages.map((msg) =>
+                  msg.streaming ? { ...msg, streaming: false, error: '已取消', isError: true } : msg,
+                ),
+              }
+            }
             const messages = s.messages.map((msg) =>
               msg.streaming
                 ? { ...msg, streaming: false, error: `${ERROR_LABEL[m.code] ?? m.code}: ${m.message}`, isError: true }
                 : msg,
             )
-            if (s.taskId === m.taskId || s.taskId === null) {
-              return { ...s, taskId: m.taskId, done: true, activeId: null, messages }
-            }
-            return { ...s, messages }
+            return { ...s, taskId: m.taskId, done: true, activeId: null, messages }
           })
           break
         case '__host-disconnected':

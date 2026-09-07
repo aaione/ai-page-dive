@@ -37,6 +37,17 @@ describe('saveHistory 写入格式', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it('同路径并发写不覆盖：wx 排他 + 序号重试，返回实际路径', async () => {
+    const path = join(dir, '100000-collide.md')
+    const p1 = await saveHistory(path, { title: 'A', url: 'u', agent: 'claude', status: 'done' }, '甲的内容')
+    const p2 = await saveHistory(path, { title: 'B', url: 'u', agent: 'claude', status: 'done' }, '乙的内容')
+    expect(p1).toBe(path)
+    expect(p2).toBe(join(dir, '100000-collide-2.md'))
+    // 两份都完整落盘（后者没有 truncate 前者）
+    expect(await readFile(p1, 'utf8')).toContain('甲的内容')
+    expect(await readFile(p2, 'utf8')).toContain('乙的内容')
+  })
+
   it('frontmatter + body 落盘', async () => {
     const path = join(dir, '2026', '09', '01', '100000-test.md')
     await saveHistory(

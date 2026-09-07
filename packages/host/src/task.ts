@@ -33,8 +33,8 @@ const sessionCwds = new Map<string, string>()
 /** 固定 CLI 工作区（幂等创建）：claude 会话跨 host 重启可 resume 的关键 */
 let stableCwd: string | null = null
 async function getStableAgentCwd(): Promise<string> {
-  if (stableCwd) return stableCwd
   const dir = join(homedir(), '.ai-page-dive', 'agent-workspace')
+  // 每次 mkdir（幂等）：目录被误删后缓存短路会让后续所有 spawn 落在不存在 cwd 上
   await mkdir(dir, { recursive: true })
   return (stableCwd = dir)
 }
@@ -71,6 +71,10 @@ export class Task {
   private finished = false
   /** isError 路径已发终局（防 exit 事件二次发） */
   private doneSent = false
+  /** timeout 终局已发（防 exit 后 finish() 再补发 cancelled） */
+  private timeoutSent = false
+  /** claude 已交付完整 result 且 is_error=false（exit code 异常时仍算成功——硬约束 #4 的精神） */
+  private gotResultOk = false
   private historyPath = ''
   private timeoutTimer?: ReturnType<typeof setTimeout>
 
@@ -100,6 +104,11 @@ export class Task {
   async run(): Promise<void> {
     if (this.ran) return
     this.ran = true
+    // spawn 前已取消（正文传输期间点停止）：不再起进程白烧 CLI 配额
+    if (this.cancelled) {
+      this.cb.onError('cancelled', 'task cancelled')
+      return
+    }
     const def = getAgent(this.input.agentId)
     if (!def) {
       this.cb.onError('no-agent', `unknown agent: ${this.input.agentId}`)
@@ -166,28 +175,38 @@ export class Task {
         cwd: agentCwd,
         stdinData: prompt,
         onStdoutLine: (line) => {
-          for (const ev of parser(line)) this.handleEvent(ev, contentFile)
+          for (const ev of parser(line)) void this.handleEvent(ev, contentFile)
         },
         onStderr: (s) => {
           stderrTail = (stderrTail + s).slice(-2000)
         },
       })
     } catch (e: any) {
-      // spawn 失败也要回收预建的工作目录（防泄漏）
-      if (agentCwd) rm(agentCwd, { recursive: true, force: true }).catch(() => {})
+      // spawn 失败只回收 mkdtemp 的临时 cwd——固定工作区（stableCwd）是 resume 锚点，删了
+      // 后续 claude/codex 任务连锁 spawn 失败 + 历史会话 resume 失效
+      if (agentCwd && agentCwd !== stableCwd) rm(agentCwd, { recursive: true, force: true }).catch(() => {})
       this.cb.onError('spawn-fail', String(e?.message ?? e))
+      return
+    }
+
+    // spawn 成功后又已取消（cancel 落在 await 窗口内）：立即收割，勿让进程跑满超时
+    if (this.cancelled) {
+      this.proc.reap()
       return
     }
 
     this.timeoutTimer = setTimeout(() => {
       if (this.finished) return
+      // 终局标记前置：reap 触发的 exit 事件不得再走 finish() 二次发终局
+      this.finished = true
+      this.timeoutSent = true
       this.cb.onError('timeout', `task exceeded ${TASK_TIMEOUT_MS / 60_000}min`)
       this.cancel()
     }, TASK_TIMEOUT_MS)
 
     await new Promise<void>((resolve) => {
       this.proc!.child.on('exit', async (code, signal) => {
-        if (this.doneSent) return resolve() // isError 路径已发终局，勿重复
+        if (this.doneSent || this.timeoutSent) return resolve() // isError/timeout 路径已发终局，勿重复
         this.finished = true
         await this.finish(code, signal, stderrTail, contentFile)
         resolve()
@@ -203,11 +222,11 @@ export class Task {
     })
   }
 
-  private handleEvent(ev: AgentEvent, contentFile: string): void {
+  private async handleEvent(ev: AgentEvent, contentFile: string): Promise<void> {
     if (this.finished) return
     switch (ev.type) {
       case 'status':
-        this.cb.onStatus(ev.phase)
+        if (!this.cancelled) this.cb.onStatus(ev.phase)
         break
       case 'meta':
         this.meta = {
@@ -222,7 +241,7 @@ export class Task {
         break
       case 'text-delta':
         this.accText += ev.text
-        this.sendChunk(ev.text)
+        if (!this.cancelled) this.sendChunk(ev.text)
         break
       case 'usage':
         this.usage = ev
@@ -235,9 +254,10 @@ export class Task {
           clearTimeout(this.timeoutTimer)
           this.proc?.reap()
           if (!this.input.resumeSessionId) this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
-          void this.persist('error')
+          // 落盘完成再发终局：host 若在 persist 期间断连退出，错误轮历史不再丢失
+          await this.persist('error')
           this.cb.onDone({
-            historyPath: this.historyPath,
+            historyPath: this.effectiveHistoryPath,
             isError: true,
             errorText: ev.text,
             usage: this.usage,
@@ -249,6 +269,10 @@ export class Task {
           // codex 无增量时 result 兜底出全文
           this.accText = ev.text
           this.sendChunk(ev.text)
+          this.gotResultOk = true
+        } else if (ev.text || this.accText) {
+          // 已产出正文的成功 result：exit code 异常时仍按成功终局（硬约束 #4 的精神）
+          this.gotResultOk = true
         }
         // 正常路径不设 finished：等 exit 事件统一走 finish()（onDone + 落盘）
         break
@@ -256,9 +280,17 @@ export class Task {
   }
 
   private sendChunk(text: string): void {
-    // NM 单帧 ≤1MB：按 MAX_CHUNK（512KB）切片
-    for (let i = 0; i < text.length; i += MAX_CHUNK) {
-      this.cb.onChunk(text.slice(i, i + MAX_CHUNK), this.chunkSeq++)
+    // NM 单帧 ≤1MB（字节维度）：CJK UTF-8 每字符 3 字节，按字符数切会击穿上限——
+    // 按 Buffer.byteLength 收缩切片（尾段同样受检：短字符数 ≠ 短字节）
+    let start = 0
+    for (;;) {
+      let end = Math.min(start + MAX_CHUNK, text.length)
+      while (end > start && Buffer.byteLength(text.slice(start, end)) > MAX_CHUNK) {
+        end = Math.floor((start + end) / 2)
+      }
+      this.cb.onChunk(text.slice(start, end), this.chunkSeq++)
+      if (end >= text.length) return
+      start = end
     }
   }
 
@@ -285,13 +317,23 @@ export class Task {
     }
     const isError = code !== 0 || !this.accText
     await this.persist(isError ? 'error' : 'done')
-    if (code !== 0) {
+    if (code !== 0 && !this.gotResultOk) {
+      // result 已成功交付（is_error=false）后 exit code 异常：内容完整，按成功终局
+      this.cb.onDone({
+        historyPath: this.effectiveHistoryPath,
+        isError: false,
+        usage: this.usage,
+        durationMs,
+        model: this.meta?.model,
+        sessionId: this.meta?.sessionId,
+      })
+    } else if (code !== 0) {
       this.cb.onError('parse', `exit ${code}: ${stderrTail.slice(-500)}`)
     } else if (!this.accText) {
       this.cb.onError('parse', `no output${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}`)
     } else {
       this.cb.onDone({
-        historyPath: this.historyPath,
+        historyPath: this.effectiveHistoryPath,
         isError: false,
         usage: this.usage,
         durationMs,
@@ -301,15 +343,23 @@ export class Task {
     }
   }
 
+  /** 终局回传的历史路径：resume 轮用 input 带来的首轮路径（this.historyPath 为空——
+   * SW 侧 `'' ?? fallback` 不生效会把 lastSession 覆盖成空串，第 2 次追问起不再落盘） */
+  private get effectiveHistoryPath(): string {
+    return this.input.historyPath || this.historyPath
+  }
+
   private async persist(status: 'done' | 'interrupted' | 'error'): Promise<void> {
     if (!this.input) return
+    const logFail = (e: unknown) =>
+      console.error(`[ai-page-dive] history persist failed (${this.effectiveHistoryPath}):`, e instanceof Error ? e.message : e)
     // 追问轮：user + assistant append 到首轮历史文件（多轮对话完整记录）
     if (this.input.resumeSessionId) {
       if (this.input.historyPath && this.accText) {
         await appendHistoryTurn(this.input.historyPath, {
           user: this.input.instruction ?? '',
           assistant: this.accText,
-        }).catch(() => {})
+        }).catch(logFail)
       }
       return
     }
@@ -326,7 +376,9 @@ export class Task {
         sessionId: this.meta?.sessionId,
       },
       this.accText,
-    ).catch(() => {})
+    )
+      .then((actual) => { this.historyPath = actual }) // 冲突重试换了文件名：终局回传实际路径
+      .catch(logFail)
   }
 
   get accumulated(): string {

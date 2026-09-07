@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import type { SkillItem } from '@ai-page-dive/shared'
+import { assertValidWorkflowName } from './workflows.js'
 
 const DIR = join(homedir(), '.ai-page-dive', 'skills')
 // fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18
@@ -42,7 +43,10 @@ export async function listSkills(): Promise<SkillItem[]> {
 export async function getSkillBodies(names: string[]): Promise<{ name: string; body: string }[]> {
   const out: { name: string; body: string }[] = []
   for (const name of names) {
-    // name 即目录名：不允许路径穿越（/、.. 等在目录名语义下天然不存在）
+    // name 来自 NM 消息，与 workflows 同一信任边界：白名单校验拒绝 ../ 穿越
+    try {
+      assertValidWorkflowName(name)
+    } catch { continue }
     let raw = await readFile(join(DIR, name, 'SKILL.md'), 'utf8').catch(() => undefined)
     if (raw === undefined) {
       for (const d of BUILTIN_SKILL_DIRS) {
@@ -61,6 +65,7 @@ export async function getSkillBodies(names: string[]): Promise<{ name: string; b
 export async function revealSkill(name?: string): Promise<void> {
   let target = DIR
   if (name) {
+    assertValidWorkflowName(name)
     const raw = await readFile(join(DIR, name, 'SKILL.md'), 'utf8').catch(() => undefined)
     if (raw !== undefined) target = join(DIR, name)
   }

@@ -78,7 +78,10 @@ export async function listWorkflows(): Promise<LoadedWorkflow[]> {
 }
 
 export async function getWorkflow(name: string): Promise<LoadedWorkflow | undefined> {
-  // 先用户目录后内置（shadow 语义）
+  // 先用户目录后内置（shadow 语义）；name 来自 NM 消息，读路径同样校验（写/删已有防线）
+  try {
+    assertValidWorkflowName(name)
+  } catch { return undefined }
   for (const [dir, builtin] of [[USER_DIR, false], [BUILTIN_DIR, true]] as const) {
     try {
       const raw = await readFile(join(dir, name, 'WORKFLOW.md'), 'utf8')
@@ -91,6 +94,9 @@ export async function getWorkflow(name: string): Promise<LoadedWorkflow | undefi
 
 /** 读 WORKFLOW.md 原文（frontmatter + 正文）：先用户目录后内置，供设置页编辑 */
 export async function readWorkflow(name: string): Promise<string | undefined> {
+  try {
+    assertValidWorkflowName(name)
+  } catch { return undefined }
   for (const dir of [USER_DIR, BUILTIN_DIR]) {
     const raw = await readFile(join(dir, name, 'WORKFLOW.md'), 'utf8').catch(() => undefined)
     if (raw !== undefined) return raw

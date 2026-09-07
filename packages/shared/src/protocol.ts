@@ -279,6 +279,8 @@ export type HostToExt =
   | HistoryFileMsg
   | DeletedMsg
   | ErrorMsg
+  /** 任务期周期帧（~20s）：port 消息活动重置 MV3 SW 的 30s idle 计时器（保活） */
+  | { t: 'heartbeat'; seq: number }
   /** SW 合成：NM host 断连（panel 据此停止 loading 并提示） */
   | { t: '__host-disconnected' }
 

@@ -79,8 +79,22 @@ export async function saveHistory(
   path: string,
   meta: HistoryMeta,
   body: string,
-): Promise<void> {
+): Promise<string> {
   await mkdir(join(path, '..'), { recursive: true })
+  // 同秒同 slug 并发任务互不覆盖：wx 排他创建，EEXIST 时追加序号重试
+  for (let n = 1; n < 100; n++) {
+    const p = n === 1 ? path : path.replace(/\.md$/, `-${n}.md`)
+    try {
+      await writeNew(p, meta, body)
+      return p
+    } catch (e: any) {
+      if (e?.code !== 'EEXIST') throw e
+    }
+  }
+  throw new Error('history path conflict: too many collisions')
+}
+
+async function writeNew(path: string, meta: HistoryMeta, body: string): Promise<void> {
   const frontmatter = [
     '---',
     `title: ${escapeYaml(meta.title)}`,
@@ -97,7 +111,7 @@ export async function saveHistory(
   ]
     .filter((l) => l !== null)
     .join('\n')
-  await writeFile(path, frontmatter + body + '\n', { mode: 0o600 })
+  await writeFile(path, frontmatter + body + '\n', { flag: 'wx', mode: 0o600 })
 }
 
 /** 追问轮 append 到首轮历史文件（多轮对话完整记录） */

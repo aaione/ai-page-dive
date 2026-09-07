@@ -73,6 +73,34 @@ describe('Task 状态机', () => {
     await rm(join(script, '..'), { recursive: true, force: true })
   }, 30_000)
 
+  it('CJK 大 delta 按 UTF-8 字节切片：单片不超 NM 上限', async () => {
+    // 40 万汉字单条 text-delta：按字符切（旧实现）单片 512K 字符 = ~1.5MB 超 NM 1MB；
+    // 按字节切应分 3 片且每片 UTF-8 ≤512KB。直接驱动（不 spawn）：append 后调私有路径
+    // 太绕——用 result 兜底路径（codex 风格）等价覆盖 sendChunk
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const bigText = '深'.repeat(400_000)
+    const dir = await mkdtemp(join(tmpdir(), 'pd-fake-'))
+    const script = join(dir, 'cli.mjs')
+    await writeFile(script, `console.log(JSON.stringify({type:'result',is_error:false,result:${JSON.stringify(bigText)}}))`, 'utf8')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const { task: mk, cbs } = makeCbs(); const task = mk()
+    task.start({ taskId: 't-cjk', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+    task.appendContent(BODY, true)
+    await task.run()
+    await new Promise(r => setTimeout(r, 200))
+
+    expect(cbs.chunks.length).toBeGreaterThanOrEqual(2)
+    for (const [text] of cbs.chunks) {
+      expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(512 * 1024)
+    }
+    expect(cbs.chunks.map(c => c[0]).join('')).toBe(bigText)
+    AGENTS[0].buildArgs = orig
+    if (cbs.done?.historyPath) await rm(cbs.done.historyPath, { force: true }).catch(() => {})
+    await rm(dir, { recursive: true, force: true })
+  }, 30_000)
+
   it('is_error 路径：onDone(isError=true) 只发一次，errorText 传导', async () => {
     const { AGENTS } = await import('../src/agents/registry.js')
     const script = await FAKE_CLI('is_error')

@@ -25,6 +25,11 @@ export function cliPath(): string {
     extra.push(join(home, 'homebrew/bin'))
     extra.push(join(home, '.homebrew/bin'))
     extra.push(join(home, '.linuxbrew/bin'))
+    // Node 版本管理器：npm i -g 的 CLI 落在这些 bin 下（NM 极简 PATH 看不见）
+    extra.push(join(home, '.volta/bin'))
+    extra.push(join(home, '.asdf/shims'))
+    extra.push(join(home, '.local/share/fnm/node-versions'))
+    extra.push(join(home, 'Library/Application Support/fnm/node-versions'))
   }
   try {
     const nvmDir = join(home, '.nvm/versions/node')
@@ -33,6 +38,12 @@ export function cliPath(): string {
     }
   } catch {
     // nvm 未安装或无版本
+  }
+  // fnm 版本目录结构同 nvm（…/node-versions/<ver>/installation/bin）
+  for (const fnmRoot of [join(home, '.local/share/fnm/node-versions'), join(home, 'Library/Application Support/fnm/node-versions')]) {
+    try {
+      for (const v of readdirSync(fnmRoot)) extra.unshift(join(fnmRoot, v, 'installation/bin'))
+    } catch { /* fnm 未安装 */ }
   }
   return [...extra, process.env.PATH ?? ''].join(':')
 }
