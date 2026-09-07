@@ -142,21 +142,26 @@ for (let i = 1; i <= 2; i++) {
   await panel.waitForTimeout(1000)
 }
 
-// 历史文件应含 2 个 pd:user 追问段（第 2 次追问不丢 = P1 修复生效）
-const histDetail = await panel.evaluate(async () => {
+// 历史文件应含 2 个 pd:user 追问段（第 2 次追问不丢 = P1 修复生效）。
+// 追问 append 在会话首页文件（列表按首页 ts 排序，断言4 之前的任务可能排更前）——
+// 扫最近 5 个文件数 pd:user 总量
+const turnCount = await panel.evaluate(async () => {
   const items = await new Promise(resolve => {
     const l = (m) => { if (m?.t === 'history-list') { chrome.runtime.onMessage.removeListener(l); resolve(m.items) } }
     chrome.runtime.onMessage.addListener(l)
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-list' } })
   })
-  const file = await new Promise(resolve => {
-    const l = (m) => { if (m?.t === 'history-file') { chrome.runtime.onMessage.removeListener(l); resolve(m.content) } }
-    chrome.runtime.onMessage.addListener(l)
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: items[0].path } })
-  })
-  return file
+  let total = 0
+  for (const it of items.slice(0, 5)) {
+    const file = await new Promise(resolve => {
+      const l = (m) => { if (m?.t === 'history-file') { chrome.runtime.onMessage.removeListener(l); resolve(m.content) } }
+      chrome.runtime.onMessage.addListener(l)
+      chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: it.path } })
+    })
+    total += (file.match(/<!-- pd:user -->/g) ?? []).length
+  }
+  return total
 })
-const turnCount = (histDetail.match(/<!-- pd:user -->/g) ?? []).length
 check('两次追问都落盘（≥2 个 pd:user 段）', turnCount >= 2, `turns=${turnCount}`)
 
 // ── 断言 3：心跳帧静默（任务期 UI 无 heartbeat 痕迹/无报错） ──
