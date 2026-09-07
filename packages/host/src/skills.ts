@@ -1,6 +1,6 @@
 /** skills 懒扫描：~/.ai-page-dive/skills/<name>/SKILL.md（目录即插件，与 workflows 同构）
  * 内置技能在 builtins-skills/（随 npm 包分发，默认关），用户目录 shadow 同名 */
-import { readdir, readFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -63,6 +63,8 @@ export async function getSkillBodies(names: string[]): Promise<{ name: string; b
 
 /** Finder 打开：name 缺省/不存在时开 DIR 本身（首次使用顺手建目录） */
 export async function revealSkill(name?: string): Promise<void> {
+  // 先建根目录：DIR 不存在时 `open` 静默失败（症状＝「打开目录」按钮无反应）
+  await mkdir(DIR, { recursive: true })
   let target = DIR
   if (name) {
     assertValidWorkflowName(name)
