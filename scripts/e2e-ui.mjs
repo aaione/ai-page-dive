@@ -84,13 +84,20 @@ const deadline = Date.now() + 300_000
 while (Date.now() < deadline) {
   await panel.waitForTimeout(5000)
   const t = await bodyText()
-  if (/tokens:|CLI 报告运行失败|启动失败|超时|已取消|无提取权限|没有可总结|无法提取|没有可提取|CLI 输出异常/.test(t)) { summary = t; break }
+  // 完成判定用真实渲染信号（MessageActions 操作组只在 !running && msg.text 时渲染）；
+  // /tokens:/ 是假信号——usage 只存 state 从不渲染（e2e-runtime 已修过同款坑）
+  const st = await panel.evaluate(() => ({
+    actions: document.querySelectorAll('.pd-chat-actions').length,
+    disabled: document.querySelector('.pd-input')?.disabled,
+  }))
+  if (st.actions > 0 && !st.disabled) { summary = t; break }
+  if (/CLI 报告运行失败|启动失败|超时|已取消|无提取权限|没有可总结|无法提取|没有可提取|CLI 输出异常/.test(t)) { summary = t; break }
 }
 summary ||= await bodyText()
 console.log('=== panel tail ===')
 console.log(summary.slice(-500))
 
-const claudeDone = /tokens:/.test(summary) && !/CLI 报告运行失败|启动失败|CLI 输出异常/.test(summary)
+const claudeDone = !/CLI 报告运行失败|启动失败|CLI 输出异常|已取消|超时/.test(summary) && summary.length > 300
 console.log(claudeDone ? '✅ claude 全链路完成' : '⛔ claude 链路失败')
 
 // ── 断言 2：最新历史 frontmatter = agent: claude ──
@@ -112,7 +119,7 @@ console.log(metaOk ? '✅ 历史元数据 agent=claude' : '⛔ 历史元数据�
 await panel.getByRole('button', { name: '总结历史' }).click()
 await panel.waitForTimeout(1500)
 // Playwright fill/press 走 CDP 真实输入事件，React onChange 一定能收到
-const searchBox = panel.getByPlaceholder('搜索标题 / URL…')
+const searchBox = panel.getByPlaceholder('搜索标题 / 网址…')
 await searchBox.fill('注意力')
 await searchBox.press('Enter')
 await panel.waitForTimeout(2000)
