@@ -208,7 +208,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   border-radius: 6px;
   border: none;
   background: transparent;
-  font-family: var(--font-serif-read);
+  font-family: var(--font-sans-ui);
   font-size: 12px;
   color: var(--color-pd-ink-2);
   cursor: pointer;
@@ -491,7 +491,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   color: var(--color-pd-ink);
   cursor: pointer;
   transition: all 0.15s;
-  font-family: var(--font-serif-read);
+  font-family: var(--font-sans-ui);
 }
 .pd-dropdown-trigger:hover {
   border-color: rgba(255,255,255,.25);
@@ -548,7 +548,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   text-align: left;
   cursor: pointer;
   transition: background 0.1s;
-  font-family: var(--font-serif-read);
+  font-family: var(--font-sans-ui);
 }
 .pd-dropdown-item:hover {
   background: rgba(255,255,255,.08);
@@ -613,7 +613,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   color: var(--color-pd-ink);
   cursor: pointer;
   transition: all 0.15s;
-  font-family: var(--font-serif-read);
+  font-family: var(--font-sans-ui);
   white-space: nowrap;
 }
 .pd-workflow-trigger:hover {
