@@ -659,9 +659,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
    ══════════════════════════════════════════════ */
 .pd-md {
   font-family: var(--font-serif-read);
-  font-size: 14px;
+  font-size: 14.5px;
   line-height: 1.85;
-  color: #E2E8F0;
+  color: #F4F7FB;
 }
 .pd-md p { margin: 1.6em 0; }
 .pd-md h1, .pd-md h2, .pd-md h3, .pd-md h4 {
