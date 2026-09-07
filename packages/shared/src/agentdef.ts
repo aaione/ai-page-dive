@@ -63,5 +63,7 @@ export interface TaskInput {
   skills?: string[]
   /** 总结输出语言（如 'zh'/'en'；缺省跟语言自动判断） */
   lang?: string
+  /** 附件（panel 读的文本，host 落临时文件后 prompt 给路径；追问轮同样生效） */
+  attachments?: { name: string; text: string }[]
   page: Omit<PageContent, 'contentMarkdown'>
 }

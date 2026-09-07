@@ -80,6 +80,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const messages = stream.messages
   const [workflow, setWorkflow] = useState('default')
   const [input, setInput] = useState('')
+  /** 待发送附件（文本，≤512KB/个）：随下一次 send 走 task-start，发完即清 */
+  const [attachments, setAttachments] = useState<{ name: string; text: string }[]>([])
+  const fileRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   // 打开面板/新对话后自动聚焦输入框（点击下拉不抢焦点：仅在消息从有到无时）
   const prevMsgCount = useRef(0)
@@ -104,14 +107,16 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
 
   function send() {
     const text = input.trim()
-    if (!text || running || !usable.length) return
-    beginTurn(text)
+    if ((!text && !attachments.length) || running || !usable.length) return
+    beginTurn(text || `（附件：${attachments.map((a) => a.name).join('、')}）`)
     setInput('')
+    const atts = attachments
+    setAttachments([])
     const skills = getEnabledSkills()
     if (hasSession) {
       // 追问轮：agentId 由 SW 按会话归属决定，响应回带实际值——头部展示同步
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, instruction: text, followUp: true, skills },
+        { t: 'summarize', agentId: effectiveAgent, instruction: text, followUp: true, skills, attachments: atts },
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             if (resp.agentId) setFollowAgent(resp.agentId)
@@ -122,10 +127,22 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     } else {
       const wf = workflow === 'default' ? 'quick' : workflow
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined },
+        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined, attachments: atts },
         (resp) => { if (!chrome.runtime.lastError && resp) onStartResult(resp) },
       )
     }
+  }
+
+  /** 附件选择：读文本（>512KB 或读失败提示并跳过）；二进制/图片不在 v1 范围 */
+  async function pickAttachments(files: FileList | null) {
+    if (!files?.length) return
+    const next: { name: string; text: string }[] = []
+    for (const f of Array.from(files).slice(0, 5)) {
+      if (f.size > 512 * 1024) continue
+      try { next.push({ name: f.name, text: await f.text() }) } catch { /* 跳过 */ }
+    }
+    setAttachments((prev) => [...prev, ...next].slice(0, 5))
+    if (fileRef.current) fileRef.current.value = ''
   }
 
   function cancel() {
@@ -188,6 +205,20 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
 
       <div className="pd-action-bar">
         {pageMeta && <PageTips meta={pageMeta} />}
+        {attachments.length > 0 && (
+          <div className="pd-attach-chips">
+            {attachments.map((a, i) => (
+              <span key={a.name + i} className="pd-attach-chip" title={a.name}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M13.5 6.5v5a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h5L6.5 6 11 10.5 14 7.5l.5-1Z" />
+                  <path d="M9 2.5 13.5 7l-2.5 2.5L6.5 5 9 2.5Z" />
+                </svg>
+                {a.name}
+                <button aria-label={`移除附件 ${a.name}`} onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}>×</button>
+              </span>
+            ))}
+          </div>
+        )}
         <ActionBar
           input={input}
           onInputChange={setInput}
@@ -197,6 +228,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           hasSession={hasSession}
           onStart={send}
           onCancel={cancel}
+          onAttach={() => fileRef.current?.click()}
+          attachCount={attachments.length}
+          attachRef={fileRef}
+          onPickFiles={pickAttachments}
         />
       </div>
     </div>
@@ -436,7 +471,7 @@ export function ModelDropdown({
 function ActionBar({
   input, onInputChange, inputRef,
   running, usableCount, hasSession,
-  onStart, onCancel,
+  onStart, onCancel, onAttach, attachCount, attachRef, onPickFiles,
 }: {
   input: string
   onInputChange: (v: string) => void
@@ -446,9 +481,34 @@ function ActionBar({
   hasSession: boolean
   onStart: () => void
   onCancel: () => void
+  onAttach: () => void
+  attachCount: number
+  attachRef: React.RefObject<HTMLInputElement | null>
+  onPickFiles: (files: FileList | null) => void
 }) {
   return (
     <div className="pd-action-bar-inner">
+      <button
+        onClick={onAttach}
+        disabled={running || attachCount >= 5}
+        aria-label="添加附件"
+        title="添加附件（文本文件，≤5 个）"
+        className="pd-attach-btn"
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M10.5 5.5 5 11a1.8 1.8 0 0 0 2.5 2.5l5.2-5.2a3 3 0 0 0-4.2-4.2L3.3 9.3a4.2 4.2 0 0 0 5.9 5.9l3.3-3.3" />
+        </svg>
+      </button>
+      <input
+        ref={attachRef}
+        type="file"
+        multiple
+        accept=".txt,.md,.markdown,.json,.csv,.log,.xml,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.go,.rs,.java,.c,.cpp,.h,.css,.html,text/*"
+        className="pd-attach-file"
+        onChange={(e) => onPickFiles(e.target.files)}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
       <input
         ref={inputRef}
         value={input}

@@ -416,6 +416,87 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   opacity: 0.5;
 }
 
+/* ── 附件：回形针按钮 + 待发 chip 列（输入框上方）── */
+.pd-attach-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-pd-ink-2);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pd-attach-btn:hover:not(:disabled) {
+  color: var(--color-pd-ink);
+  background: var(--color-pd-hover);
+}
+.pd-attach-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.pd-attach-btn svg {
+  width: 15px;
+  height: 15px;
+}
+.pd-attach-file {
+  display: none;
+}
+.pd-attach-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px 6px;
+}
+.pd-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 160px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-pd-line);
+  background: rgba(255,255,255,.05);
+  font-family: var(--font-sans-ui);
+  font-size: 10.5px;
+  color: var(--color-pd-ink-2);
+}
+.pd-attach-chip svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+.pd-attach-chip span,
+.pd-attach-chip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pd-attach-chip button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-pd-ink-2);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.pd-attach-chip button:hover {
+  color: var(--color-pd-danger);
+  background: var(--color-pd-danger-bg);
+}
+
 /* ── Primary Button ── */
 .pd-primary-btn {
   display: flex;

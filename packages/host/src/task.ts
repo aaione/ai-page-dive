@@ -95,6 +95,24 @@ export class Task {
     return this.contentDone
   }
 
+  /** 附件落盘：每个附件写 tmp 文件（安全文件名），软链进 agent cwd 供沙箱 CLI 读。
+   * 返回 [{name, path}] 供 prompt 附件段；空附件/写失败（跳过该个）都返回 []。 */
+  private async materializeAttachments(): Promise<{ name: string; path: string }[]> {
+    const atts = this.input.attachments ?? []
+    if (!atts.length) return []
+    const out: { name: string; path: string }[] = []
+    for (const a of atts.slice(0, 5)) {
+      // name 只保留安全字符做文件名（协议信任边界：NM 消息可能带任意字符串）
+      const safe = a.name.replace(/[^A-Za-z0-9_.一-龥-]/g, '_').slice(0, 64) || 'attachment'
+      try {
+        const p = await writeContentFile(`${this.taskId}-att-${safe}`, a.text)
+        scheduleCleanup(p, 300_000)
+        out.push({ name: a.name, path: p })
+      } catch { /* 单个失败跳过，不阻断任务 */ }
+    }
+    return out
+  }
+
   cancel(): void {
     this.cancelled = true
     this.proc?.reap()
@@ -161,9 +179,11 @@ export class Task {
       : wf?.body
     // 大纲从内存正文提取（resume 轮上下文在 CLI 会话里，不需要）
     const outline = !isResume ? buildOutline(this.contentParts.join('')) : undefined
+    // 附件：panel 读的文本落临时文件 + 软链 cwd，prompt 附件段给路径（resume 轮同样生效）
+    const attachFiles = await this.materializeAttachments()
     const prompt = isResume
-      ? (this.input.instruction ?? '')
-      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wfBody, skillBodies, this.input.lang, outline)
+      ? attachSection(attachFiles) + (this.input.instruction ?? '')
+      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction ?? wfBody, skillBodies, this.input.lang, outline, attachFiles)
 
     this.startedAt = Date.now()
     this.cb.onStatus('spawned')
@@ -458,6 +478,7 @@ export function buildPrompt(
   skills?: { name: string; body: string }[],
   lang?: string,
   outline?: string,
+  attachments?: { name: string; path: string }[],
 ): string {
   const task =
     workflowBody ??
@@ -478,6 +499,7 @@ export function buildPrompt(
     lang === 'zh' ? `\n无论正文是什么语言，始终使用中文回答。\n`
     : lang === 'en' ? `\nAlways respond in English, regardless of the page language.\n`
     : ''
+  const attachSect = attachSection(attachments)
   return `你是深度阅读助手。请完成以下任务。
 
 ## 网页元数据
@@ -487,10 +509,18 @@ ${meta}
 完整正文（markdown，约 ${page.approxTokens} tokens）已写入本地文件：
 ${contentFile}
 请读取该文件全文后再作答，不要只读开头。
-${outlineSection}${skillsSection}
+${outlineSection}${skillsSection}${attachSect}
 ## 任务
 ${task}
 ${langSection}`
+}
+
+/** 附件段：路径给 CLI 自行读取（与正文同一「文件即上下文」模式）。空数组返回空串 */
+export function attachSection(attachments?: { name: string; path: string }[]): string {
+  if (!attachments?.length) return ''
+  return `\n## 附件\n用户随任务附带的参考文件（按需读取）：\n${attachments
+    .map((a) => `- ${a.name}: ${a.path}`)
+    .join('\n')}\n`
 }
 
 const DEFAULT_TASKS: Record<string, string> = {

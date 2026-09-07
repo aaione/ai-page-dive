@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Task, buildOutline, buildPrompt, expandWorkflowPlaceholders } from '../src/task.js'
+import { Task, attachSection, buildOutline, buildPrompt, expandWorkflowPlaceholders } from '../src/task.js'
 
 // 集成式状态机测试：用假 CLI（node 脚本）代替真 claude/codex
 const FAKE_CLI = async (mode: string) => {
@@ -223,4 +223,36 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))
     expect(prompt).not.toContain('5-8 条要点')
     await rm(dir, { recursive: true, force: true })
   }, 30_000)
+
+  it('附件段落盘路径 + 追问轮前缀拼装', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pd-att-'))
+    const echo = join(dir, 'echo.mjs')
+    const capFile = join(dir, 'prompt.txt')
+    await writeFile(echo, `let d='';process.stdin.on('data',c=>d+=c).on('end',async()=>{
+const fs=await import('node:fs');fs.writeFileSync(${JSON.stringify(capFile)},d)
+console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))})`)
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].bin = 'node'
+    AGENTS[0].buildArgs = () => [echo]
+    // 追问轮：instruction 前拼附件段
+    const { task: mk } = makeCbs(); const task = mk('t-att')
+    task.start({
+      taskId: 't-att', agentId: 'claude', resumeSessionId: 's1', instruction: '结合附件回答',
+      attachments: [{ name: '数据.md', text: '销售额：100 万' }],
+      page: PAGE as any,
+    })
+    task.appendContent('', true)
+    await task.run().catch(() => {})
+    AGENTS[0].buildArgs = orig
+    const prompt = await readFile(capFile, 'utf8')
+    expect(prompt).toContain('## 附件')
+    expect(prompt).toContain('数据.md')
+    expect(prompt.endsWith('结合附件回答')).toBe(true)
+    // 纯函数：空附件返回空串
+    expect(attachSection([])).toBe('')
+    expect(attachSection(undefined)).toBe('')
+    await rm(dir, { recursive: true, force: true })
+  }, 30_000)
 })
+
