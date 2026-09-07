@@ -43,6 +43,7 @@ export interface PageMeta {
 export function App() {
   const [overlay, setOverlay] = useState<Overlay>(null)
   const [hostOk, setHostOk] = useState<boolean | null>(null)
+  const [outdated, setOutdated] = useState('')
   const [agents, setAgents] = useState<AgentStatus[]>([])
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [stream, setStream] = useState<TaskStreamState>(BLANK)
@@ -64,6 +65,7 @@ export function App() {
       // 保持 null（loading 态）等下一轮探测，不误导用户进安装引导
       if (chrome.runtime.lastError) return
       setHostOk(!!resp?.ok)
+      if (resp?.outdated) setOutdated(String(resp.outdated))
       if (resp?.ok) requestLists()
       if (resp?.page) setPageMeta(resp.page)
     })
@@ -282,6 +284,11 @@ export function App() {
       </div>
 
       <main className="pd-main">
+        {outdated && (
+          <div className="pd-error" role="alert" style={{ margin: '8px 12px 0' }}>
+            <span>{outdated}</span>
+          </div>
+        )}
         <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} />
       </main>
 

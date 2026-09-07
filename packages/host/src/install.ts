@@ -99,7 +99,7 @@ export async function install(extIds: string[]): Promise<void> {
   const written = await registerManifests(extIds)
   if (!written.length) {
     console.log('⚠️  未发现 Chrome 数据目录（Chrome 从未启动过？）——启动一次 Chrome 后重新运行 install')
-  } else if (!written.some((p) => JSON.parse(readFileSyncSafe(p)).allowed_origins?.length)) {
+  } else if (!written.some((p) => readFileSyncSafe(p).allowed_origins?.length)) {
     console.log('⚠️  尚无 allowed_origins：开发期用 ai-page-dive install --ext-id <扩展ID>')
   }
 

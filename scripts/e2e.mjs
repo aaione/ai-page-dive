@@ -39,7 +39,7 @@ function registeredIds() {
 
 async function launch() {
   return chromium.launchPersistentContext(PROFILE, {
-    executablePath: '/Users/apple/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    executablePath: '/Users/apple/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
     headless: false,
     viewport: { width: 1280, height: 800 },
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--no-first-run', '--no-default-browser-check'],

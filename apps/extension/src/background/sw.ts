@@ -7,6 +7,16 @@
 import { nmPort } from '../lib/nmport.js'
 import type { AgentStatus, ExtToHost, HostToExt, PageContent } from '@ai-page-dive/shared'
 
+// host 最低兼容版本：协议新增依赖消息时（如 heartbeat）才抬高。旧 host 对新消息
+// 静默无响应，症状是「按钮无反应」——在 panel-ready 时一次说清而不是让用户猜
+const MIN_HOST_VERSION = '0.1.0'
+
+function versionLt(a: string, b: string): boolean {
+  const [a1, a2, a3] = a.split('.').map(Number)
+  const [b1, b2, b3] = b.split('.').map(Number)
+  return a1 !== b1 ? a1 < b1 : a2 !== b2 ? a2 < b2 : a3 < b3
+}
+
 // ponytail: 单任务状态（SW 可能重启丢内存态，重启后靠 panel 重新 ping 恢复 UI）
 let currentTask: {
   taskId: string
@@ -110,8 +120,13 @@ async function handleMessage(msg: any): Promise<unknown> {
       }
       // probe 失败时带上 NM 断连错误（forbidden=ID 未登记 vs not found=host 未装）
       const r = await nmPort.probe()
+      // 版本握手：host 过旧时带提示（panel 一次性横幅），升级命令一条到底
+      const outdated =
+        r.ok && r.hostVersion && versionLt(r.hostVersion, MIN_HOST_VERSION)
+          ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），请在终端执行：npm i -g ai-page-dive`
+          : undefined
       // tips 条元数据无论 probe 成败都带回（panel 已开就有目标页）
-      return { ...r, ...(r.ok ? {} : { nmError: nmPort.lastError }), page: pageMeta() }
+      return { ...r, ...(r.ok ? {} : { nmError: nmPort.lastError }), ...(outdated ? { outdated } : {}), page: pageMeta() }
     }
     case 'summarize': {
       const instruction = msg.instruction as string | undefined
@@ -264,9 +279,12 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // target：action 点击的 tab（activeTab 授权随手势生效）。SW 重启丢态或 panel
   // 直接点按钮时 fallback 到当前活跃 tab——无授权的 tab 注入会失败并提示，
   // 不会造成越权（executeScript 直接被 Chrome 拒绝）。
+  // fallback 只认普通网页：panel 自己常是 lastFocusedWindow 的 active「页」，
+  // chrome-extension:// 的它绝不该被选为总结目标
   let tab = target?.id ? await chrome.tabs.get(target.id).catch(() => null) : null
   if (!tab) {
-    tab = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0] ?? null
+    const [active] = (await chrome.tabs.query({ active: true, lastFocusedWindow: true })) ?? []
+    tab = active && isNormalPage(active.url) ? active : null
   }
   if (!tab?.id) return { error: 'no-tab' }
   // chrome:// 等受限页面无法注入（file/view-source/data 同样不可注入，
