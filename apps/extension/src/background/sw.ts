@@ -47,36 +47,55 @@ let agentsCache: AgentStatus[] | null = null
 let pinned = false
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch(() => {})
 
-// 面板作用域 = tab 维度：action 点击的 tab 记为 panelTabId（该 tab 关闭时重置）。
+// 面板作用域 = tab 维度（锚定页签）：action 点击的 tab 记为 panelTabId 并
+// setOptions(enabled:true)（含 path），同窗口其他 tab 在 onActivated 时逐个
+// setOptions(enabled:false)——官方 site-scoped 机制：切到 disabled tab 时
+// Chrome 自动收起已开面板（"it will close"，官方文档），切回/重点图标即恢复。
 //
-// ⚠️ 不要用「全局 setOptions({enabled:false}) + 点击时 per-tab enable」实现切 tab
-// 隐藏：sidePanel.open({tabId}) 要求该 tab 上本扩展的面板已 active（用户激活过），
-// 全局 enabled:false 使所有 tab 永远不满足 → open 被 Chrome 拒
-// "No active side panel for tabId"（fresh/reload 后必现，真机 probe 实证），
-// 且 per-tab setOptions 无法制造 active 态。切 tab 的面板显隐由 Chrome 自身
-// 「panel 是 window 级」行为承担，panelTabId 只用于总结目标与 page-meta 刷新。
+// ⚠️ 只做 per-tab 开关，绝不动全局默认（无 tabId 的 setOptions 必须保持
+// enabled:true）：全局关死会使 sidePanel.open({tabId}) 永远不满足「该 tab
+// 面板已激活」前置（真机 probe 实证报 "No active side panel for tabId"）。
+// 恢复代价：切回锚定 tab 面板不会自动弹出（open 需用户手势），重点一次图标。
 
 // 面板归属的 tab（点开面板的那次 action 点击所在页）。总结目标 = 该 tab，
 // 不随用户切换 tab 而跟随变化。
 let panelTabId: number | null = null
 
+/** 锚定/解除锚定：enable 面板所在 tab、disable 其他 tab（锚定语义的落地开关） */
+function anchorPanel(tabId: number) {
+  chrome.sidePanel.setOptions({ tabId, path: 'sidepanel.html', enabled: true }).catch(() => {})
+}
+function unanchorPanel(tabId: number) {
+  chrome.sidePanel.setOptions({ tabId, enabled: false }).catch(() => {})
+}
+
 chrome.action.onClicked.addListener((tab) => {
+  // 换 tab 开面板 = 换锚：旧锚定 tab 解除 disable
+  if (panelTabId !== null && panelTabId !== tab.id) unanchorPanel(panelTabId)
   target = tab
   panelTabId = tab.id ?? null
+  if (tab.id != null) anchorPanel(tab.id)
   // 直接 open：不夹 setOptions / 不吞错。open 要求 user gesture（onClicked 自带）
-  // 且该 tab 面板可用——全局 enabled 默认 true，见上方作用域注释
   chrome.sidePanel.open({ tabId: tab.id! }).catch((e: unknown) => {
     console.warn('[pd] sidePanel.open failed:', e)
   })
 })
 
-// 面板只在 panelTabId 上可见，onActivated 无需跟随切 tab 改 target；
-// 切回 panelTabId 时刷新一次 page-meta（tips 条同步，导航后 meta 可能已变）。
 const isNormalPage = (u?: string) => !!u && !/^(chrome|edge|about|chrome-extension|devtools|view-source|file|data|blob):/.test(u)
+
+// 切 tab：离开锚定 tab → 该 tab 面板 disabled，Chrome 自动收起面板；
+// 切回锚定 tab → 刷新 page-meta（tips 条同步，导航后 meta 可能已变）。
 chrome.tabs.onActivated.addListener(({ tabId }) => {
-  if (panelTabId !== tabId) return
-  chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta() }).catch(() => {})
+  if (panelTabId === null || panelTabId === tabId) {
+    if (panelTabId === tabId) {
+      chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta() }).catch(() => {})
+    }
+    return
+  }
+  unanchorPanel(tabId)
 })
+// ⚠️ 已知边界（设计内）：锚定 tab 内导航（tabId 不变）不触发 onActivated，
+// 面板保持可见——锚定语义是「页签」而非「URL」，与 Gemini 内置面板一致。
 // 目标 tab 内导航：activeTab 授权随导航失效（url 变不可见），保持 target 由
 // 注入兜底；url 仍可见（同源导航）则刷新 meta
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
@@ -116,6 +135,7 @@ async function handleMessage(msg: any): Promise<unknown> {
         if (active?.id && isNormalPage(active.url)) {
           panelTabId = active.id
           target = active
+          anchorPanel(active.id)
         }
       }
       // probe 失败时带上 NM 断连错误（forbidden=ID 未登记 vs not found=host 未装）
