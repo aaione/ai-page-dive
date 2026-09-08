@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { probeAgents } from './agents/registry.js'
+import { assertNotRoot } from './rootguard.js'
 
 const HOST_NAME = 'com.pagedive.host'
 
@@ -96,6 +97,8 @@ export async function registerManifests(extIds: string[], quiet = false): Promis
 }
 
 export async function install(extIds: string[]): Promise<void> {
+  // root/sudo 守卫：与 postinstall 同一防线（install 是用户显式执行，直接中止而非跳过）
+  assertNotRoot('install')
   const written = await registerManifests(extIds)
   if (!written.length) {
     console.log('⚠️  未发现 Chrome 数据目录（Chrome 从未启动过？）——启动一次 Chrome 后重新运行 install')

@@ -226,6 +226,12 @@ export class Task {
       this.finished = true
       this.timeoutSent = true
       this.cb.onError('timeout', `task exceeded ${TASK_TIMEOUT_MS / 60_000}min`)
+      // 部分输出落盘（对称于 cancel 路径）：用户盯了 10 分钟，半截结果不能蒸发。
+      // 不 await——cancel() 的 reap 链路同步推进，persist 在事件循环里自然完成
+      if (!this.input.resumeSessionId) {
+        this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
+      }
+      void this.persist('interrupted')
       this.cancel()
     }, TASK_TIMEOUT_MS)
 

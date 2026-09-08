@@ -1,6 +1,6 @@
 /** --stdio 模式：NM 主循环（Chrome 起 host 的入口形态，也供冒烟测试用） */
 import type { ExtToHost } from '@ai-page-dive/shared'
-import { createFrameReader, writeFrame } from './nm.js'
+import { createFrameReader, writeFrame, NM_MAX } from './nm.js'
 import { probeAgents } from './agents/registry.js'
 import { deleteHistory, listHistory, readHistory, revealHistoryRoot, revealInFinder } from './history.js'
 import { Task } from './task.js'
@@ -85,10 +85,14 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
       case 'history-read':
         readHistory(msg.path)
           .then((content) => {
-            // NM 单帧 ≤1MB：超限截断并标注（全文在本地文件）
+            // NM 单帧 ≤1MB（字节维度）：CJK 3 字节/字符，按字符 slice 截不断——
+            // 按字节收缩 + 尾部回退到完整 UTF-8 边界（防切出替换字符）
             if (Buffer.byteLength(content, 'utf8') > HISTORY_MAX_BYTES) {
+              const buf = Buffer.from(content, 'utf8')
+              let end = HISTORY_MAX_BYTES
+              while (end > 0 && (buf[end] & 0xc0) === 0x80) end-- // 多字节序列中间：回退
               content =
-                content.slice(0, HISTORY_MAX_BYTES) +
+                buf.subarray(0, end).toString('utf8') +
                 `\n\n[... 已截断，全文见本地文件 ${msg.path}]`
             }
             send({ t: 'history-file', path: msg.path, content })
@@ -156,14 +160,26 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
 
 /** NM 进程形态：stdin 读帧、stdout 写帧；stdin end / 信号 → 收割全部任务再退出 */
 export function runNative(): void {
+  let shuttingDown = false
   const send = (obj: unknown) => {
     try {
       writeFrame(process.stdout, obj)
-    } catch {
-      /* stdout 破损：进程将随 NM 断连终结 */
+    } catch (e) {
+      // stdout 破损/单帧超限：进程将随 NM 断连终结——留 stderr 痕迹供排障
+      // （历史大文件截断失效等此前在此被静默吞掉）
+      console.error('[ai-page-dive] send frame failed:', (e as Error)?.message ?? e)
     }
   }
-  const { handle, tasks } = runStdio(send)
+  const { handle: rawHandle, tasks } = runStdio(send)
+  // shutdown 窗口内的新任务会被 3.2s 后的 exit(0) 带走，扩展侧只见断连——
+  // 显式拒绝并报错，把「面板突然失联」变成可理解的错误
+  const handle = (msg: ExtToHost) => {
+    if (shuttingDown && (msg as any)?.t === 'task-start') {
+      send({ t: 'task-error', taskId: (msg as any).task.taskId, code: 'spawn-fail', message: 'host 正在关闭，请重试' })
+      return
+    }
+    rawHandle(msg)
+  }
 
   // 任务期心跳（SW 保活）：Chrome 105+ 仅 port 上的消息活动重置 SW 30s idle 计时器，
   // merely-open 的 port 不豁免回收——CLI 深度思考期 stdout 可 >30s 静默，若无周期帧
@@ -180,11 +196,12 @@ export function runNative(): void {
     for (const t of tasks.values()) t.cancel()
   }
   const shutdown = () => {
+    shuttingDown = true
     reapAll()
     setTimeout(() => process.exit(0), 3_200)
     // 3.2s 后强制退出；期间事件循环自然驱动 persist / SIGKILL 定时器
   }
-  process.stdin.on('data', createFrameReader(handle))
+  process.stdin.on('data', createFrameReader(handle, NM_MAX))
   process.stdin.on('end', shutdown)
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)

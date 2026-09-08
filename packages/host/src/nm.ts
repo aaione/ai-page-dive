@@ -21,14 +21,17 @@ export function writeFrame(sock: Duplex, obj: unknown): void {
   sock.write(encodeFrame(obj))
 }
 
-/** 增量状态机：处理任意 chunk 边界切分的帧流 */
-export function createFrameReader(onMsg: (obj: any) => void): (d: Buffer) => void {
+/** 增量状态机：处理任意 chunk 边界切分的帧流。
+ * maxLength：帧头声明长度超限即报错中止——损坏/恶意的 4 字节头（如 0xFFFFFFFF）
+ * 会让缓冲无界累积（内存 DoS 面）。对端是自家扩展（可信环境），这是协议鲁棒性兜底。 */
+export function createFrameReader(onMsg: (obj: any) => void, maxLength = NM_MAX): (d: Buffer) => void {
   let buf = Buffer.alloc(0)
   return (d: Buffer) => {
     buf = Buffer.concat([buf, d])
     for (;;) {
       if (buf.length < 4) break
       const len = buf.readUInt32LE(0)
+      if (len > maxLength) throw new Error(`frame length ${len} exceeds max ${maxLength}`)
       if (buf.length < 4 + len) break
       try {
         onMsg(JSON.parse(buf.subarray(4, 4 + len).toString('utf8')))

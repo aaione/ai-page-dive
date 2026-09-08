@@ -33,7 +33,7 @@ say "✅ Node $NODE_VER"
 # ── 2. npm 全局安装（捕获常见失败给指引）──
 if ! npm i -g ai-page-dive; then
   printf '\033[1;33m%s\033[0m\n' "npm 全局安装失败。常见原因：
-  • EACCES 权限错误 → 改用 nvm/Homebrew 的 Node（推荐，免 sudo）；或 sudo npm i -g ai-page-dive
+  • EACCES 权限错误 → 改用 nvm/Homebrew 的 Node（推荐，免 sudo；勿用 sudo npm——会写坏 NM 注册属主）
   • nvm 切过版本 → 全局包按版本隔离，重装一次即可
   • 网络问题 → 检查代理或换 registry" >&2
   exit 1

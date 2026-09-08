@@ -122,23 +122,32 @@ export function App() {
           })
           break
         case 'task-done':
-          setStream((s) => ({
-            ...s,
-            done: true,
-            activeId: null,
-            messages: s.messages.map((msg) =>
-              msg.streaming
-                ? {
-                    ...msg,
-                    streaming: false,
-                    isError: m.isError,
-                    error: m.isError ? m.errorText ?? 'CLI 运行内失败' : null,
-                    usage: m.usage,
-                    model: m.model ?? msg.model,
-                  }
-                : msg,
-            ),
-          }))
+          setStream((s) => {
+            // 过期帧（取消后旧任务迟到 done）：只收尾 streaming 气泡，不把新一轮定稿
+            if (s.taskId !== null && s.taskId !== m.taskId) {
+              return {
+                ...s,
+                messages: s.messages.map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg)),
+              }
+            }
+            return {
+              ...s,
+              done: true,
+              activeId: null,
+              messages: s.messages.map((msg) =>
+                msg.streaming
+                  ? {
+                      ...msg,
+                      streaming: false,
+                      isError: m.isError,
+                      error: m.isError ? m.errorText ?? 'CLI 运行内失败' : null,
+                      usage: m.usage,
+                      model: m.model ?? msg.model,
+                    }
+                  : msg,
+              ),
+            }
+          })
           // 兜底 merge（task-meta 未带 model 时）
           if (m.model && m.agentId) {
             setAgents((as) => as.map((a) => (a.id === m.agentId && a.model !== m.model ? { ...a, model: m.model } : a)))
@@ -339,4 +348,5 @@ const ERROR_LABEL: Record<string, string> = {
   cancelled: '已取消',
   parse: 'CLI 输出异常',
   'no-agent': '未知 CLI',
+  'content-mismatch': '正文传输不完整，已取消——请重试',
 }

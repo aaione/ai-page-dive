@@ -75,8 +75,7 @@ async function main(): Promise<void> {
     return
   }
 
-  // 5) root/sudo 守卫：root 写出的 manifest/wrapper 属主为 root，后续普通用户
-  //    幂等重写会 EACCES 死锁。不做 SUDO_USER 换算（跨用户属主是新的失败面）。
+  // 5) root/sudo 守卫（语义见 rootguard.ts）：postinstall 永不阻塞安装——跳过注册并指引
   if (typeof process.getuid === 'function' && process.getuid() === 0) {
     log('检测到以 root/sudo 运行，已跳过自动注册（避免写坏用户目录属主）。')
     log('建议：用 nvm/Homebrew 的 Node 以普通用户重装（npm i -g ai-page-dive，无需 sudo）。')

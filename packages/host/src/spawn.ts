@@ -85,10 +85,14 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
       child.stderr!.on('data', opts.onStderr)
 
       const reap = () => {
+        // child 已退出（exitCode 非 null）时 pid 可能已被 OS 复用——再 kill(-pid)
+        // 会误杀复用者恰为组长的无关进程组。只等不杀
+        if (child.exitCode !== null || child.signalCode !== null) return
         try {
           process.kill(-child.pid!, 'SIGTERM')
         } catch { /* already gone */ }
         setTimeout(() => {
+          if (child.exitCode !== null || child.signalCode !== null) return
           try { process.kill(-child.pid!, 'SIGKILL') } catch { /* gone */ }
         }, 3000)
       }

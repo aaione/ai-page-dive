@@ -82,6 +82,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const [input, setInput] = useState('')
   /** 待发送附件（文本，≤512KB/个）：随下一次 send 走 task-start，发完即清 */
   const [attachments, setAttachments] = useState<{ name: string; text: string }[]>([])
+  /** 附件跳过提示（超限/读失败）：下一条 notice 类消息展示后清除 */
+  const [attachNotice, setAttachNotice] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   // 打开面板/新对话后自动聚焦输入框（点击下拉不抢焦点：仅在消息从有到无时）
@@ -109,6 +111,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     const text = input.trim()
     if ((!text && !attachments.length) || running || !usable.length) return
     beginTurn(text || `（附件：${attachments.map((a) => a.name).join('、')}）`)
+    if (attachNotice) beginTurn(attachNotice) // 跳过提示随本轮入列（用户消息轨）
+    setAttachNotice('')
     setInput('')
     const atts = attachments
     setAttachments([])
@@ -133,13 +137,22 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     }
   }
 
-  /** 附件选择：读文本（>512KB 或读失败提示并跳过）；二进制/图片不在 v1 范围 */
+  /** 附件选择：读文本（>512KB 或读失败标红提示并跳过）；二进制/图片不在 v1 范围 */
   async function pickAttachments(files: FileList | null) {
     if (!files?.length) return
     const next: { name: string; text: string }[] = []
+    const skipped: string[] = []
     for (const f of Array.from(files).slice(0, 5)) {
-      if (f.size > 512 * 1024) continue
-      try { next.push({ name: f.name, text: await f.text() }) } catch { /* 跳过 */ }
+      if (f.size > 512 * 1024) {
+        skipped.push(`${f.name}（超过 512KB）`)
+        continue
+      }
+      try { next.push({ name: f.name, text: await f.text() }) }
+      catch { skipped.push(`${f.name}（读取失败）`) }
+    }
+    if (skipped.length) {
+      // 静默跳过 = 用户不知道附件没带上，总结偏差无从归因
+      setAttachNotice(`已跳过：${skipped.join('、')}——请精简后重试`)
     }
     setAttachments((prev) => [...prev, ...next].slice(0, 5))
     if (fileRef.current) fileRef.current.value = ''

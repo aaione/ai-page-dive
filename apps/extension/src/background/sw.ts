@@ -229,9 +229,17 @@ async function handleMessage(msg: any): Promise<unknown> {
 function cancelCurrent() {
   if (currentTask) {
     nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })
+    currentTask = null
     return { ok: true }
   }
   return undefined
+}
+
+/** 新任务起跑前统一收割旧任务：不取消则旧取消句柄被覆盖丢失，
+ * 旧 CLI 进程（pgid 树）空跑到 10 分钟超时，白烧用户订阅额度 */
+function newTaskId(): string {
+  // 毫秒时间戳 + 随机后缀：同毫秒连点/双 panel 有碰撞面
+  return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
 // host → panel 直通
@@ -265,7 +273,7 @@ nmPort.onMessage((m) => {
       console.warn(`[pd] content mismatch: sent ${currentTask.expectedChars}, host got ${msg.chars}`)
       nmPort.send({ t: 'task-cancel', taskId: msg.taskId })
       chrome.runtime
-        .sendMessage({ t: 'task-error', taskId: msg.taskId, code: 'spawn-fail', message: '正文传输不完整（NM 丢片），已取消——请重试' })
+        .sendMessage({ t: 'task-error', taskId: msg.taskId, code: 'content-mismatch', message: '正文传输不完整（NM 丢片），已取消——请重试' })
         .catch(() => {})
       currentTask = null
     }
@@ -299,7 +307,8 @@ nmPort.onDisconnect(() => {
 /** 追问轮：上下文在 CLI 会话里，host 直接 resume，无提取/无正文 */
 function startFollowUp(agentId: string, sessionId: string, instruction: string, historyPath?: string, attachments?: { name: string; text: string }[]) {
   if (!instruction.trim() && !attachments?.length) return { error: 'empty-instruction' }
-  const taskId = `t${Date.now().toString(36)}`
+  if (currentTask) cancelCurrent() // 收割在跑任务（同 startSummarize：句柄丢失 = 进程泄漏）
+  const taskId = newTaskId()
   // 追问轮也占任务位（taskId）：进行中可取消
   const ok = nmPort.send({
     t: 'task-start',
@@ -343,6 +352,9 @@ function pageMeta(): { title: string; url: string; favIconUrl?: string } | null 
 }
 
 async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string, attachments?: { name: string; text: string }[]) {
+  // 入口先收割在跑任务（提取/注入可能 await 数秒，期间旧任务继续烧额度）——
+  // 对称于 resume-history/new-session 的既有守卫
+  if (currentTask) cancelCurrent()
   // target：action 点击的 tab（activeTab 授权随手势生效）。SW 重启丢态或 panel
   // 直接点按钮时 fallback 到当前活跃 tab——无授权的 tab 注入会失败并提示，
   // 不会造成越权（executeScript 直接被 Chrome 拒绝）。
@@ -380,7 +392,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   if ('error' in page) return { error: page.error }
 
   const { contentMarkdown, ...meta } = page
-  const taskId = `t${Date.now().toString(36)}`
+  const taskId = newTaskId()
   currentAgentId = agentId
   // 新一轮总结开始：旧会话失效（防切换 CLI 后追问串回旧 agent 的会话）
   lastSession = null
