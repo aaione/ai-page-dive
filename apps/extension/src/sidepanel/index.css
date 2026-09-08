@@ -1255,10 +1255,20 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 .pd-onboarding-cmd:hover {
   filter: brightness(1.1);
 }
+.pd-page-tips-notice {
+  /* tips 条内的提取质量警示（截断/低置信）——琥珀色弱警示，不抢错误红 */
+  color: #F5C542;
+  font-size: 10.5px;
+  margin-left: 8px;
+  opacity: 0.9;
+}
 .pd-onboarding-cmd-text {
-  font-size: 12px;
+  font-size: 11px;
   font-family: var(--font-mono-ui);
   color: #fff;
+  /* curl 命令长于原 npm 两连命令——允许折行而不是溢出 */
+  word-break: break-all;
+  line-height: 1.5;
 }
 .pd-onboarding-cmd svg {
   width: 14px;

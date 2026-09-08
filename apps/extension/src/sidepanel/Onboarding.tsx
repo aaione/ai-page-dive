@@ -1,31 +1,48 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /** 自愈命令：动态带当前扩展 ID——install 幂等 + origins 追加不覆盖 */
 const extId = chrome.runtime.id
-/** not-installed：host 未装，一条命令通吃「未装 / ID 未登记 / 双缺」（postinstall 被跳过时的兜底） */
-const installCmd = `npm i -g ai-page-dive && ai-page-dive install --ext-id ${extId}`
-/** forbidden：postinstall 已自动注册 host（origins 为空），只差补登记 */
+/** not-installed：一条命令通吃（脚本内 Node 探测 + brew 兜底 + npm 安装 + NM 注册） */
+const installCmd = `curl -fsSL https://raw.githubusercontent.com/aaione/page-dive/main/install.sh | sh -s -- ${extId}`
+/** forbidden：host 已装但本扩展 ID 不在白名单（只差补登记，无需再装） */
 const registerCmd = `ai-page-dive install --ext-id ${extId}`
 
 export function Onboarding() {
   const [copied, setCopied] = useState(false)
   // forbidden = host 已装但本扩展 ID 不在白名单（只差补登记）；其余按未安装引导
   const [forbidden, setForbidden] = useState(false)
+  // 探测轮询：3s 起步指数退避封顶 15s（每次 probe 都 spawn 冷 node，固定 3s 白烧进程）；
+  // 面板隐藏时暂停（side panel 切走即 hidden），重新可见立即探测
+  const delayRef = useRef(3000)
+  const timerRef = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
-    const t = setInterval(() => {
+    let alive = true
+    const probe = () => {
+      if (document.visibilityState === 'hidden') return // 可见性恢复时由 visibilitychange 立即触发
       chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
         void chrome.runtime.lastError
+        if (!alive) return
         if (resp?.ok) location.reload()
         else setForbidden(/forbidden/i.test(String(resp?.nmError ?? '')))
+        timerRef.current = setTimeout(probe, delayRef.current)
+        delayRef.current = Math.min(delayRef.current * 1.6, 15000)
       })
-    }, 3000)
-    // 立即探测一次（不等首个 3s 周期），尽早区分失败类型
-    chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
-      void chrome.runtime.lastError
-      if (!resp?.ok) setForbidden(/forbidden/i.test(String(resp?.nmError ?? '')))
-    })
-    return () => clearInterval(t)
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        clearTimeout(timerRef.current)
+        delayRef.current = 3000
+        probe()
+      }
+    }
+    document.addEventListener('visibilitychange', onVis)
+    probe() // 立即探测一次，尽早区分失败类型
+    return () => {
+      alive = false
+      clearTimeout(timerRef.current)
+      document.removeEventListener('visibilitychange', onVis)
+    }
   }, [])
 
   const copy = () => {
@@ -56,7 +73,7 @@ export function Onboarding() {
           )}
         </p>
         <p className="pd-onboarding-label">
-          {forbidden ? '复制这一行到终端执行：' : '复制这一行到终端执行（需已装 Node.js）：'}
+          {forbidden ? '复制这一行到终端执行：' : '复制这一行到终端执行（无 Node 也会自动引导安装）：'}
         </p>
         <button onClick={copy} className="pd-onboarding-cmd" title="点击复制">
           <span className="pd-onboarding-cmd-text">{forbidden ? registerCmd : installCmd}</span>
@@ -69,8 +86,8 @@ export function Onboarding() {
         <details className="pd-onboarding-faq">
           <summary>命令报错了？</summary>
           <p>
-            <code>npm: command not found</code> → 先装 Node.js（
-            <a href="https://nodejs.org" target="_blank" rel="noreferrer">nodejs.org</a> 或 <code>brew install node</code>）再重试。
+            <code>curl</code> 走不了代理/被墙 → 用 npm 方式手动安装：
+            <code>npm i -g ai-page-dive && ai-page-dive install --ext-id {extId}</code>。
           </p>
           <p>
             <code>EACCES</code> / 权限错误 → 改用 nvm/Homebrew 的 Node 重装（无需 sudo，推荐）；
@@ -86,7 +103,7 @@ export function Onboarding() {
           <br />
           <strong>内容只在本机处理，不经过任何服务器。</strong>
         </p>
-        <p className="pd-onboarding-note">本页每 3 秒自动检测，装好后自动进入。</p>
+        <p className="pd-onboarding-note">本页自动检测（间隔渐放缓至 15 秒），装好后自动进入。</p>
         <button onClick={() => location.reload()} className="pd-onboarding-check">
           已安装？立即检测
         </button>

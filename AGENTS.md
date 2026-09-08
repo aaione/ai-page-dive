@@ -26,13 +26,13 @@ pnpm monorepo：
 
 ## Hard Constraints（违反即 bug）
 
-1. 权限只有 `activeTab` + `scripting` + `nativeMessaging` + `sidePanel`，**不申请 `<all_urls>`**
+1. 权限只有 `activeTab` + `scripting` + `nativeMessaging` + `sidePanel` + `storage`，**不申请 `<all_urls>`**（`storage` 仅用 session 域——SW 30s 回收后恢复追问会话态，纯内存不落盘、零站点访问面，2026-09-08 修订加入）
 2. CLI 的 prompt/正文**一律走 stdin**（argv 有长度上限）；正文写本地临时文件，prompt 给路径
 3. **零凭证接触**：只子进程调起用户自己登录的未修改官方 CLI 二进制；不碰 token/OAuth、不代理流量、永不对 CLI 用量收费
 4. claude 的运行内失败打在 stdout（`is_error`），不能只看退出码
 5. host 是薄壳（目标 <2k 行 Node）：per-connection spawn、幂等、pgid 收割进程树、流归一化、≤1MB chunk 分片
 6. v1 = macOS + Chrome；claude + codex 双适配器（AgentDef 接口按六家字段并集设计）
-7. 历史落盘 `~/.pagedive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）；workflow 在 `~/.pagedive/workflows/`
+7. 历史落盘 `~/.ai-page-dive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）；workflow 在 `~/.ai-page-dive/workflows/`、技能在 `~/.ai-page-dive/skills/`
 
 ## v1 Priority
 
@@ -40,7 +40,7 @@ pnpm monorepo：
 
 ## Install Flow（用户视角）
 
-CWS 装扩展 → 首次点击提示 `npm i -g ai-page-dive && ai-page-dive install`（注册 NM host + 探测本机 CLI）→ 回浏览器即用。
+CWS 装扩展 → 首次点击提示复制 `curl -fsSL https://raw.githubusercontent.com/aaione/page-dive/main/install.sh | sh -s -- <扩展ID>`（仓库根 install.sh：Node≥18 探测 + brew 兜底 + npm i -g + NM 注册）→ 回浏览器即用。npm 两连命令（`npm i -g ai-page-dive && ai-page-dive install --ext-id <ID>`）保留为折叠区手动备选。
 
 ## Commit & Pull Request Guidelines
 
