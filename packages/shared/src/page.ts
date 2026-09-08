@@ -12,4 +12,6 @@ export interface PageContent {
   contentMarkdown: string
   /** 粗略 token 估算（chars/4），仅用于 prompt 提示 */
   approxTokens: number
+  /** 提取质量提示（截断/低置信），panel tips 条展示；无则不渲染 */
+  notice?: string
 }

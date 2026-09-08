@@ -5,6 +5,7 @@
 import { mkdir, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
+import { MAX_CHUNK } from '@ai-page-dive/shared'
 import type { AgentEvent, TaskInput } from '@ai-page-dive/shared'
 import { createClaudeParser } from './agents/claude.js'
 import { createCodexParser } from './agents/codex.js'
@@ -17,10 +18,6 @@ import { scheduleCleanup, writeContentFile } from './tmpfile.js'
 import { getWorkflow } from './workflows.js'
 
 const TASK_TIMEOUT_MS = 10 * 60_000
-
-/** NM 单帧分片上限。与 packages/shared/src/protocol.ts 的 MAX_CHUNK 保持同步
- * （host 单包发布后此值为本地拷贝——改分片大小时两处同改） */
-const MAX_CHUNK = 512 * 1024
 
 /**
  * CLI 会话 id → 首轮 spawn cwd 的映射（追问用，内存加速）。
@@ -60,6 +57,8 @@ export class Task {
   private input!: TaskInput
   private contentParts: string[] = []
   private contentDone = false
+  /** 已收正文总字符数（content-received 对账） */
+  private contentChars = 0
   private proc?: SpawnedProc
   private cancelled = false
   private ran = false
@@ -88,11 +87,17 @@ export class Task {
 
   appendContent(text: string, done: boolean): void {
     this.contentParts.push(text)
+    this.contentChars += text.length
     if (done) this.contentDone = true
   }
 
   contentReady(): boolean {
     return this.contentDone
+  }
+
+  /** 已收正文总字符数（content-received 回执对账用） */
+  receivedChars(): number {
+    return this.contentChars
   }
 
   /** 附件落盘：每个附件写 tmp 文件（安全文件名），软链进 agent cwd 供沙箱 CLI 读。

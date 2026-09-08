@@ -224,6 +224,17 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))
     await rm(dir, { recursive: true, force: true })
   }, 30_000)
 
+  it('receivedChars 对账：分片累计 = 各片 text.length 之和（content-received 回执依据）', () => {
+    const { task: mk } = makeCbs(); const task = mk()
+    task.start({ taskId: 't1', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+    expect(task.contentReady()).toBe(false)
+    task.appendContent('abc', false)
+    task.appendContent('中文两个', false)
+    task.appendContent('', true)
+    expect(task.contentReady()).toBe(true)
+    expect(task.receivedChars()).toBe(3 + 4)
+  })
+
   it('附件段落盘路径 + 追问轮前缀拼装', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'pd-att-'))
     const echo = join(dir, 'echo.mjs')

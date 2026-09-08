@@ -65,6 +65,8 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         if (!t) return send({ t: 'error', code: 'no-task', message: `unknown task ${msg.taskId}` })
         t.appendContent(msg.text, msg.done)
         if (t.contentReady()) {
+          // 完整性回执：SW 对账不一致时会取消本任务（半截正文总结比失败更糟）
+          send({ t: 'content-received', taskId: msg.taskId, chars: t.receivedChars() })
           // run 早期失败也带 taskId 走 task-error：SW/panel 按任务终局清理，不再挂空
           t.run().catch((e) => {
             tasks.delete(msg.taskId)

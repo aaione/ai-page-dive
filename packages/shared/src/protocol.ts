@@ -22,13 +22,16 @@ export interface TaskStartMsg {
   task: TaskInput
 }
 
-/** 正文分片：≤512KB/片，done:true 后 host 落临时文件并 spawn */
+/** 正文分片：≤512KB/片，done:true 后 host 落临时文件并 spawn。
+ * total（done 片携带）= 全部片 text.length 之和——host 回 content-received 对账，
+ * SW 校验不一致说明 NM 途中丢片（半截正文总结比失败更糟，宁可报错） */
 export interface TaskContentMsg {
   t: 'task-content'
   taskId: string
   seq: number
   text: string
   done: boolean
+  total?: number
 }
 
 export interface TaskCancelMsg {
@@ -188,6 +191,14 @@ export interface TaskStatusMsg {
   /** 低频状态更新（不含正文增量） */
 }
 
+/** 正文收齐回执：host 在 contentReady 后立即回，chars=收到的全部分片 text.length 之和。
+ * SW 与发送侧 total 对账——不一致即 NM 途中丢片，宁可失败不可半截总结 */
+export interface ContentReceivedMsg {
+  t: 'content-received'
+  taskId: string
+  chars: number
+}
+
 /** CLI 会话元信息（init 事件捕获）：模型名 + 会话 id（追问用） */
 export interface TaskMetaMsg {
   t: 'task-meta'
@@ -271,6 +282,7 @@ export type HostToExt =
   | WorkflowDeletedMsg
   | SkillsMsg
   | TaskStatusMsg
+  | ContentReceivedMsg
   | TaskMetaMsg
   | TaskChunkMsg
   | TaskDoneMsg
