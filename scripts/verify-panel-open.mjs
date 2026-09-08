@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from '/Users/apple/.nvm/versions/node/v24.15.0/lib/node_modules/@playwright/mcp/node_modules/playwright-core/index.mjs'
 
-const EXT = '/Users/apple/work/hs/ai-feature/page-dive/apps/extension/dist'
+const EXT = '/Users/apple/work/hs/ai-feature/ai-page-dive/apps/extension/dist'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const APP = 'Google Chrome for Testing'
 

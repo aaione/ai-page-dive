@@ -79,7 +79,7 @@ describe('postinstall 守卫（纯函数）', () => {
     expect(detectGlobalInstall({}, '/Users/u/.config/yarn/global/node_modules/ai-page-dive')).toBe(true)
     // 本地/monorepo：无任何特征
     expect(detectGlobalInstall({}, MAC)).toBe(false)
-    expect(detectGlobalInstall({}, '/Users/u/work/page-dive/packages/host')).toBe(false)
+    expect(detectGlobalInstall({}, '/Users/u/work/ai-page-dive/packages/host')).toBe(false)
   })
 
   it('isTopLevelGlobal：顶层 node_modules 直接子目录为真，嵌套宿主为假', async () => {

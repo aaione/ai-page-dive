@@ -8,12 +8,12 @@ import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { chromium } from '/Users/apple/.nvm/versions/node/v24.15.0/lib/node_modules/@playwright/mcp/node_modules/playwright-core/index.mjs'
 
-const EXT = '/Users/apple/work/hs/ai-feature/page-dive/apps/extension/dist-e2e'
+const EXT = '/Users/apple/work/hs/ai-feature/ai-page-dive/apps/extension/dist-e2e'
 const PROFILE = '/tmp/pd-e2e-opencode-profile'
 
 function install(extId) {
   execSync(
-    `PAGEDIVE_EXTRA_NM_DIR=${PROFILE}/NativeMessagingHosts ${process.execPath} /Users/apple/work/hs/ai-feature/page-dive/packages/host/dist/index.js install --ext-id ${extId}`,
+    `PAGEDIVE_EXTRA_NM_DIR=${PROFILE}/NativeMessagingHosts ${process.execPath} /Users/apple/work/hs/ai-feature/ai-page-dive/packages/host/dist/index.js install --ext-id ${extId}`,
     { stdio: 'pipe' },
   )
 }

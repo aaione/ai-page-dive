@@ -1,6 +1,6 @@
 #!/bin/sh
 # PageDive 一键安装：Node>=18 探测 → npm i -g ai-page-dive → ai-page-dive install
-# 用法：curl -fsSL https://raw.githubusercontent.com/aaione/page-dive/main/install.sh | sh -s -- <扩展ID>
+# 用法：curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- <扩展ID>
 # 托管在仓库本身（raw.githubusercontent）——零基建；内部仍走 npm（registry 自带完整性校验，
 # 脚本不下载任何二进制，无需附加 checksum 机制）。
 set -e

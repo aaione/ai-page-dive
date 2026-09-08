@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 /** 自愈命令：动态带当前扩展 ID——install 幂等 + origins 追加不覆盖 */
 const extId = chrome.runtime.id
 /** not-installed：一条命令通吃（脚本内 Node 探测 + brew 兜底 + npm 安装 + NM 注册） */
-const installCmd = `curl -fsSL https://raw.githubusercontent.com/aaione/page-dive/main/install.sh | sh -s -- ${extId}`
+const installCmd = `curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- ${extId}`
 /** forbidden：host 已装但本扩展 ID 不在白名单（只差补登记，无需再装） */
 const registerCmd = `ai-page-dive install --ext-id ${extId}`
 

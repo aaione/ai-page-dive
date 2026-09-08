@@ -7,7 +7,7 @@ PageDive — Chrome 扩展（MV3）：一键调用本机已装的 AI CLI（claud
 
 ### Repository
 
-- Remote: `git@github.com:aaione/page-dive.git`（origin/main）
+- Remote: `git@github.com:aaione/ai-page-dive.git`（origin/main）
 
 ### Must Read
 
@@ -40,7 +40,7 @@ pnpm monorepo：
 
 ## Install Flow（用户视角）
 
-CWS 装扩展 → 首次点击提示复制 `curl -fsSL https://raw.githubusercontent.com/aaione/page-dive/main/install.sh | sh -s -- <扩展ID>`（仓库根 install.sh：Node≥18 探测 + brew 兜底 + npm i -g + NM 注册）→ 回浏览器即用。npm 两连命令（`npm i -g ai-page-dive && ai-page-dive install --ext-id <ID>`）保留为折叠区手动备选。
+CWS 装扩展 → 首次点击提示复制 `curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- <扩展ID>`（仓库根 install.sh：Node≥18 探测 + brew 兜底 + npm i -g + NM 注册）→ 回浏览器即用。npm 两连命令（`npm i -g ai-page-dive && ai-page-dive install --ext-id <ID>`）保留为折叠区手动备选。
 
 ## Commit & Pull Request Guidelines
 
