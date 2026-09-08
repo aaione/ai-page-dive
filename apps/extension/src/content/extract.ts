@@ -88,14 +88,27 @@ export function extractPage(): PageContent | { error: string } {
     }
     // Readability 失败/空壳（cloneNode 不克隆 shadow DOM——正文在 shadow root 里的
     // 站点 Readability 拿到的是壳）→ 正文全文逐字兜底，截断防数 MB 正文烧穿订阅
+    let originalChars = 0
     if (!markdown.trim()) {
       const shadowText = collectShadowText(document.body)
       const source = article?.textContent || shadowText || document.body.innerText
+      originalChars = source.length
       markdown = source.slice(0, MAX_CONTENT)
-    } else if (markdown.length > MAX_CONTENT) {
-      markdown = markdown.slice(0, MAX_CONTENT)
+    } else {
+      originalChars = markdown.length
+      if (markdown.length > MAX_CONTENT) markdown = markdown.slice(0, MAX_CONTENT)
     }
     if (!markdown.trim()) return { error: 'empty-content' }
+
+    // 提取质量提示（panel tips 条展示）：
+    // - 截断：正文超上限被截——用户应知道总结只覆盖了前 200k 字符
+    // - 低置信：innerText 兜底路径拿到的是整页逐字文本（含导航/评论/杂讯），
+    //   Readability 结构化解析失败本身即是信号
+    const truncated = originalChars > MAX_CONTENT
+    const lowConfidence = !article?.content
+    const notices: string[] = []
+    if (truncated) notices.push(`原文 ${originalChars.toLocaleString()} 字符超上限，仅取前 ${MAX_CONTENT.toLocaleString()}`)
+    if (lowConfidence) notices.push('本页结构解析失败，已退化为全文提取，总结质量可能受限')
 
     return {
       url: location.href,
@@ -107,6 +120,7 @@ export function extractPage(): PageContent | { error: string } {
       extractor: article?.content ? 'readability' : 'innertext',
       contentMarkdown: markdown,
       approxTokens: Math.ceil(markdown.length / 4),
+      notice: notices.length ? notices.join('；') : undefined,
     }
   } catch (e: any) {
     return { error: String(e?.message ?? e) }

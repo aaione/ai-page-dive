@@ -1,14 +1,20 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 /** 大文本降级阈值（字符）：超过后不再全量 remark parse（主线程会被秒级卡死） */
-const HEAVY = 64 * 1024
+const HEAVY = 128 * 1024
+
+/** 完成段落的 memo 化渲染：props（段落文本）不变即跳过 remark parse。
+ * 流式更新只重 parse 尾部活跃段，前文 N 段零开销——长输出的全量重 parse 卡顿消除 */
+const Block = memo(function Block({ block }: { block: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{block}</ReactMarkdown>
+})
 
 /**
- * 流式 markdown：chunk 只入 buffer，trailing 节流合并重渲染（文本越长间隔越大，
- * 全量重 parse 的开销随长度增长）。超阈值降级为尾部纯文本预览；done 且仍超阈值时
- * 保持降级 + 提示（历史大文件同路径）。
+ * 流式 markdown：chunk 只入 buffer，trailing 节流合并重渲染（文本越长间隔越大）。
+ * 渲染按双换行切分为「已完成段落块」：每块独立 memo 化，流式期间只有尾部活跃块
+ * 重 parse。超阈值降级为尾部纯文本预览；done 且仍超阈值时保持降级 + 提示。
  */
 export const StreamMarkdown = memo(function StreamMarkdown({
   text,
@@ -34,8 +40,8 @@ export const StreamMarkdown = memo(function StreamMarkdown({
     }
     // trailing throttle：timer 已排定就不重排，到期自然 flush（高频 chunk 不饿死渲染）
     if (timerRef.current) return
-    // 动态间隔：文本越长全量重 parse 越贵，拉大间隔把单帧卡顿摊薄
-    const interval = text.length > 48 * 1024 ? 400 : text.length > 24 * 1024 ? 250 : 100
+    // 动态间隔：只有尾部活跃块会重 parse，长文本间隔不再需要激进拉大
+    const interval = text.length > 96 * 1024 ? 300 : text.length > 48 * 1024 ? 200 : 100
     timerRef.current = setTimeout(() => {
       timerRef.current = null
       // snap 到最后一个完整段落/行，避免半截语法树抖动
@@ -107,9 +113,19 @@ export const StreamMarkdown = memo(function StreamMarkdown({
       </div>
     )
   }
+
+  // 分块：按双换行切，每块以 \n\n 结尾（保留块间空行语义）。rendered snap 到
+  // 完整行后，前缀块集合随文本增长只增不改——memo 命中率随长度趋于 100%
+  const blocks = useMemo(() => {
+    const parts = rendered.split(/(?<=\n\n)/)
+    return parts.filter((p) => p !== '')
+  }, [rendered])
+
   return (
     <div ref={scrollerRef} data-done={done ? 'true' : 'false'} className="pd-md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{rendered}</ReactMarkdown>
+      {blocks.map((b, i) => (
+        <Block key={i} block={b} />
+      ))}
     </div>
   )
 })

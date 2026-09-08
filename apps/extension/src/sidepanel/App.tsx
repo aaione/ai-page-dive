@@ -38,6 +38,8 @@ export interface PageMeta {
   title: string
   url: string
   favIconUrl?: string
+  /** 提取质量提示（截断/低置信），PageTips 条展示；无则不渲染 */
+  notice?: string
 }
 
 export function App() {
@@ -75,11 +77,8 @@ export function App() {
           setPageMeta(m.page)
           break
         case 'agents':
-          // host 探测结果可能晚于 task-meta：保留 panel 已捕获的 model 不被覆盖
-          setAgents((prev) => {
-            const known = new Map(prev.filter((a) => a.model).map((a) => [a.id, a.model!]))
-            return (m.agents as AgentStatus[]).map((a) => (known.has(a.id) && !a.model ? { ...a, model: known.get(a.id) } : a))
-          })
+          // 单一事实源：SW 下发前已 merge 最近模型（agentsCache），panel 只渲染
+          setAgents(m.agents as AgentStatus[])
           break
         case 'workflows': setWorkflows(m.items); break
         case 'task-meta':

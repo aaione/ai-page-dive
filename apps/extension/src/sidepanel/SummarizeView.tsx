@@ -571,6 +571,11 @@ function PageTips({ meta }: { meta: PageMeta }) {
       <span className="pd-page-tips-text">
         正在分享 “{meta.title || host || meta.url}”{host ? ` · ${host}` : ''}
       </span>
+      {meta.notice && (
+        <span className="pd-page-tips-notice" title={meta.notice}>
+          ⚠ {meta.notice}
+        </span>
+      )}
     </div>
   )
 }
