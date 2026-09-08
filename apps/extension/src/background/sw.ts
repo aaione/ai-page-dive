@@ -23,13 +23,38 @@ let currentTask: {
   page: Omit<PageContent, 'contentMarkdown'>
   /** 正文发送完成后即清空——SW 常驻数 MB 死重只会抬高被回收概率 */
   content: string
+  /** 发送侧总字符数（done 片 total）：content-received 对账用 */
+  expectedChars?: number
 } | null = null
 
 // 上一轮完成的会话（追问用）：agent + CLI 会话 id + 首轮历史文件路径。
-// historyPath：追问轮 append 进同一文件——历史详情还原完整多轮对话
+// historyPath：追问轮 append 进同一文件——历史详情还原完整多轮对话。
+// 同步持久化到 chrome.storage.session：MV3 SW 30s 空闲即回收，纯内存态在
+// 「看完总结 → 隔一分钟追问」场景下必丢（session-lost）。storage.session 随
+// 浏览器会话存活，SW 冷启动时恢复（restoreState）。
 let lastSession: { agentId: string; sessionId: string; historyPath?: string } | null = null
 // 当前任务用的 agent（task-meta 到达时此刻的 agent 即会话归属）
 let currentAgentId = 'claude'
+
+/** lastSession/currentAgentId/lastModels 的 session 级持久化（SW 回收后恢复）。
+ * 防御式访问：storage 权限缺失/老 Chrome 时优雅退化为纯内存（旧行为），
+ * 绝不让持久化异常打断 host 帧转发链 */
+function persistSession() {
+  try {
+    chrome.storage?.session?.set({ lastSession, currentAgentId, lastModels: [...lastModels] } as any)?.catch?.(() => {})
+  } catch { /* 无 storage 权限：退化纯内存 */ }
+}
+// SW 顶层不能 await（listener 注册必须同步）——恢复放微任务。handleMessage 的
+// followUp 分支是异步的，微任务先于任何用户消息执行完，无竞态。
+void restoreSession()
+async function restoreSession() {
+  try {
+    const s = (await chrome.storage?.session?.get?.(['lastSession', 'currentAgentId', 'lastModels'])) as Record<string, any> | undefined
+    if (s?.lastSession) lastSession = s.lastSession
+    if (s?.currentAgentId) currentAgentId = s.currentAgentId
+    if (Array.isArray(s?.lastModels)) for (const [k, v] of s.lastModels) lastModels.set(k, v)
+  } catch { /* 无 storage 权限：退化纯内存 */ }
+}
 // 每个 CLI 最近使用的模型（下拉展示用）：agentId → model。
 // 独立于 agentsCache 存活——host 的 agents 帧可能在 task-meta 之后才到（探测慢），
 // 若不独立 merge 会被无 model 的 fresh 列表覆盖。
@@ -156,6 +181,8 @@ async function handleMessage(msg: any): Promise<unknown> {
       // 追问轮：复用上一轮 CLI 会话（claude --resume），不重新提取页面。
       // SW 休眠丢 lastSession 时明确报错——静默降级为新总结会让用户误以为在追问
       if (msg.followUp === true) {
+        // SW 恰在恢复中（微任务竞态窗）时补一次同步恢复——storage.session 读取 <1ms
+        if (!lastSession) await restoreSession()
         if (!lastSession) return { error: 'session-lost' }
         const r = startFollowUp(lastSession.agentId, lastSession.sessionId, instruction ?? '', lastSession.historyPath, attachments)
         return { ...r, agentId: lastSession.agentId }
@@ -170,6 +197,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       if (currentTask) cancelCurrent()
       lastSession = { agentId, sessionId, historyPath }
       currentAgentId = agentId
+      persistSession()
       return { ok: true }
     }
     case 'cancel':
@@ -179,6 +207,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       // 下一轮总结全新开始（不再 resume 上一条 CLI 会话）
       if (currentTask) cancelCurrent()
       lastSession = null
+      persistSession()
       return { ok: true }
     case 'set-pinned':
       pinned = !!msg.value
@@ -229,13 +258,30 @@ nmPort.onMessage((m) => {
   }
   // host 心跳帧：仅保活（消息活动重置 SW idle 计时器），不转发给 panel
   if (msg?.t === 'heartbeat') return
+  // 正文完整性回执：与发送侧 total 对账，不一致 = NM 途中丢片——取消任务。
+  // 半截正文会被 CLI 总结得「有模有样」，比直接失败更误导
+  if (msg?.t === 'content-received' && currentTask && msg.taskId === currentTask.taskId) {
+    if (currentTask.expectedChars !== undefined && msg.chars !== currentTask.expectedChars) {
+      console.warn(`[pd] content mismatch: sent ${currentTask.expectedChars}, host got ${msg.chars}`)
+      nmPort.send({ t: 'task-cancel', taskId: msg.taskId })
+      chrome.runtime
+        .sendMessage({ t: 'task-error', taskId: msg.taskId, code: 'spawn-fail', message: '正文传输不完整（NM 丢片），已取消——请重试' })
+        .catch(() => {})
+      currentTask = null
+    }
+    return // 回执不转发（panel 不消费）
+  }
   // 捕获会话 id 供追问（claude init 事件捕获，task-done 兜底）；historyPath 续存
   // （追问轮 task-done 带回首轮文件路径，覆盖亦无损——路径不变）
   if (msg?.t === 'task-meta' || msg?.t === 'task-done') {
-    if (msg.sessionId) lastSession = { agentId: currentAgentId, sessionId: msg.sessionId, historyPath: msg.historyPath ?? lastSession?.historyPath }
+    if (msg.sessionId) {
+      lastSession = { agentId: currentAgentId, sessionId: msg.sessionId, historyPath: msg.historyPath ?? lastSession?.historyPath }
+      persistSession()
+    }
     // 记住该 CLI 最近模型，merge 进 agents 缓存即刻下发（下拉展示 claude · GLM-5.2）
     if (msg.model) {
       lastModels.set(currentAgentId, msg.model)
+      persistSession()
       if (agentsCache) {
         agentsCache = agentsCache.map((a) => (a.id === currentAgentId ? { ...a, model: msg.model } : a))
         chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
@@ -338,10 +384,11 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   currentAgentId = agentId
   // 新一轮总结开始：旧会话失效（防切换 CLI 后追问串回旧 agent 的会话）
   lastSession = null
+  persistSession()
   currentTask = { taskId, page: meta, content: contentMarkdown }
 
-  // 提取成功 → 下发目标页元数据（panel tips 条「正在分享 …」）
-  chrome.runtime.sendMessage({ t: 'page-meta', page: { title: tab.title ?? meta.title, url: tab.url ?? meta.url, favIconUrl: tab.favIconUrl } }).catch(() => {})
+  // 提取成功 → 下发目标页元数据（panel tips 条「正在分享 …」；notice=截断/低置信提示）
+  chrome.runtime.sendMessage({ t: 'page-meta', page: { title: tab.title ?? meta.title, url: tab.url ?? meta.url, favIconUrl: tab.favIconUrl, notice: meta.notice } }).catch(() => {})
 
   const ok = nmPort.send({
     t: 'task-start',
@@ -354,26 +401,33 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   }
 
   // 正文分片 ≤512KB 字节维度（CJK 3 字节/字符，按字符切会击穿 NM 1MB——
-  // 与 host 侧 sendChunk 同一标准：字符数起步、超字节就二分收缩）
+  // 与 host 侧 sendChunk 同一标准：字符数起步、超字节就二分收缩）。
+  // done 片带 total：host 回 content-received 对账，丢片即取消（宁可失败不可半截总结）
   const CH = 512 * 1024
   let i = 0
   let seq = 0
+  let total = 0
   while (i < contentMarkdown.length) {
     let end = Math.min(i + CH, contentMarkdown.length)
     while (end > i && new Blob([contentMarkdown.slice(i, end)]).size > CH) {
       end = Math.floor((i + end) / 2)
     }
+    const done = end >= contentMarkdown.length
+    total += end - i
     nmPort.send({
       t: 'task-content',
       taskId,
       seq,
       text: contentMarkdown.slice(i, end),
-      done: end >= contentMarkdown.length,
+      done,
+      ...(done ? { total } : {}),
     })
     i = end
     seq++
   }
-  // 正文已全量送达 host：SW 不再需要这份内存（保留 taskId/page 供取消与终局对账）
+  // 正文已全量送达 host：SW 不再需要这份内存（保留 taskId/page 供取消与终局对账）。
+  // 回执对账挂 currentTask.expectedChars：content-received 到达时校验
   currentTask.content = ''
+  currentTask.expectedChars = total
   return { ok: true, taskId }
 }

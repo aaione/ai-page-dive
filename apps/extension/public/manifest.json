@@ -9,7 +9,8 @@
     "activeTab",
     "scripting",
     "nativeMessaging",
-    "sidePanel"
+    "sidePanel",
+    "storage"
   ],
   "background": {
     "service_worker": "background.js",
