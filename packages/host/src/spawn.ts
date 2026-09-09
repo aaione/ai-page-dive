@@ -9,6 +9,10 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { cliEnv } from './agents/registry.js'
 
+/** SIGKILL 兜底宽限。与 stdio.ts 的收割窗口构成隐式时序耦合（窗口必须 > 本值 200ms），
+ * 导出单一来源防手改一处静默破坏另一处 */
+export const REAP_GRACE_MS = 3000
+
 export interface SpawnOpts {
   bin: string
   args: string[]
@@ -94,7 +98,7 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
         setTimeout(() => {
           if (child.exitCode !== null || child.signalCode !== null) return
           try { process.kill(-child.pid!, 'SIGKILL') } catch { /* gone */ }
-        }, 3000)
+        }, REAP_GRACE_MS)
       }
 
       resolve({ child, cwd, writeStdin, reap })

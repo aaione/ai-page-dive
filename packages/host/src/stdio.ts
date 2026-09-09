@@ -4,6 +4,7 @@ import { createFrameReader, writeFrame, NM_MAX } from './nm.js'
 import { probeAgents } from './agents/registry.js'
 import { deleteHistory, listHistory, readHistory, revealHistoryRoot, revealInFinder } from './history.js'
 import { Task } from './task.js'
+import { REAP_GRACE_MS } from './spawn.js'
 import { listSkills, revealSkill } from './skills.js'
 import { deleteWorkflow, listWorkflows, readWorkflow, revealWorkflow, saveWorkflow } from './workflows.js'
 
@@ -190,7 +191,7 @@ export function runNative(): void {
     send({ t: 'heartbeat', seq: beat++ })
   }, 20_000).unref()
 
-  // 收割窗口：SIGTERM 发出后给 3.2s（reap 的 SIGKILL 兜底 3s）让进程树死透 + 在途
+  // 收割窗口：SIGTERM 发出后给 REAP_GRACE_MS + 200ms 让进程树死透 + 在途
   // persist('interrupted') 落盘完成，再退出。之前立即 exit 使 SIGKILL 兜底永不触发
   const reapAll = () => {
     for (const t of tasks.values()) t.cancel()
@@ -198,8 +199,8 @@ export function runNative(): void {
   const shutdown = () => {
     shuttingDown = true
     reapAll()
-    setTimeout(() => process.exit(0), 3_200)
-    // 3.2s 后强制退出；期间事件循环自然驱动 persist / SIGKILL 定时器
+    setTimeout(() => process.exit(0), REAP_GRACE_MS + 200)
+    // 窗口后强制退出；期间事件循环自然驱动 persist / SIGKILL 定时器
   }
   process.stdin.on('data', createFrameReader(handle, NM_MAX))
   process.stdin.on('end', shutdown)

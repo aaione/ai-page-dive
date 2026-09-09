@@ -2,7 +2,7 @@
  * 多轮对话：同一 CLI 会话的追问轮 append 到首轮文件，pd:user/pd:assistant
  * HTML 注释分段（对 markdown 渲染不可见，解析简单且不会被正文伪造的标记骗到
  * ——正文里的标记会被转义/包进代码块；即便伪造也只是显示分层问题，无安全面） */
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -161,11 +161,26 @@ export async function listHistory(query?: string, limit = 100): Promise<HistoryI
 }
 
 async function readFrontmatter(path: string): Promise<Omit<HistoryItem, 'path'> | undefined> {
-  const raw = await readFile(path, 'utf8')
+  // 只读头部 4KB：frontmatter 在文件头几十字节，正文可达数百 KB——列表页无需全量读
+  const fh = await open(path, 'r')
+  const head = Buffer.alloc(4096)
+  const { bytesRead } = await fh.read(head, 0, 4096, 0)
+  await fh.close()
+  const raw = head.subarray(0, bytesRead).toString('utf8')
   if (!raw.startsWith('---')) return undefined
-  const end = raw.indexOf('\n---', 3)
-  if (end < 0) return undefined
-  const fm = raw.slice(4, end)
+  let end = raw.indexOf('\n---', 3)
+  if (end < 0) {
+    // 4KB 内没找到 frontmatter 结束线：超大 frontmatter 回退全量读（罕见兜底）
+    const full = await readFile(path, 'utf8')
+    end = full.indexOf('\n---', 3)
+    if (end < 0) return undefined
+    const fmFull = full.slice(4, end)
+    return await parseFm(fmFull, path)
+  }
+  return await parseFm(raw.slice(4, end), path)
+}
+
+async function parseFm(fm: string, path: string): Promise<Omit<HistoryItem, 'path'>> {
   const get = (key: string): string => {
     const m = fm.match(new RegExp(`^${key}: (.*)$`, 'm'))
     if (!m) return ''

@@ -348,5 +348,6 @@ const ERROR_LABEL: Record<string, string> = {
   cancelled: '已取消',
   parse: 'CLI 输出异常',
   'no-agent': '未知 CLI',
+  'bad-request': '请求参数不完整',
   'content-mismatch': '正文传输不完整，已取消——请重试',
 }

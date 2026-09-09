@@ -111,7 +111,7 @@ export class Task {
       const safe = a.name.replace(/[^A-Za-z0-9_.一-龥-]/g, '_').slice(0, 64) || 'attachment'
       try {
         const p = await writeContentFile(`${this.taskId}-att-${safe}`, a.text)
-        scheduleCleanup(p, 300_000)
+        scheduleCleanup(p, 11 * 60_000) // > TASK_TIMEOUT_MS：运行中被删 = CLI 读半截正文
         out.push({ name: a.name, path: p })
       } catch { /* 单个失败跳过，不阻断任务 */ }
     }
@@ -144,8 +144,9 @@ export class Task {
     const lastMsgFile = isResume ? '' : `${contentFile}.last`
     // 统一在此调度清理：isError/spawn-fail/cancel/正常路径全覆盖
     if (!isResume) {
-      scheduleCleanup(contentFile, 300_000)
-      scheduleCleanup(lastMsgFile, 300_000)
+      // 11min > 10min 任务超时：运行期文件必须存在，终局后再留 1min 缓冲给迟到的读取
+      scheduleCleanup(contentFile, 11 * 60_000)
+      scheduleCleanup(lastMsgFile, 11 * 60_000)
     }
 
     // workflow 正文即任务段：用户目录 shadow 内置，未命中走 DEFAULT_TASKS
@@ -427,7 +428,12 @@ async function linkIntoCwd(contentFile: string, cwd: string): Promise<void> {
 /** 网页元数据单行消毒：页面可控字段（title/byline 等）去控制字符/换行、截单行——
  * 防恶意网页伪造段落结构注入指令（url 亦清洗，scheme 已由扩展侧 isNormalPage 限制） */
 function sanitizeMeta(v: string, max = 300): string {
-  return v.replace(/[ -]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+  const cleaned = v
+    // 控制字符 + 零宽(U+200B-200F) + 行/段分隔与 bidi(U+2028-202F 含 RTL U+202E) + (U+2060-206F) + BOM
+    .replace(/[\x00-\x1f\x7f-‏-⁡￾￿]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return Array.from(cleaned).slice(0, max).join('') // 码点截断，防劈开代理对
 }
 
 /** 网页元数据单行拼装（{meta} 占位符与「## 网页元数据」段共用） */
@@ -456,8 +462,8 @@ export function expandWorkflowPlaceholders(
   return body.replace(
     /\{(url|title|file|meta)\}/g,
     (_, k: string) =>
-      k === 'url' ? page.url
-      : k === 'title' ? page.title
+      k === 'url' ? sanitizeMeta(page.url, 2000)
+      : k === 'title' ? sanitizeMeta(page.title)
       : k === 'file' ? contentFile
       : pageMetaLine(page),
   )
@@ -536,7 +542,7 @@ ${langSection}`
 export function attachSection(attachments?: { name: string; path: string }[]): string {
   if (!attachments?.length) return ''
   return `\n## 附件\n用户随任务附带的参考文件（按需读取）：\n${attachments
-    .map((a) => `- ${a.name}: ${a.path}`)
+    .map((a) => `- ${sanitizeMeta(a.name, 100)}: ${a.path}`)
     .join('\n')}\n`
 }
 

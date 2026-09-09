@@ -14,7 +14,9 @@ describe('NM 契约一致性', () => {
     const m = src.match(/export const MAX_CHUNK = (\d+ \* \d+)/)
     expect(m).toBeTruthy()
     expect(512 * 1024).toBe(MAX_CHUNK)
-    expect(eval(m![1])).toBe(MAX_CHUNK)
+    // eval 换算（字面量受控于本仓库，测试环境无安全面）
+    const n = m![1].split('*').map((x) => Number(x.trim())).reduce((a, b) => a * b, 1)
+    expect(n).toBe(MAX_CHUNK)
   })
   it('host 源码无 @ai-page-dive/shared 运行时值导入（发布即坏的防线）', async () => {
     const { readdir } = await import('node:fs/promises')
@@ -26,8 +28,17 @@ describe('NM 契约一致性', () => {
     for (const f of await walk(srcDir)) {
       if (typeof f !== 'string' || !f.endsWith('.ts')) continue
       const content = readFileSync(f, 'utf8')
-      const valueImports = content.match(/^import \{[^}]*\} from '@ai-page-dive\/shared'/gm) ?? []
-      expect(valueImports, `${f} 存在 shared 运行时值导入`).toHaveLength(0)
+      // 拦截一切非 import-type 形态：named / namespace(*) / require / 动态 import
+      const patterns = [
+        /^import (?!type)[^'\n]*from '@ai-page-dive\/shared'/gm,
+        /^import ['"]@ai-page-dive\/shared['"]/gm,
+        /require\(['"]@ai-page-dive\/shared['"]\)/g,
+        /import\(['"]@ai-page-dive\/shared['"]\)/g,
+      ]
+      for (const re of patterns) {
+        const hits = content.match(re) ?? []
+        expect(hits, `${f} 存在 shared 运行时导入: ${hits.join('; ')}`).toHaveLength(0)
+      }
     }
   })
 })

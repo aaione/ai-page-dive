@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { HistoryFileMsg, HistoryItem, HistoryListResultMsg, HostToExt } from '@ai-page-dive/shared'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
@@ -30,6 +30,13 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
 
   function refresh(q = query) {
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-list', query: q || undefined } })
+  }
+
+  // 搜索防抖 250ms：host 侧每次查询全量扫盘，每键击触发会让 IO 随历史量线性恶化
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debouncedRefresh = (q: string) => {
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => refresh(q), 250)
   }
 
   if (viewing) {
@@ -88,7 +95,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
-              refresh(e.target.value)
+              debouncedRefresh(e.target.value)
             }}
             onKeyDown={(e) => e.key === 'Enter' && refresh()}
             placeholder="搜索标题 / 网址…"

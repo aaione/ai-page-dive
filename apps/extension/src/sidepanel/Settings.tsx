@@ -57,6 +57,8 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const [tab, setTab] = useState<Tab>('modes')
   /** host 错误帧提示（工作流读写/删除失败等，10s 自清）：此前 error 帧零消费，保存失败完全静默 */
   const [hostError, setHostError] = useState<string | null>(null)
+  /** workflow 读取超时的名字（只读提示态，不污染 editor.body/dirty） */
+  const [readTimeout, setReadTimeout] = useState<string | null>(null)
 
   // ── 模式（workflow） ──
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
@@ -100,6 +102,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
           // 选中项的全文到达：解析进编辑表单（仅当还在编辑这个名字）
           const cur = editorRef.current
           if (!cur || cur.name !== m.name) break
+          setReadTimeout(null) // 回包到达即撤销超时态
           const p = parseWorkflowMd(m.content)
           setEditor({
             ...cur,
@@ -157,12 +160,12 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
       dirty: false,
     })
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-read', name: w.name } }, () => void chrome.runtime.lastError)
-    // 10s 无 workflow-file 回包（host 忙/断连）：降级提示，防「正在读取…」永挂
+    // 10s 无 workflow-file 回包（host 忙/断连）：置只读超时态——不写 body 不标 dirty，
+    // 防超时文案被一次误保存持久化成 workflow 正文（shadow 掉真版本）
+    setReadTimeout(null)
     window.setTimeout(() => {
       const cur = editorRef.current
-      if (cur && cur.name === w.name && !cur.body) {
-        setEditor((e) => (e && e.name === w.name ? { ...e, body: '（读取超时——本机组件未响应，请重试或检查连接）', dirty: true } : e))
-      }
+      if (cur && cur.name === w.name && !cur.body) setReadTimeout(w.name)
     }, 10_000)
   }
 
@@ -336,7 +339,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                       className="pd-set-textarea"
                       value={editor.body}
                       onChange={(e) => setEditor({ ...editor, body: e.target.value, dirty: true })}
-                      placeholder={editor.originalName ? '正在读取…' : '写点什么…'}
+                      placeholder={readTimeout === editor.name ? '读取超时——本机组件未响应，重新点选一次或检查连接' : editor.originalName ? '正在读取…' : '写点什么…'}
                     />
                   </div>
                   <div className="pd-set-actions">

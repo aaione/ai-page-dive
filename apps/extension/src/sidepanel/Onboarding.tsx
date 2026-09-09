@@ -15,10 +15,11 @@ export function Onboarding() {
   // 面板隐藏时暂停（side panel 切走即 hidden），重新可见立即探测
   const delayRef = useRef(3000)
   const timerRef = useRef<ReturnType<typeof setTimeout>>()
-  // 轮询累计超 90s：最高频卡点是「装好了但 Chrome 没完全重启」（macOS 关窗口 ≠ 退出）
-  // ——把 ⌘Q 指引从小字提权为主提示
+  // 首次探测起算真实耗时超 90s：最高频卡点是「装好了但 Chrome 没完全重启」
+  // （macOS 关窗口 ≠ 退出）——把 ⌘Q 指引从小字提权为主提示。
+  // 用 Date.now 差值而非累计 delay（快速反复切 tab 会让计划延迟累计虚增，提前误触发）
   const [stuck, setStuck] = useState(false)
-  const elapsedRef = useRef(0)
+  const firstProbeAtRef = useRef(Date.now())
 
   useEffect(() => {
     let alive = true
@@ -29,8 +30,7 @@ export function Onboarding() {
         if (!alive) return
         if (resp?.ok) location.reload()
         else setForbidden(/forbidden/i.test(String(resp?.nmError ?? '')))
-        elapsedRef.current += delayRef.current
-        if (elapsedRef.current > 90_000) setStuck(true)
+        if (Date.now() - firstProbeAtRef.current > 90_000) setStuck(true)
         timerRef.current = setTimeout(probe, delayRef.current)
         delayRef.current = Math.min(delayRef.current * 1.6, 15000)
       })
@@ -62,7 +62,7 @@ export function Onboarding() {
     <div className="pd-onboarding">
       <div className="pd-onboarding-card">
         <h1 className="pd-onboarding-title">
-          {forbidden ? '本扩展还未登记到本机组件' : '还差一步（约 30 秒，仅一次）'}
+          {forbidden ? '本扩展还未登记到本机组件' : '还差一步（仅此一次；已有 Node 约 1 分钟，需装 Node 可能数分钟）'}
         </h1>
         <p className="pd-onboarding-text">
           {forbidden ? (
@@ -120,15 +120,7 @@ export function Onboarding() {
           </p>
         )}
         <p className="pd-onboarding-note">本页自动检测（间隔渐放缓至 15 秒），装好后自动进入。</p>
-        <button
-          onClick={() => {
-            delayRef.current = 3000
-            elapsedRef.current = 0
-            setStuck(false)
-            location.reload()
-          }}
-          className="pd-onboarding-check"
-        >
+        <button onClick={() => location.reload()} className="pd-onboarding-check">
           已安装 / 已重启？立即检测
         </button>
       </div>
