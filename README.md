@@ -34,7 +34,22 @@ node packages/host/scripts/smoke.mjs claude   # 真实 CLI 端到端冒烟（cla
 
 ## 安装（用户视角）
 
-CWS 装扩展 → 首次使用提示执行 `npm i -g ai-page-dive && ai-page-dive install` → 回浏览器即用。
+CWS 装扩展 → 首次打开面板，复制提示中的一条命令到终端执行（无 Node 会自动经 Homebrew 引导安装）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- <扩展ID>
+```
+
+装完回浏览器即用。终端走不通（代理/被墙/EACCES）时的手动备选：
+
+<details>
+<summary>npm 两连命令（手动备选）</summary>
+
+```bash
+# 需要 Node >= 18（nvm/Homebrew 安装的 Node 免 sudo；勿用 sudo npm——会写坏本机组件注册属主）
+npm i -g ai-page-dive && ai-page-dive install --ext-id <扩展ID>
+```
+</details>
 
 ## v1 范围
 

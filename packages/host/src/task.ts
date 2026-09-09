@@ -5,8 +5,8 @@
 import { mkdir, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { MAX_CHUNK } from '@ai-page-dive/shared'
 import type { AgentEvent, TaskInput } from '@ai-page-dive/shared'
+import { MAX_CHUNK } from './nmconst.js'
 import { createClaudeParser } from './agents/claude.js'
 import { createCodexParser } from './agents/codex.js'
 import { createOpencodeParser } from './agents/opencode.js'
@@ -424,15 +424,21 @@ async function linkIntoCwd(contentFile: string, cwd: string): Promise<void> {
   } catch { /* EEXIST 等：沙箱内已有同名，直接用 */ }
 }
 
+/** 网页元数据单行消毒：页面可控字段（title/byline 等）去控制字符/换行、截单行——
+ * 防恶意网页伪造段落结构注入指令（url 亦清洗，scheme 已由扩展侧 isNormalPage 限制） */
+function sanitizeMeta(v: string, max = 300): string {
+  return v.replace(/[ -]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+}
+
 /** 网页元数据单行拼装（{meta} 占位符与「## 网页元数据」段共用） */
 function pageMetaLine(page: TaskInput['page']): string {
   return [
-    `标题: ${page.title}`,
-    `URL: ${page.url}`,
-    page.byline && `作者: ${page.byline}`,
-    page.publishedTime && `发布: ${page.publishedTime}`,
-    page.siteName && `站点: ${page.siteName}`,
-    page.lang && `语言: ${page.lang}`,
+    `标题: ${sanitizeMeta(page.title)}`,
+    `URL: ${sanitizeMeta(page.url, 2000)}`,
+    page.byline && `作者: ${sanitizeMeta(page.byline)}`,
+    page.publishedTime && `发布: ${sanitizeMeta(page.publishedTime)}`,
+    page.siteName && `站点: ${sanitizeMeta(page.siteName)}`,
+    page.lang && `语言: ${sanitizeMeta(page.lang, 10)}`,
   ]
     .filter(Boolean)
     .join('  ')

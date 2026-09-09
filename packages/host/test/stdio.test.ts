@@ -14,7 +14,9 @@ describe('stdio 路由', () => {
   it('ping → pong', () => {
     const { handle, sent } = makeSession()
     handle({ t: 'ping' })
-    expect(sent).toEqual([{ t: 'pong', hostVersion: '0.1.0' }])
+    // 版本断言放宽为结构（HOST_VERSION 跟随 package.json 走，硬编码会每次 bump 挂测试）
+    expect(sent[0]?.t).toBe('pong')
+    expect(sent[0]?.hostVersion).toMatch(/^\d+\.\d+\.\d+$/)
   })
 
   it('task-content 先于 task-start → no-task 错误', () => {

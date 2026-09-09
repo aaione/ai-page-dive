@@ -7,7 +7,7 @@ import { Task } from './task.js'
 import { listSkills, revealSkill } from './skills.js'
 import { deleteWorkflow, listWorkflows, readWorkflow, revealWorkflow, saveWorkflow } from './workflows.js'
 
-const HOST_VERSION = '0.1.0'
+const HOST_VERSION = '0.1.1'
 /** history-file 单帧安全上限（NM 1MB 限制留余量） */
 const HISTORY_MAX_BYTES = 900 * 1024
 

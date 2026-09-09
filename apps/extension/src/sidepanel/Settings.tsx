@@ -55,6 +55,8 @@ function writeStrList(key: string, list: string[]) {
 
 export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('modes')
+  /** host 错误帧提示（工作流读写/删除失败等，10s 自清）：此前 error 帧零消费，保存失败完全静默 */
+  const [hostError, setHostError] = useState<string | null>(null)
 
   // ── 模式（workflow） ──
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
@@ -111,6 +113,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
         case 'workflow-saved':
         case 'workflow-deleted':
           // 保存/删除后统一重拉刷新；保存新名后切到新名
+          setHostError(null) // 成功即清错
           chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-workflows' } }, () => void chrome.runtime.lastError)
           if (m.t === 'workflow-deleted') {
             const cur = editorRef.current
@@ -129,6 +132,11 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               setEditor(cur => cur && { ...cur, originalName: m.name, dirty: false })
             }
           }
+          break
+        case 'error':
+          // host 错误帧（read-fail/bad-name/delete-fail/reveal-fail）：给出可感知提示
+          setHostError(`${m.code}: ${m.message}`)
+          window.setTimeout(() => setHostError(null), 10_000)
           break
       }
     }
@@ -149,6 +157,13 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
       dirty: false,
     })
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-read', name: w.name } }, () => void chrome.runtime.lastError)
+    // 10s 无 workflow-file 回包（host 忙/断连）：降级提示，防「正在读取…」永挂
+    window.setTimeout(() => {
+      const cur = editorRef.current
+      if (cur && cur.name === w.name && !cur.body) {
+        setEditor((e) => (e && e.name === w.name ? { ...e, body: '（读取超时——本机组件未响应，请重试或检查连接）', dirty: true } : e))
+      }
+    }, 10_000)
   }
 
   function newWorkflow() {
@@ -244,6 +259,12 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
           </button>
         ))}
       </div>
+
+      {hostError && (
+        <div className="pd-set-error" role="alert">
+          本机组件返回错误：{hostError}
+        </div>
+      )}
 
       <div className="pd-set-body" key={tab}>
         {tab === 'modes' && (

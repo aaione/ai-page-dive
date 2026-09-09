@@ -15,6 +15,10 @@ export function Onboarding() {
   // 面板隐藏时暂停（side panel 切走即 hidden），重新可见立即探测
   const delayRef = useRef(3000)
   const timerRef = useRef<ReturnType<typeof setTimeout>>()
+  // 轮询累计超 90s：最高频卡点是「装好了但 Chrome 没完全重启」（macOS 关窗口 ≠ 退出）
+  // ——把 ⌘Q 指引从小字提权为主提示
+  const [stuck, setStuck] = useState(false)
+  const elapsedRef = useRef(0)
 
   useEffect(() => {
     let alive = true
@@ -25,6 +29,8 @@ export function Onboarding() {
         if (!alive) return
         if (resp?.ok) location.reload()
         else setForbidden(/forbidden/i.test(String(resp?.nmError ?? '')))
+        elapsedRef.current += delayRef.current
+        if (elapsedRef.current > 90_000) setStuck(true)
         timerRef.current = setTimeout(probe, delayRef.current)
         delayRef.current = Math.min(delayRef.current * 1.6, 15000)
       })
@@ -90,22 +96,40 @@ export function Onboarding() {
             <code>npm i -g ai-page-dive && ai-page-dive install --ext-id {extId}</code>。
           </p>
           <p>
-            <code>EACCES</code> / 权限错误 → 改用 nvm/Homebrew 的 Node 重装（无需 sudo，推荐）；
-            或 <code>sudo npm i -g ai-page-dive</code> 后，再以普通用户执行面板当前显示的登记命令。
+            <code>EACCES</code> / 权限错误 → 改用 nvm/Homebrew 的 Node 重装（免 sudo；
+            <strong>勿用 sudo npm</strong>——root 属主会写坏本机组件注册，后续重装会反复失败）。
           </p>
           <p>
             用 <code>pnpm</code>？全局安装默认不执行安装钩子——装完直接执行面板当前显示的 <code>ai-page-dive install</code> 命令即可。
           </p>
         </details>
-        <p className="pd-onboarding-note">
-          终端看到 <code>✅</code> 即回本页，会自动进入（无需重启浏览器）；
-          超过 1 分钟未进入，再 ⌘Q 完全退出 Chrome 重开。
-          <br />
-          <strong>内容只在本机处理，不经过任何服务器。</strong>
-        </p>
+        {stuck ? (
+          <div className="pd-onboarding-stuck" role="alert">
+            <p>
+              已持续检测超过 1 分钟。若终端已显示 <code>✅</code> 但本页未进入，
+              多半是 <strong>Chrome 未完全重启</strong>（macOS 关闭窗口 ≠ 退出）：
+              <br />
+              请 <strong>⌘Q 完全退出 Chrome</strong> 再重新打开，然后点下方按钮。
+            </p>
+          </div>
+        ) : (
+          <p className="pd-onboarding-note">
+            终端看到 <code>✅</code> 即回本页，会自动进入（无需重启浏览器）。
+            <br />
+            <strong>内容只在本机处理，不经过任何服务器。</strong>
+          </p>
+        )}
         <p className="pd-onboarding-note">本页自动检测（间隔渐放缓至 15 秒），装好后自动进入。</p>
-        <button onClick={() => location.reload()} className="pd-onboarding-check">
-          已安装？立即检测
+        <button
+          onClick={() => {
+            delayRef.current = 3000
+            elapsedRef.current = 0
+            setStuck(false)
+            location.reload()
+          }}
+          className="pd-onboarding-check"
+        >
+          已安装 / 已重启？立即检测
         </button>
       </div>
     </div>

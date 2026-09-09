@@ -42,6 +42,17 @@
 }
 
 /* ── tab 条：玻璃胶囊 ── */
+.pd-set-error {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 99, 71, .45);
+  background: rgba(255, 99, 71, .12);
+  color: #ff9c88;
+  font-family: var(--font-sans-ui);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .pd-set-tabs {
   display: flex;
   gap: 4px;
