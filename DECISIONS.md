@@ -81,6 +81,14 @@
   - 叠加项：依赖 herdr ≠ 替换 host（Chrome 只认 NM，host 必须在）而是加层（SW→NM→host→herdr CLI→server→pane 五层链路）；安装链翻倍违反零配置；herdr 解决的会话持久化/多机/羊群管理是 PageDive 不存在的瓶颈。
 - 未来选项（不排期）：① 获客——herdr 用户 = 多 CLI 重度开发者 = 最精准画像，可在其社区做 use case 传播；② 反向集成——PageDive 若要出现在 herd 面板，正确姿势是作为 custom integration 用 `pane.report_agent` 上报任务状态，而非经 herdr 派任务。
 
+### 多引擎（多 CLI 组合）定案（2026-09-09 grilling）
+
+- **价值定位**：把用户已付费的多个 AI 订阅从「备选项」变成「可组合的阅读引擎池」（本地免费版多模型聚合，内容不出本机）。默认单引擎，多引擎一律显式 opt-in + 成本前置（≈2× tokens 微标）；deep+双引擎不加二次确认（opt-in 已显式，微标已透明，过度防御）。
+- **交付节奏**：v1.x 只交付**审校模式**（second opinion，1.5-2 天）；**并列对比推 v2 等数据**（审校上线后看使用数据：风格差异诉求由重跑按钮 0.5 天覆盖，真有并列 arena 诉求再做 1-2 周双流 UI 改造）。
+- **审校模式产品语义**：A 总结完 → 原文 + A 的产出喂给 B 审校 → B 输出「审校说明（改了什么/为什么）+ 修订后总结」两段，**追加为新气泡、不替换 A 的原文**（保留对照 = 保留 diff 价值）；追问挂 B 的会话；A 的会话经既有 resume-history 可恢复。
+- **交互入口**：CLI 下拉底部「+ 添加第二引擎」→ 双 chip（`claude ✕ codex`）+ 模式微切换（审校⟷并列，v1.x 只有审校生效）+ ≈2× tokens 微标。默认态零变化，渐进披露，不加第三个下拉。
+- **架构**：编排放 SW（A 的 task-done 同一 tick 内发 B 的 task-start，A 的 accumulated 输出作为 B 的上下文重发）——host 零改动（tasks Map 本就支持并发/串行多任务；审校串行 = panel 单流状态机直接复用，B 的 chunk 天然是新气泡）。审校 prompt 由内置 workflow `review-critique` 承载（可被用户目录 shadow 定制）。历史：两任务两文件现状机制零改，frontmatter 加 `reviewOf` 关联 A 的 historyPath。
+
 ## v2 路线图（已明确延后）
 
 `--daemon` 常驻（关面板不中断）/ 全文搜索 / 导入导出 / 追问对话 + 对话历史 / Windows / Edge/Brave / marketplace / OpenCode 等更多适配器 / dsh 深度支持
