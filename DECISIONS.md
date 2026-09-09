@@ -71,6 +71,16 @@
 - 开源先例结论：「商店页 → 完全无终端」唯一成立形态 = 带 GUI 的签名桌面 App 首启自写 manifest（Bitwarden/1Password 模式）；CLI/npm 形态 host（browserpass、mcp-chrome-bridge）无一例外需终端。可借鉴：mcp-chrome-bridge 的 postinstall 自动注册（`tryRegisterUserLevelHost`，失败静默降级）。
 - **v2 无终端安装器触发条件**（满足其一才立项，形态 = 签名桌面 App + 首启自写 manifest，非编译 CLI）：(a) 无 Node 用户成为可测量流失来源；(b) 愿投 $99/年 Developer ID + 公证 CI；(c) Windows 支持提上日程。
 
+### 第三方 agent 运行时依赖判否（2026-09-09 grilling + socket API 实证调研，herdr.dev）
+
+- **结论：v1 零第三方运行时依赖，不接 herdr（herdr.dev，36.5k stars 的 coding agent 运行时/多路复用器）做本地 CLI 通信。多引擎编排放 SW（A 的 task-done 同 tick 发 B 的 task-start），host 保持零改动薄壳。**
+- 判否实证（抓取 herdr.dev/docs 三页核查）：
+  - socket API 事件订阅面（`events.subscribe`）只有 workspace/tab/`pane.agent_status_changed` 生命周期事件，**无任何 agent 输出内容事件**（无 text_delta/result 类）；`agent.prompt --wait` 只回状态终局不带内容；取内容唯一路径 `agent.read` = ANSI 剥离的屏幕快照文本，官方最佳实践是「让 agent 把回复写临时文件、只回文件路径」——屏幕抓取路线自认的天花板。
+  - integrations 分档表：claude/codex 仅为 **Session identity 档**（只上报会话 id 供恢复），"State still comes from Herdr's screen manifest detection"——对 v1 双主力连生命周期状态都无结构化数据。
+  - 根因是访问模式正交：herdr 把 CLI 养在交互式 pane（TUI 渲染层只能抓屏），服务「终端里的人看 agent」；PageDive 用 `--print --output-format stream-json` 无头直读子进程 stdout（is_error/usage/text-delta 全量结构化流），服务「程序消费 agent 输出」。在结构化访问 claude/codex 上 NM host 路径比 herdr pane 路径更深。
+  - 叠加项：依赖 herdr ≠ 替换 host（Chrome 只认 NM，host 必须在）而是加层（SW→NM→host→herdr CLI→server→pane 五层链路）；安装链翻倍违反零配置；herdr 解决的会话持久化/多机/羊群管理是 PageDive 不存在的瓶颈。
+- 未来选项（不排期）：① 获客——herdr 用户 = 多 CLI 重度开发者 = 最精准画像，可在其社区做 use case 传播；② 反向集成——PageDive 若要出现在 herd 面板，正确姿势是作为 custom integration 用 `pane.report_agent` 上报任务状态，而非经 herdr 派任务。
+
 ## v2 路线图（已明确延后）
 
 `--daemon` 常驻（关面板不中断）/ 全文搜索 / 导入导出 / 追问对话 + 对话历史 / Windows / Edge/Brave / marketplace / OpenCode 等更多适配器 / dsh 深度支持
