@@ -8,13 +8,19 @@ import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { chromium } from '/Users/apple/.nvm/versions/node/v24.15.0/lib/node_modules/@playwright/mcp/node_modules/playwright-core/index.mjs'
 
-// E2E 变体构建（广权限）到 dist-e2e；产品 dist 不动
+// E2E 变体构建（广权限）到 dist-e2e；产品 dist 不动。
+// 失败即退出：filter 名失配曾静默跑旧 dist-e2e 两天（@pagedive → @ai-page-dive 改名漏改），
+// E2E 虚假绿灯比不跑更危险
 import { spawnSync } from 'node:child_process'
 const EXT = '/Users/apple/work/hs/ai-feature/ai-page-dive/apps/extension/dist-e2e'
-spawnSync('pnpm', ['--filter', '@pagedive/extension', 'build:e2e'], {
+const build = spawnSync('pnpm', ['--filter', '@ai-page-dive/extension', 'build:e2e'], {
   stdio: 'pipe',
   cwd: '/Users/apple/work/hs/ai-feature/ai-page-dive',
 })
+if (build.status !== 0) {
+  console.error('[e2e] build:e2e 失败:\n' + build.stdout + '\n' + build.stderr)
+  process.exit(1)
+}
 // 扩展 ID 由 dist 内容 hash 决定（无 key 时）；先启动一次拿不到——所以首轮用
 // 轮询策略：启动 → 拿 ID → 若与已注册 ID 不同则注册并重启浏览器。
 const PROFILE = '/tmp/pd-e2e-profile'
