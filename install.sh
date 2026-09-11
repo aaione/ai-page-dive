@@ -13,7 +13,7 @@ die() { printf '\033[1;31m%s\033[0m\n' "$*" >&2; exit 1; }
 # ── 1. Node >= 18 探测（nvm 用户：sh 非交互不加载 nvm，PATH 上的 node 即用户日常 node）──
 NODE_VER="$(node --version 2>/dev/null || true)"
 if [ -z "$NODE_VER" ]; then
-  say "未检测到 Node.js。尝试 Homebrew 安装…"
+  say "未检测到 Node.js。尝试 Homebrew 安装（首次可能需先装 Xcode 命令行工具，约 5-15 分钟）…"
   if command -v brew >/dev/null 2>&1; then
     brew install node || die "brew install node 失败——请到 https://nodejs.org 手动安装 Node >= 18 后重跑本命令"
   else
@@ -46,4 +46,4 @@ else
   ai-page-dive install
 fi
 
-say "🎉 安装完成——回到浏览器，面板会自动进入（无需重启 Chrome）。"
+say "🎉 安装完成——回到浏览器，面板通常会自动进入；若 1 分钟内未进入，请完全退出 Chrome（⌘Q）后重开。"

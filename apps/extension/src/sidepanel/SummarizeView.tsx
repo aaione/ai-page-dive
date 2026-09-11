@@ -74,7 +74,6 @@ export function useSetting(key: string): [string, (v: string) => void] {
 export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta }: Props) {
   const disabledClis = useDisabledClis()
   const getEnabledSkills = useEnabledSkills()
-  const [defaultCli] = useSetting('pd-default-cli')
   const [sumLang] = useSetting('pd-sum-lang')
   const usable = agents.filter((a) => a.available && !disabledClis.has(a.id))
   const messages = stream.messages
@@ -94,16 +93,22 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   }, [messages.length])
   /** 追问轮实际执行会话的 CLI（SW 回带；头部展示与真实执行一致） */
   const [followAgent, setFollowAgent] = useState<string | null>(null)
-  // 回退链：本轮手选 > 设置的默认 CLI > 第一个可用
-  const effectiveAgent = agentId || (usable.some((a) => a.id === defaultCli) ? defaultCli : '') || usable[0]?.id || 'claude'
-  const running = stream.activeId !== null
+  // effectiveAgent 已由 App 完成整条回退链（本轮手选 > 默认 CLI > 首个可用 > claude）
+  const effectiveAgent = agentId
+  // running：首帧已到（activeId）或 send 后等首帧（pending——SW 提取往返窗口，
+  // 该窗口曾无反馈且双发门失效，重页秒级）
+  const running = stream.activeId !== null || stream.pending
   const canFollowUp = messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text)
   const hasSession = canFollowUp
 
   const wfs = useMemo(() => {
     const order: Record<string, number> = { quick: 0, deep: 1, paper: 2 }
+    // 已知名单按预设序，未知的垫底 9 附近按名称字典序微调（?? 优先级低于 +，括号显式化）
     const rest = [...(workflows.length ? workflows : [{ name: 'quick', description: '快速摘要', builtin: true }])]
-      .sort((a, b) => (order[a.name] ?? 9 + a.name.localeCompare(b.name)) - (order[b.name] ?? 9 + b.name.localeCompare(b.name)))
+      .sort((a, b) =>
+        (order[a.name] ?? (9 + a.name.localeCompare(b.name))) -
+        (order[b.name] ?? (9 + b.name.localeCompare(b.name))),
+      )
     return [{ name: 'default', description: '按输入框内容执行；留空则快速摘要', builtin: true }, ...rest]
   }, [workflows])
 
@@ -538,7 +543,7 @@ function ActionBar({
 
       <button
         onClick={running ? onCancel : onStart}
-        disabled={!running && (!usableCount || !input.trim())}
+        disabled={!running && (!usableCount || (!input.trim() && !attachCount))}
         aria-label={running ? '停止' : '发送'}
         title={running ? '停止' : '发送'}
         className={`pd-primary-btn ${running ? 'running' : ''}`}

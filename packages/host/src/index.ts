@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** pagedive host 入口：--stdio（NM）/ install / probe */
 import { runNative } from './stdio.js'
+import { HOST_VERSION } from './version.js'
 
 const [cmd, ...rest] = process.argv.slice(2)
 
@@ -23,5 +24,5 @@ switch (cmd) {
     break
   }
   default:
-    console.log('pagedive host 0.1.0\n  ai-page-dive install [--ext-id <id>]\n  pagedive probe\n  pagedive --stdio')
+    console.log(`pagedive host ${HOST_VERSION}\n  ai-page-dive install [--ext-id <id>]\n  pagedive probe\n  pagedive --stdio`)
 }

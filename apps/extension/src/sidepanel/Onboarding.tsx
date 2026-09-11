@@ -14,12 +14,13 @@ export function Onboarding() {
   // 探测轮询：3s 起步指数退避封顶 15s（每次 probe 都 spawn 冷 node，固定 3s 白烧进程）；
   // 面板隐藏时暂停（side panel 切走即 hidden），重新可见立即探测
   const delayRef = useRef(3000)
-  const timerRef = useRef<ReturnType<typeof setTimeout>>()
-  // 首次探测起算真实耗时超 90s：最高频卡点是「装好了但 Chrome 没完全重启」
-  // （macOS 关窗口 ≠ 退出）——把 ⌘Q 指引从小字提权为主提示。
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // 卡装检测从「用户复制命令」起算 90s（挂载起算会把「用户还没去终端执行」误判为
+  // 卡住）。最高频卡点是「装好了但 Chrome 没完全重启」（macOS 关窗口 ≠ 退出）——
+  // 把 ⌘Q 指引从小字提权为主提示。
   // 用 Date.now 差值而非累计 delay（快速反复切 tab 会让计划延迟累计虚增，提前误触发）
   const [stuck, setStuck] = useState(false)
-  const firstProbeAtRef = useRef(Date.now())
+  const copiedAtRef = useRef(0)
 
   useEffect(() => {
     let alive = true
@@ -30,7 +31,7 @@ export function Onboarding() {
         if (!alive) return
         if (resp?.ok) location.reload()
         else setForbidden(/forbidden/i.test(String(resp?.nmError ?? '')))
-        if (Date.now() - firstProbeAtRef.current > 90_000) setStuck(true)
+        if (copiedAtRef.current && Date.now() - copiedAtRef.current > 90_000) setStuck(true)
         timerRef.current = setTimeout(probe, delayRef.current)
         delayRef.current = Math.min(delayRef.current * 1.6, 15000)
       })
@@ -53,6 +54,7 @@ export function Onboarding() {
 
   const copy = () => {
     navigator.clipboard.writeText(forbidden ? registerCmd : installCmd).then(() => {
+      if (!copiedAtRef.current) copiedAtRef.current = Date.now()
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     })
@@ -62,7 +64,7 @@ export function Onboarding() {
     <div className="pd-onboarding">
       <div className="pd-onboarding-card">
         <h1 className="pd-onboarding-title">
-          {forbidden ? '本扩展还未登记到本机组件' : '还差一步（仅此一次；已有 Node 约 1 分钟，需装 Node 可能数分钟）'}
+          {forbidden ? '本扩展还未登记到本机组件' : '还差一步（仅此一次；已有 Node 约 1 分钟，需装 Node 约 5-15 分钟）'}
         </h1>
         <p className="pd-onboarding-text">
           {forbidden ? (
@@ -106,7 +108,7 @@ export function Onboarding() {
         {stuck ? (
           <div className="pd-onboarding-stuck" role="alert">
             <p>
-              已持续检测超过 1 分钟。若终端已显示 <code>✅</code> 但本页未进入，
+              复制命令已超过 1 分钟仍未检测到安装完成。若终端已显示 <code>✅</code> 但本页未进入，
               多半是 <strong>Chrome 未完全重启</strong>（macOS 关闭窗口 ≠ 退出）：
               <br />
               请 <strong>⌘Q 完全退出 Chrome</strong> 再重新打开，然后点下方按钮。
@@ -114,7 +116,8 @@ export function Onboarding() {
           </div>
         ) : (
           <p className="pd-onboarding-note">
-            终端看到 <code>✅</code> 即回本页，会自动进入（无需重启浏览器）。
+            终端看到 <code>✅</code> 后回本页，通常会自动进入；若超过 1 分钟未进入，
+            多半需完全重启 Chrome（⌘Q，见下方提示）。
             <br />
             <strong>内容只在本机处理，不经过任何服务器。</strong>
           </p>

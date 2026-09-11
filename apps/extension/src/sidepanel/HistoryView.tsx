@@ -22,6 +22,9 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
     const listener = (m: HostToExt) => {
       if (m.t === 'history-list') setItems((m as HistoryListResultMsg).items)
       if (m.t === 'history-file') setViewing(m as HistoryFileMsg)
+      // 删除结果对账：删除是乐观更新（先移出列表），失败必须回滚——
+      // host 是事实源，重拉列表即恢复；成功帧也重拉对齐（host 落盘后列表序可能变）
+      if (m.t === 'deleted' || (m.t === 'error' && m.code === 'delete-fail')) refresh()
     }
     chrome.runtime.onMessage.addListener(listener)
     refresh()
@@ -33,7 +36,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
   }
 
   // 搜索防抖 250ms：host 侧每次查询全量扫盘，每键击触发会让 IO 随历史量线性恶化
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const debouncedRefresh = (q: string) => {
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => refresh(q), 250)

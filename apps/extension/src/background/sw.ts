@@ -70,7 +70,9 @@ let agentsCache: AgentStatus[] | null = null
 // activeTab 授权链断裂（点总结 → executeScript 被拒 → no-permission，playwright 实证）。
 // 默认走 onClicked → sidePanel.open() 路径：点图标即开面板且手势刷新授权。
 let pinned = false
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch(() => {})
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch((e: unknown) => {
+  console.warn('[pd] setPanelBehavior failed:', e)
+})
 
 // 面板作用域 = tab 维度（锚定页签）：action 点击的 tab 记为 panelTabId 并
 // setOptions(enabled:true)（含 path），同窗口其他 tab 在 onActivated 时逐个
@@ -86,12 +88,17 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch(() =
 // 不随用户切换 tab 而跟随变化。
 let panelTabId: number | null = null
 
-/** 锚定/解除锚定：enable 面板所在 tab、disable 其他 tab（锚定语义的落地开关） */
+/** 锚定/解除锚定：enable 面板所在 tab、disable 其他 tab（锚定语义的落地开关）。
+ * setOptions 被拒是真异常（tab 已关/老 Chrome），静默会让面板收起行为失效无痕 */
 function anchorPanel(tabId: number) {
-  chrome.sidePanel.setOptions({ tabId, path: 'sidepanel.html', enabled: true }).catch(() => {})
+  chrome.sidePanel.setOptions({ tabId, path: 'sidepanel.html', enabled: true }).catch((e: unknown) => {
+    console.warn('[pd] anchorPanel setOptions failed:', e)
+  })
 }
 function unanchorPanel(tabId: number) {
-  chrome.sidePanel.setOptions({ tabId, enabled: false }).catch(() => {})
+  chrome.sidePanel.setOptions({ tabId, enabled: false }).catch((e: unknown) => {
+    console.warn('[pd] unanchorPanel setOptions failed:', e)
+  })
 }
 
 chrome.action.onClicked.addListener((tab) => {
@@ -113,6 +120,7 @@ const isNormalPage = (u?: string) => !!u && !/^(chrome|edge|about|chrome-extensi
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   if (panelTabId === null || panelTabId === tabId) {
     if (panelTabId === tabId) {
+      // 面板未开时无接收端是常态（用户收起了面板），静默即可——勿改成 warn 刷屏
       chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta() }).catch(() => {})
     }
     return
@@ -126,6 +134,7 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (target?.id === tabId && info.status === 'complete' && isNormalPage(tab.url)) {
     target = tab
+    // 同上：面板未开时无接收端是常态，静默
     chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta() }).catch(() => {})
   }
 })
@@ -211,7 +220,9 @@ async function handleMessage(msg: any): Promise<unknown> {
       return { ok: true }
     case 'set-pinned':
       pinned = !!msg.value
-      chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch(() => {})
+      chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch((e: unknown) => {
+        console.warn('[pd] setPanelBehavior failed:', e)
+      })
       return { ok: true }
     case 'nm':
       // panel → host 的通用转发（list-agents / list-workflows / history 等）
@@ -372,6 +383,22 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     return { error: 'unsupported-page', url: tab.url }
   }
 
+  // U1：注入+提取可 await 数秒（重页面）——先把任务位占上（提取窗口内取消/
+  // 换页兜底生效，防双发竞速的隐形重复任务）并下发 reading 占位帧（panel 立即
+  // 出 loading/停止钮，不再秒级零反馈）。占位 page 会在提取成功后被真实 meta 覆盖
+  const taskId = newTaskId()
+  currentAgentId = agentId
+  // 新一轮总结开始：旧会话失效（防切换 CLI 后追问串回旧 agent 的会话）
+  lastSession = null
+  persistSession()
+  currentTask = {
+    taskId,
+    page: { url: tab.url ?? '', title: tab.title ?? '', extractor: 'pending', approxTokens: 0 },
+    content: '',
+  }
+  // 面板未开时无接收端是常态，静默
+  chrome.runtime.sendMessage({ t: 'task-status', taskId, phase: 'reading' }).catch(() => {})
+
   // content script 需 modules → 动态 files 注入（activeTab 授权下用户手势有效）。
   // allFrames：豆包文档等 SPA 正文渲染在 iframe，只注 top frame 会拿到空壳误报
   // 「无内容」——跨域 frame 的注入同样被 activeTab 覆盖（手势授予整个 tab）
@@ -386,17 +413,18 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     })
   if (injectErr) {
     // 授权失效（无手势/已切页）：原样带回错误文本，panel 给重授权指引
+    currentTask = null
     return { error: 'no-permission', detail: injectErr }
   }
   const page = await extractBest(tab.id!)
-  if ('error' in page) return { error: page.error }
+  if ('error' in page) {
+    currentTask = null
+    return { error: page.error }
+  }
+  // 提取窗口内被取消/被新任务顶替（currentTask 已易主）：终止，绝不再发 task-start
+  if (!currentTask || currentTask.taskId !== taskId) return { error: 'cancelled' }
 
   const { contentMarkdown, ...meta } = page
-  const taskId = newTaskId()
-  currentAgentId = agentId
-  // 新一轮总结开始：旧会话失效（防切换 CLI 后追问串回旧 agent 的会话）
-  lastSession = null
-  persistSession()
   currentTask = { taskId, page: meta, content: contentMarkdown }
 
   // 提取成功 → 下发目标页元数据（panel tips 条「正在分享 …」；notice=截断/低置信提示）

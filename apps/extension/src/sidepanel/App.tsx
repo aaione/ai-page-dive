@@ -26,12 +26,17 @@ export interface TaskStreamState {
   messages: ChatMessage[]
   /** 正在生成的 assistant 消息 id */
   activeId: string | null
+  /** 发出后未收到任何任务帧（SW 提取/路由往返窗口）：双发门在首帧到达前靠它兜住 */
+  pending: boolean
+  /** 已终局（done/error）的 taskId 近期记录：同 taskId 迟到 chunk/status 一律拒收——
+   * 否则收割尾巴帧会新开一个永无终局的 streaming 气泡，锁死输入 */
+  finished: string[]
   phase: string
   done: boolean
 }
 
 const BLANK: TaskStreamState = {
-  taskId: null, messages: [], activeId: null, phase: '', done: false,
+  taskId: null, messages: [], activeId: null, pending: false, finished: [], phase: '', done: false,
 }
 
 export interface PageMeta {
@@ -98,6 +103,8 @@ export function App() {
           break
         case 'task-chunk': {
           setStream((s) => {
+            // 已终局任务的迟到 chunk（进程收割尾巴）：拒收——放行会新开永终局气泡
+            if (s.finished.includes(m.taskId)) return s
             // 首帧绑定或已绑定同任务；绑定后不同 taskId = 过期帧（取消后尾随），丢弃
             if (s.taskId !== null && s.taskId !== m.taskId) return s
             const activeId = s.activeId ?? `a${m.taskId}`
@@ -105,20 +112,22 @@ export function App() {
             const idx = messages.findIndex((x) => x.id === activeId)
             if (idx >= 0) messages[idx] = { ...messages[idx], text: messages[idx].text + m.text }
             else messages.push({ id: activeId, role: 'assistant', text: m.text, streaming: true })
-            return { ...s, taskId: m.taskId, activeId, messages }
+            return { ...s, taskId: m.taskId, activeId, pending: false, messages }
           })
           break
         }
         case 'task-status':
-          // status 先于首 chunk 到达（thinking 期数秒）：也置 activeId + 占位消息，
-          // 否则 running=false → 环形 loading / 停止钮 / 光标都不出现
+          // status 先于首 chunk 到达（SW 的 reading 占位帧/host 的 thinking 帧）：
+          // 也置 activeId + 占位消息，否则 running=false → 环形 loading / 停止钮 /
+          // 光标都不出现
           setStream((s) => {
+            if (s.finished.includes(m.taskId)) return s
             if (s.taskId !== null && s.taskId !== m.taskId) return s
             const activeId = s.activeId ?? `a${m.taskId}`
             const messages = s.messages.some((x) => x.id === activeId)
               ? s.messages
               : [...s.messages, { id: activeId, role: 'assistant' as const, text: '', streaming: true }]
-            return { ...s, taskId: m.taskId, activeId, messages, phase: PHASE_LABEL[m.phase] ?? m.phase }
+            return { ...s, taskId: m.taskId, activeId, pending: false, messages, phase: PHASE_LABEL[m.phase] ?? m.phase }
           })
           break
         case 'task-done':
@@ -132,6 +141,10 @@ export function App() {
             }
             return {
               ...s,
+              // 终局即解绑 + 记入 finished：收割前的迟到帧不得重开气泡/劫持新一轮
+              taskId: null,
+              pending: false,
+              finished: [...s.finished, m.taskId].slice(-8),
               done: true,
               activeId: null,
               messages: s.messages.map((msg) =>
@@ -169,7 +182,8 @@ export function App() {
                 ? { ...msg, streaming: false, error: `${ERROR_LABEL[m.code] ?? m.code}: ${m.message}`, isError: true }
                 : msg,
             )
-            return { ...s, taskId: m.taskId, done: true, activeId: null, messages }
+            // 终局即解绑 + 记入 finished（同 task-done：拒迟到帧重开）
+            return { ...s, taskId: null, pending: false, finished: [...s.finished, m.taskId].slice(-8), done: true, activeId: null, messages }
           })
           break
         case '__host-disconnected':
@@ -202,21 +216,31 @@ export function App() {
         : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
         : resp.error === 'no-permission' ? '无提取权限：浏览器要求换页后重新授权——点击工具栏上的 AI PageDive 图标后重试'
         : resp.error === 'empty-content' ? '页面没有可提取的正文'
+        : resp.error === 'cancelled' ? '已取消'
         : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——本次将开始全新总结'
         : String(resp.error)
       setStream((s) => ({
         ...s,
+        // 终局（含 SW reading 占位帧已绑定 taskId 的失败路径）：解绑 + 收尾——
+        // 滤掉空的占位气泡（streaming 且无正文），错误以独立气泡呈现
+        taskId: null,
+        pending: false,
         done: true,
         activeId: null,
-        messages: [...s.messages, { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true }],
+        messages: [
+          ...s.messages.filter((x) => !(x.streaming && !x.text)),
+          { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true },
+        ],
       }))
     }
   }
 
-  /** 发送前插入用户消息气泡 + 重置任务态（新一轮开始） */
+  /** 发送前插入用户消息气泡 + 重置任务态（新一轮开始）。
+   * pending=true：send 后到首个任务帧前的窗口里 running 判定靠它兜住（防双发） */
   const beginTurn = useCallback((text: string) => {
     setStream((s) => ({
       ...BLANK,
+      pending: true,
       messages: [...s.messages, { id: `u${Date.now()}`, role: 'user', text }],
     }))
   }, [])
@@ -230,14 +254,12 @@ export function App() {
     setAgentId(item.agent)
     const msgs: ChatMessage[] = parseHistoryTurns(body)
     setStream({
-      taskId: null,
+      ...BLANK,
+      done: true,
       messages: msgs.length
         ? msgs
         // 空正文（error 历史）：给出占位说明，避免空白气泡 + 误判 hasSession
         : [{ id: `h${item.ts}`, role: 'assistant' as const, text: '（该记录无正文——发送消息将开始全新总结）', error: '该历史记录状态为失败，无对话上下文可续', isError: true }],
-      activeId: null,
-      phase: '',
-      done: true,
     })
     // tips 条同步为该历史条目的来源页
     if (item.title || item.url) setPageMeta({ title: item.title ?? '', url: item.url ?? '' })
