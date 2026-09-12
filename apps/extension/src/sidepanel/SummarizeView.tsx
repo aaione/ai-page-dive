@@ -131,7 +131,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     const text = input.trim()
     if ((!text && !attachments.length) || running || !usable.length) return
     beginTurn(text || `（附件：${attachments.map((a) => a.name).join('、')}）`)
-    if (attachNotice) beginTurn(attachNotice) // 跳过提示随本轮入列（用户消息轨）
+    setAttachNotice('') // 提示已在输入区即时展示（r4-ux F3），发送即消费
     setAttachNotice('')
     setInput('')
     const atts = attachments
@@ -261,6 +261,13 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
               </span>
             ))}
           </div>
+        )}
+        {attachNotice && (
+          // 附件跳过即时提示（r4-ux F3）：此前只在下次发送时以伪用户气泡出现——
+          // 挑选当下零反馈，被丢的附件无从归因
+          <p role="note" style={{ margin: '0 12px 6px', fontSize: 12, color: 'var(--color-pd-danger, #c0392b)' }}>
+            {attachNotice}
+          </p>
         )}
         <ActionBar
           input={input}

@@ -112,12 +112,11 @@ export function App() {
     const ping = () => {
       chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
         if (chrome.runtime.lastError && !resp) {
-          if (tries < 2) {
-            tries += 1
-            retry = setTimeout(ping, 500 * tries)
-            return
-          }
-          return // 重试耗尽仍失败：SW 唤醒异常 ≠ host 未装，保持 loading
+          // 前 2 次 500ms/1s 退避，之后降频 5s 持续轮询（r4-ux F4：耗尽即停会让
+          // loading 成为全产品唯一无自愈出口的状态，对照 Onboarding 的自动轮询）
+          tries += 1
+          retry = setTimeout(ping, tries <= 2 ? 500 * tries : 5_000)
+          return
         }
         setHostOk(!!resp?.ok)
         if (resp?.outdated) setOutdated(String(resp.outdated))
@@ -131,6 +130,7 @@ export function App() {
         if (resp?.activeTask) {
           const at = resp.activeTask as { taskId: string; startedAt: number }
           setStream((s) => {
+            if (s.finished.includes(at.taskId)) return s // 已终局任务（窄竞态）：不重建绑定
             if (s.taskId !== null || s.activeId !== null || s.pending) return s
             const id = `a${at.taskId}`
             return {
@@ -217,6 +217,9 @@ export function App() {
           break
         case 'task-done':
           setStream((s) => {
+            // 已终局任务的迟到 done（r4-ux F2）：拒收——mismatch 分支会顺手收掉
+            // 新任务还在 streaming 的气泡，与其他四个 handler 的台账守卫对齐
+            if (s.finished.includes(m.taskId)) return s
             // 过期帧（取消后旧任务迟到 done）：只收尾 streaming 气泡，不把新一轮定稿
             if (s.taskId !== null && s.taskId !== m.taskId) {
               return {
@@ -279,15 +282,27 @@ export function App() {
         case '__host-disconnected':
           // host 崩溃/被杀（能断连 = 曾连上过 ≠ 未安装）：不闪跳安装引导——卸载面板
           // 丢对话态且「还差一步」文案误导重装（r4-ux）。收尾气泡即可：nmPort.send
-          // 断线自动重 spawn，重试发送即自愈；真死透时重试走 host-not-found → Onboarding
-          setStream((s) => ({
-            ...s,
-            done: true,
-            activeId: null,
-            messages: s.messages.map((msg) =>
-              msg.streaming ? { ...msg, streaming: false, error: '本机组件连接中断——请重试发送', isError: true } : msg,
-            ),
-          }))
+          // 断线自动重 spawn，重试发送即自愈；真死透时重试走 host-not-found → Onboarding。
+          // pending 也必须终局（r4-ux F1）：spawn 窗口断连时 pending=true 且无任何气泡，
+          // 不清则输入锁死至看门狗 120s 且零提示
+          setStream((s) => {
+            const TEXT = '本机组件连接中断——请重试发送'
+            const messages = s.messages.map((msg) =>
+              msg.streaming ? { ...msg, streaming: false, error: TEXT, isError: true } : msg,
+            )
+            const needBubble = s.pending && !messages.some((m) => m.isError)
+            return {
+              ...s,
+              taskId: null,
+              pending: false,
+              done: true,
+              activeId: null,
+              finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
+              messages: needBubble
+                ? [...messages, { id: `e${Date.now()}`, role: 'assistant' as const, text: '', error: TEXT, isError: true }]
+                : messages,
+            }
+          })
           break
       }
     }
@@ -318,6 +333,9 @@ export function App() {
         // 旧轮 send 的迟到取消回调（新对话后重发，SW 提取窗口秒级）：resp.taskId 已
         // 在终局台账——静默丢弃，勿清掉新一轮 pending/滤掉其占位气泡（r4-regression）
         if (typeof resp.taskId === 'string' && s.finished.includes(resp.taskId)) return s
+        // 同类窄漏（r4-impl）：cancelled 在 SW reading 占位帧发出前被顶替——taskId 从
+        // 未进台账，台账守卫拦不住；与当前绑定不符即无事故可报，静默丢弃
+        if (resp.error === 'cancelled' && resp.taskId !== s.taskId) return s
         // 已被 newChat/新会话清场的空 stream = 旧轮 send 的迟到回调——错误气泡注入
         // 全新空会话是新用户首屏最常见的脏态（r3-ux R3-m1），静默丢弃
         if (s.pending === false && s.taskId === null && s.activeId === null && s.messages.length === 0) return s

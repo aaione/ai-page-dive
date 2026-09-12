@@ -213,6 +213,14 @@ describe('Task 状态机', () => {
     expect(p2).toContain('/tmp/f.md')
   })
 
+  it('buildPrompt：不可信围栏恒定注入——自定义 instruction 与内置默认路径都带（r4-sec M1）', () => {
+    // 围栏曾只活在三内置 workflow 正文里：instruction 主路径与 DEFAULT_TASKS 兜底路径裸奔
+    const pInst = buildPrompt(PAGE as any, '/tmp/f.md', 'quick', '用户自定义任务')
+    expect(pInst).toContain('安全边界')
+    const pDefault = buildPrompt(PAGE as any, '/tmp/f.md', 'not-exist-wf')
+    expect(pDefault).toContain('安全边界')
+  })
+
   it('buildPrompt：lang 拼尾部指令，缺省自动无指令', () => {
     const zh = buildPrompt(PAGE as any, '/tmp/f.md', 'quick', undefined, undefined, 'zh')
     expect(zh).toContain('始终使用中文回答')
