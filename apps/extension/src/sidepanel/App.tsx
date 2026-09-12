@@ -100,7 +100,7 @@ export function App() {
           ],
         }
       })
-    }, Math.max(WATCHDOG_MS - elapsed, 1_000))
+    }, Math.max(WATCHDOG_MS - elapsed, 25_000))
     return () => clearTimeout(timer)
   }, [running, stream.aliveAt])
 
@@ -277,19 +277,24 @@ export function App() {
         : resp.error === 'cancelled' ? '已取消'
         : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——请点「新对话」后重新发送本次问题'
         : String(resp.error)
-      setStream((s) => ({
-        ...s,
-        // 终局（含 SW reading 占位帧已绑定 taskId 的失败路径）：解绑 + 收尾——
-        // 滤掉空的占位气泡（streaming 且无正文），错误以独立气泡呈现
-        taskId: null,
-        pending: false,
-        done: true,
-        activeId: null,
-        messages: [
-          ...s.messages.filter((x) => !(x.streaming && !x.text)),
-          { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true },
-        ],
-      }))
+      setStream((s) => {
+        // 已被 newChat/新会话清场的空 stream = 旧轮 send 的迟到回调——错误气泡注入
+        // 全新空会话是新用户首屏最常见的脏态（r3-ux R3-m1），静默丢弃
+        if (s.pending === false && s.taskId === null && s.activeId === null && s.messages.length === 0) return s
+        return {
+          ...s,
+          // 终局（含 SW reading 占位帧已绑定 taskId 的失败路径）：解绑 + 收尾——
+          // 滤掉空的占位气泡（streaming 且无正文），错误以独立气泡呈现
+          taskId: null,
+          pending: false,
+          done: true,
+          activeId: null,
+          messages: [
+            ...s.messages.filter((x) => !(x.streaming && !x.text)),
+            { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true },
+          ],
+        }
+      })
     }
   }
 

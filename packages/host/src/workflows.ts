@@ -121,11 +121,15 @@ export async function saveWorkflow(input: {
       .then(() => true)
       .catch(() => false)
     if (clash) throw new Error(`已存在同名用户模式「${input.name}」，未保存——请换一个名称`)
-    await rm(join(USER_DIR, input.originalName), { recursive: true, force: true })
   }
   const dir = join(USER_DIR, input.name)
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, 'WORKFLOW.md'), buildWorkflowMd(input), 'utf8')
+  // 删旧目录放在写新成功之后（r3-sec m2）：先 rm 再写曾在写失败时把用户原创模式
+  // 直接丢掉——非原子操作里，可重建的（新目录）先做，不可恢复的（删旧）最后做
+  if (input.originalName && input.originalName !== input.name) {
+    await rm(join(USER_DIR, input.originalName), { recursive: true, force: true })
+  }
 }
 
 /** 只删用户副本（内置不可删；用户副本删除 = 恢复内置默认） */

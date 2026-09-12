@@ -223,6 +223,17 @@ describe('Task 状态机', () => {
     expect(auto).not.toContain('Always respond in English')
   })
 
+  it('buildPrompt：非拉丁文字标题保留（sanitizeMeta 精确区间，r3-impl M1 回归）', () => {
+    // 曾误删 U+007F-U+2061 整段：俄语/希腊/带变音拉丁全部清空
+    const ru = buildPrompt({ ...PAGE, title: 'Привет мир' }, '/tmp/f.md', 'quick')
+    expect(ru).toContain('Привет мир')
+    const mixed = buildPrompt({ ...PAGE, title: 'Café naïve Γεια σου 深度总结' }, '/tmp/f.md', 'quick')
+    expect(mixed).toContain('Café naïve Γεια σου 深度总结')
+    // 零宽/控制字符仍被清（注入防线不回退）
+    const zw = buildPrompt({ ...PAGE, title: 'a\u200bb\x00c' }, '/tmp/f.md', 'quick')
+    expect(zw).toContain('a b c')
+  })
+
   it('expandWorkflowPlaceholders：四占位符展开，未知/大小写变体原样保留', () => {
     const out = expandWorkflowPlaceholders(
       '看 {url} 和 {title}，正文在 {file}，元数据 {meta}；未知 {foo} 与 {URL} 不动',

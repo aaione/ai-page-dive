@@ -30,6 +30,9 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
   // 3s 后仍无回帧 → host 未连接，显示连接提示而非误导性的「暂无历史」
   const [replied, setReplied] = useState(false)
   const [waited, setWaited] = useState(false)
+  // 条目读取失败提示（文件被外部删除/权限变化——r3-ux R3-m2：零反馈会让用户
+  // 以为「按钮坏了」）：4s 自清
+  const [readError, setReadError] = useState(false)
   useEffect(() => {
     const t = setTimeout(() => setWaited(true), 3000)
     return () => clearTimeout(t)
@@ -42,6 +45,13 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
         // 只收在途那条的回帧（同 Settings workflow-file 守卫）：迟到旧帧丢掉
         if (pendingPathRef.current && (m as HistoryFileMsg).path !== pendingPathRef.current) return
         setViewing(m as HistoryFileMsg)
+      }
+      // 读取失败（文件被外部删除/权限变化）：清在途 path + 一次性提示，
+      // 不再停留在「点了没反应」（r3-ux R3-m2）
+      if (m.t === 'error' && m.code === 'read-fail') {
+        pendingPathRef.current = null
+        setReadError(true)
+        setTimeout(() => setReadError(false), 4000)
       }
       // 删除结果对账：删除是乐观更新（先移出列表），失败必须回滚——
       // host 是事实源，重拉列表即恢复；成功帧也重拉对齐（host 落盘后列表序可能变）
@@ -140,6 +150,11 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
           </svg>
         </button>
       </div>
+      {readError && (
+        <p className="pd-history-empty" role="alert" style={{ color: 'var(--color-pd-danger, #c0392b)' }}>
+          该记录读取失败（文件可能已被移动或删除）
+        </p>
+      )}
       <ul className="pd-history-list">
         {items.map((it) => (
           <li key={it.path} className="pd-history-item">
