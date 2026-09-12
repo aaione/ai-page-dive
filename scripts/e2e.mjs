@@ -103,17 +103,26 @@ const st = await panel.evaluate(async () => {
 })
 console.log('panel state:', JSON.stringify(st))
 
-// 点击总结（先把 http 页带回前台：SW fallback 以 active tab 为目标）
+// 点击总结（先把 http 页带回前台：SW fallback 以 active tab 为目标）。
+// 聊天式 UI：主按钮 aria-label「发送」，空输入 disabled——先填指令再发送
 await page.bringToFront()
-await panel.getByRole('button', { name: /深度总结|总结当前页/ }).first().click({ timeout: 10_000 })
+await panel.getByRole('textbox', { name: '自定义指令' }).fill('用三句话总结这个页面', { timeout: 10_000 })
+await panel.getByRole('button', { name: '发送' }).click({ timeout: 10_000 })
 console.log('▶ summarize clicked')
 
+// 完成态 = 气泡收尾（MessageActions 动作条渲染）或任一错误文案。
+// （旧判定 /tokens:/ 已失效：聊天式 UI 不再渲染 tokens 行）
 const deadline = Date.now() + 300_000
+let ended = false
 while (Date.now() < deadline) {
   await panel.waitForTimeout(4000)
-  const t = await panel.evaluate(() => document.body.innerText)
-  if (/tokens:|CLI 报告运行失败|启动失败|超时|已取消|无提取权限|没有可总结|无法提取|没有可提取/.test(t)) break
+  const st = await panel.evaluate(() => ({
+    done: !!document.querySelector('.pd-chat-actions'), // 收尾气泡的动作条（复制/下载）
+    err: /CLI 报告运行失败|启动失败|响应超时|已取消|无提取权限|没有可总结|无法提取|没有可提取|页面没有可提取/.test(document.body.innerText),
+  }))
+  if (st.done || st.err) { ended = true; break }
 }
+if (!ended) console.log('⚠ 5min 未观测到终局（可能仍在生成）')
 
 const summary = await panel.evaluate(() => document.body.innerText)
 console.log('=== panel tail ===')
@@ -129,7 +138,12 @@ const hist = await panel.evaluate(async () => {
 console.log('=== history ===')
 console.log(hist)
 
-const pass = /tokens:/.test(summary) && !/CLI 报告运行失败|启动失败/.test(summary)
+// 判定：有收尾气泡动作条（真实输出完成）且无错误文案
+const finalState = await panel.evaluate(() => ({
+  hasActions: !!document.querySelector('.pd-chat-actions'),
+  hasError: /CLI 报告运行失败|启动失败|响应超时|已取消/.test(document.body.innerText),
+}))
+const pass = finalState.hasActions && !finalState.hasError
 console.log(pass ? '\n✅ E2E PASS' : '\n⛔ E2E INCOMPLETE')
 
 // 截图存档
