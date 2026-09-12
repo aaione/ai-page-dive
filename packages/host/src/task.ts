@@ -215,9 +215,12 @@ export class Task {
       return
     }
 
-    // spawn 成功后又已取消（cancel 落在 await 窗口内）：立即收割，勿让进程跑满超时
+    // spawn 成功后又已取消（cancel 落在 await 窗口内）：立即收割，勿让进程跑满超时。
+    // 必发 onError('cancelled')——否则 stdio 侧 tasks Map 不 delete（任务泄漏 + 心跳
+    // 永续，SW 不回收），panel 收不到终局帧 running 永真、输入锁死（唯一出路「新对话」）
     if (this.cancelled) {
       this.proc.reap()
+      this.cb.onError('cancelled', 'task cancelled')
       return
     }
 
@@ -313,11 +316,13 @@ export class Task {
 
   private sendChunk(text: string): void {
     // NM 单帧 ≤1MB（字节维度）：CJK UTF-8 每字符 3 字节，按字符数切会击穿上限——
-    // 按 Buffer.byteLength 收缩切片（尾段同样受检：短字符数 ≠ 短字节）
+    // 按 JSON 序列化后字节收缩切片。用 JSON.stringify 而非裸 Buffer.byteLength：
+    // 帧最终是 JSON（\ → \\、" → \"、控制字符 → \uXXXX），转义密集页最坏 2x 膨胀，
+    // 只测原文字节会让 encodeFrame 在 nm.ts 处 throw → chunk 静默丢失、正文缺段
     let start = 0
     for (;;) {
       let end = Math.min(start + MAX_CHUNK, text.length)
-      while (end > start && Buffer.byteLength(text.slice(start, end)) > MAX_CHUNK) {
+      while (end > start && Buffer.byteLength(JSON.stringify(text.slice(start, end))) > MAX_CHUNK) {
         end = Math.floor((start + end) / 2)
       }
       this.cb.onChunk(text.slice(start, end), this.chunkSeq++)
@@ -484,7 +489,9 @@ export function buildOutline(content: string): string {
     const m = line.match(/^(#{1,3})\s+(.+)$/)
     if (!m) continue
     const indent = '  '.repeat(m[1].length - 1)
-    const item = `${indent}- ${m[2].trim()}`
+    // 标题文本页面完全可控、未经消毒——「正文只走文件」围栏的唯一旁路。过 sanitizeMeta
+    // 去控制字符/零宽/bidi + 单行化（防逐行铺伪造指令），与 meta 字段同一信任边界
+    const item = `${indent}- ${sanitizeMeta(m[2].trim(), 200)}`
     if (total + item.length > 2000 || out.length >= 60) break
     out.push(item)
     total += item.length
@@ -506,7 +513,9 @@ export function buildPrompt(
   const task =
     workflowBody ??
     DEFAULT_TASKS[workflow] ??
-    `请深度总结这个网页。（workflow: ${workflow} 未找到，使用默认）`
+    // workflow 名进 prompt 文本前消毒（与 skills/getSkillBodies 的 assert 对称）：
+    // 虽仅受信 SW 能发任意 workflow 名，仍不让未校验字符串直拼进 CLI 指令
+    `请深度总结这个网页。（workflow: ${sanitizeMeta(workflow, 64)} 未找到，使用默认）`
   const meta = pageMetaLine(page)
   // 技能段：每个技能一行小标题 + 正文，--- 分隔；用户启用的可选增强指令（风格/输出格式等）
   const skillsSection = skills?.length

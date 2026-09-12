@@ -45,22 +45,33 @@ describe('registerManifests', () => {
     expect(wrapper).toContain('/usr/bin/env node')
   })
 
+  // Chrome 扩展 ID 恒为 32 位 a-p——用合法 fixture（install 已对 id 做该校验）
+  const ID_A = 'a'.repeat(32)
+  const ID_B = 'b'.repeat(32)
+
   it('origins union：先登记 X 再空注册，X 保留（postinstall 升级不丢 ID）', async () => {
-    await registerManifests(['aaaa'], true)
+    await registerManifests([ID_A], true)
     const p = (await registerManifests([], true))[0]
     const manifest = JSON.parse(await readFile(p, 'utf8'))
-    expect(manifest.allowed_origins).toContain('chrome-extension://aaaa/')
+    expect(manifest.allowed_origins).toContain(`chrome-extension://${ID_A}/`)
     // 重复登记同 ID 不重复
-    await registerManifests(['aaaa'], true)
+    await registerManifests([ID_A], true)
     const dedup = JSON.parse(await readFile(p, 'utf8'))
-    expect(dedup.allowed_origins.filter((o: string) => o === 'chrome-extension://aaaa/')).toHaveLength(1)
+    expect(dedup.allowed_origins.filter((o: string) => o === `chrome-extension://${ID_A}/`)).toHaveLength(1)
   })
 
   it('半写崩溃不留脏 manifest：残留 .tmp 不影响重写', async () => {
     await writeFile(join(NM_DIR, 'com.pagedive.host.json.tmp'), '半写的垃圾{{{')
-    const p = await freshRegister(['bbbb'])
+    const p = await freshRegister([ID_B])
     const manifest = JSON.parse(await readFile(p, 'utf8'))
-    expect(manifest.allowed_origins).toContain('chrome-extension://bbbb/')
+    expect(manifest.allowed_origins).toContain(`chrome-extension://${ID_B}/`)
+  })
+
+  it('非法扩展 ID（非 32 位 a-p）被跳过，不污染 allowed_origins', async () => {
+    // 合法用 p*32（a-p 是 16 字母 a..p，q 及以后不合法）；非法：4 位、含大写/连字符、33 位
+    const p = await freshRegister(['aaaa', 'NOT-VALID', 'z'.repeat(33), 'p'.repeat(32)])
+    const manifest = JSON.parse(await readFile(p, 'utf8'))
+    expect(manifest.allowed_origins).toEqual([`chrome-extension://${'p'.repeat(32)}/`])
   })
 })
 

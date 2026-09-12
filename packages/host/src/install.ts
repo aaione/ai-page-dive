@@ -77,6 +77,12 @@ export async function registerManifests(extIds: string[], quiet = false): Promis
       }
     } catch { /* 首次 */ }
     for (const id of extIds) {
+      // Chrome 扩展 ID 恒为 32 位 a-p（mpdecimal）。畸形 id 原样进 allowed_origins
+      // 只会写出永不匹配的死条目——直接跳过并提示，避免污染 manifest
+      if (!/^[a-p]{32}$/.test(id)) {
+        if (!quiet) console.log(`⚠️  跳过非法扩展 ID（应为 32 位 a-p）：${JSON.stringify(id)}`)
+        continue
+      }
       const origin = `chrome-extension://${id}/`
       if (!origins.includes(origin)) origins.push(origin)
     }

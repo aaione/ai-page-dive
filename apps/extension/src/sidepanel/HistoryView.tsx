@@ -14,13 +14,27 @@ const hostOf = (u: string) => {
 export function HistoryView({ onClose, onResume }: { onClose: () => void; onResume: (item: HistoryItem, body: string) => void }) {
   const [items, setItems] = useState<HistoryItem[]>([])
   const [query, setQuery] = useState('')
+  // listener 在 [] effect 里注册、捕获首渲染的 refresh（其默认参数 query 恒为 ''）：
+  // 搜索态下删除会 stale-refresh 成全量列表，搜索框却仍显示关键词（UI 自相矛盾）。
+  // query 入 ref，refresh 读 ref.current 保住过滤上下文
+  const queryRef = useRef('')
+  queryRef.current = query
   const [viewing, setViewing] = useState<HistoryFileMsg | null>(null)
   // 当前查看项对应的列表元数据（含 sessionId）
   const [viewingItem, setViewingItem] = useState<HistoryItem | null>(null)
 
+  // 是否收到过 history-list 回帧（= host 已连接）。首帧到达前 3s 视为加载中；
+  // 3s 后仍无回帧 → host 未连接，显示连接提示而非误导性的「暂无历史」
+  const [replied, setReplied] = useState(false)
+  const [waited, setWaited] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setWaited(true), 3000)
+    return () => clearTimeout(t)
+  }, [])
+
   useEffect(() => {
     const listener = (m: HostToExt) => {
-      if (m.t === 'history-list') setItems((m as HistoryListResultMsg).items)
+      if (m.t === 'history-list') { setItems((m as HistoryListResultMsg).items); setReplied(true) }
       if (m.t === 'history-file') setViewing(m as HistoryFileMsg)
       // 删除结果对账：删除是乐观更新（先移出列表），失败必须回滚——
       // host 是事实源，重拉列表即恢复；成功帧也重拉对齐（host 落盘后列表序可能变）
@@ -31,7 +45,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
     return () => chrome.runtime.onMessage.removeListener(listener)
   }, [])
 
-  function refresh(q = query) {
+  function refresh(q = queryRef.current) {
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-list', query: q || undefined } })
   }
 
@@ -164,7 +178,11 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
             </button>
           </li>
         ))}
-        {!items.length && <p className="pd-history-empty">暂无历史</p>}
+        {!items.length && (
+          replied ? <p className="pd-history-empty">暂无历史</p>
+          : waited ? <p className="pd-history-empty">本机组件未连接，历史暂不可读</p>
+          : <p className="pd-history-empty">加载中…</p>
+        )}
       </ul>
     </div>
   )

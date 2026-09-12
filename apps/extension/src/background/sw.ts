@@ -25,6 +25,8 @@ let currentTask: {
   content: string
   /** 发送侧总字符数（done 片 total）：content-received 对账用 */
   expectedChars?: number
+  /** 任务起跑时刻（task-alive 的 elapsedMs 计算，给 panel 进度感） */
+  startedAt: number
 } | null = null
 
 // 上一轮完成的会话（追问用）：agent + CLI 会话 id + 首轮历史文件路径。
@@ -35,6 +37,10 @@ let currentTask: {
 let lastSession: { agentId: string; sessionId: string; historyPath?: string } | null = null
 // 当前任务用的 agent（task-meta 到达时此刻的 agent 即会话归属）
 let currentAgentId = 'claude'
+// 会话态是否已被本 SW 生命周期内的显式动作（summarize/resume-history/new-session）触碰。
+// restoreSession 是异步微任务，冷启动同 tick 若已被消息设置/清空，不得用旧持久化态覆盖
+// （尤其 new-session 显式清空 lastSession=null，无条件恢复会把旧会话「复活」）
+let sessionTouched = false
 
 /** lastSession/currentAgentId/lastModels 的 session 级持久化（SW 回收后恢复）。
  * 防御式访问：storage 权限缺失/老 Chrome 时优雅退化为纯内存（旧行为），
@@ -50,9 +56,13 @@ void restoreSession()
 async function restoreSession() {
   try {
     const s = (await chrome.storage?.session?.get?.(['lastSession', 'currentAgentId', 'lastModels'])) as Record<string, any> | undefined
-    if (s?.lastSession) lastSession = s.lastSession
-    if (s?.currentAgentId) currentAgentId = s.currentAgentId
-    if (Array.isArray(s?.lastModels)) for (const [k, v] of s.lastModels) lastModels.set(k, v)
+    // 已被显式动作触碰（含 new-session 清空）则不恢复会话/agent——旧持久化态不得复活。
+    // lastModels 是纯展示缓存，逐 key 补全无害，不受 touched 约束
+    if (!sessionTouched) {
+      if (s?.lastSession) lastSession = s.lastSession
+      if (s?.currentAgentId) currentAgentId = s.currentAgentId
+    }
+    if (Array.isArray(s?.lastModels)) for (const [k, v] of s.lastModels) if (!lastModels.has(k)) lastModels.set(k, v)
   } catch { /* 无 storage 权限：退化纯内存 */ }
 }
 // 每个 CLI 最近使用的模型（下拉展示用）：agentId → model。
@@ -204,6 +214,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       const { agentId, sessionId, historyPath } = msg
       if (!agentId || !sessionId) return { error: 'bad-request' }
       if (currentTask) cancelCurrent()
+      sessionTouched = true // 显式设置会话：restoreSession 微任务不得用旧态覆盖
       lastSession = { agentId, sessionId, historyPath }
       currentAgentId = agentId
       persistSession()
@@ -215,6 +226,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       // 面板「新对话」：在跑的任务走既有取消路径，lastSession 清空——
       // 下一轮总结全新开始（不再 resume 上一条 CLI 会话）
       if (currentTask) cancelCurrent()
+      sessionTouched = true // 显式清空：restoreSession 微任务不得让旧会话「复活」
       lastSession = null
       persistSession()
       return { ok: true }
@@ -275,8 +287,17 @@ nmPort.onMessage((m) => {
   ) {
     currentTask = null
   }
-  // host 心跳帧：仅保活（消息活动重置 SW idle 计时器），不转发给 panel
-  if (msg?.t === 'heartbeat') return
+  // host 心跳帧：保活（消息活动重置 SW idle 计时器）+ 转译成 task-alive 喂 panel 看门狗。
+  // 不原样转发 heartbeat（避免 UI 出现 heartbeat 字样）；host 活着就有 20s 心跳，panel
+  // 看门狗据此续命——检测的是「host/SW 死」而非「UI 长时间无内容帧」（codex 思考期静默）
+  if (msg?.t === 'heartbeat') {
+    if (currentTask) {
+      chrome.runtime
+        .sendMessage({ t: 'task-alive', taskId: currentTask.taskId, elapsedMs: Date.now() - currentTask.startedAt })
+        .catch(() => {})
+    }
+    return
+  }
   // 正文完整性回执：与发送侧 total 对账，不一致 = NM 途中丢片——取消任务。
   // 半截正文会被 CLI 总结得「有模有样」，比直接失败更误导
   if (msg?.t === 'content-received' && currentTask && msg.taskId === currentTask.taskId) {
@@ -329,7 +350,7 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
     },
   })
   if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
-  currentTask = { taskId, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '' }
+  currentTask = { taskId, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
   // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）
   nmPort.send({ t: 'task-content', taskId, seq: 0, text: '', done: true })
   return { ok: true, taskId }
@@ -389,12 +410,14 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   const taskId = newTaskId()
   currentAgentId = agentId
   // 新一轮总结开始：旧会话失效（防切换 CLI 后追问串回旧 agent 的会话）
+  sessionTouched = true // 显式起新总结：restoreSession 微任务不得复活旧会话
   lastSession = null
   persistSession()
   currentTask = {
     taskId,
     page: { url: tab.url ?? '', title: tab.title ?? '', extractor: 'pending', approxTokens: 0 },
     content: '',
+    startedAt: Date.now(),
   }
   // 面板未开时无接收端是常态，静默
   chrome.runtime.sendMessage({ t: 'task-status', taskId, phase: 'reading' }).catch(() => {})
@@ -425,7 +448,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   if (!currentTask || currentTask.taskId !== taskId) return { error: 'cancelled' }
 
   const { contentMarkdown, ...meta } = page
-  currentTask = { taskId, page: meta, content: contentMarkdown }
+  currentTask = { taskId, page: meta, content: contentMarkdown, startedAt: currentTask?.startedAt ?? Date.now() }
 
   // 提取成功 → 下发目标页元数据（panel tips 条「正在分享 …」；notice=截断/低置信提示）
   chrome.runtime.sendMessage({ t: 'page-meta', page: { title: tab.title ?? meta.title, url: tab.url ?? meta.url, favIconUrl: tab.favIconUrl, notice: meta.notice } }).catch(() => {})
@@ -440,8 +463,9 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     return { error: 'host-not-found', lastError: nmPort.lastError }
   }
 
-  // 正文分片 ≤512KB 字节维度（CJK 3 字节/字符，按字符切会击穿 NM 1MB——
-  // 与 host 侧 sendChunk 同一标准：字符数起步、超字节就二分收缩）。
+  // 正文分片 ≤512KB（JSON 序列化后字节维度，与 host 侧 sendChunk 同一标准）。
+  // 用 JSON.stringify 而非裸 Blob.size：帧最终是 JSON，\ / " / 控制字符转义最坏 2x
+  // 膨胀，只测原文字节会让转义密集页击穿 NM 1MB 帧限。
   // done 片带 total：host 回 content-received 对账，丢片即取消（宁可失败不可半截总结）
   const CH = 512 * 1024
   let i = 0
@@ -449,7 +473,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   let total = 0
   while (i < contentMarkdown.length) {
     let end = Math.min(i + CH, contentMarkdown.length)
-    while (end > i && new Blob([contentMarkdown.slice(i, end)]).size > CH) {
+    while (end > i && new Blob([JSON.stringify(contentMarkdown.slice(i, end))]).size > CH) {
       end = Math.floor((i + end) / 2)
     }
     const done = end >= contentMarkdown.length

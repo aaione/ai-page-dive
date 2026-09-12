@@ -108,15 +108,17 @@ export function Onboarding() {
         {stuck ? (
           <div className="pd-onboarding-stuck" role="alert">
             <p>
-              复制命令已超过 1 分钟仍未检测到安装完成。若终端已显示 <code>✅</code> 但本页未进入，
-              多半是 <strong>Chrome 未完全重启</strong>（macOS 关闭窗口 ≠ 退出）：
+              {forbidden
+                ? '复制命令已超过 1 分半仍未生效。登记通常立即生效，多半是 '
+                : '复制命令已超过 1 分半仍未检测到安装完成。若终端已显示 ✅ 但本页未进入，多半是 '}
+              <strong>Chrome 未完全重启</strong>（macOS 关闭窗口 ≠ 退出）：
               <br />
               请 <strong>⌘Q 完全退出 Chrome</strong> 再重新打开，然后点下方按钮。
             </p>
           </div>
         ) : (
           <p className="pd-onboarding-note">
-            终端看到 <code>✅</code> 后回本页，通常会自动进入；若超过 1 分钟未进入，
+            终端看到 <code>✅</code> 后回本页，通常会自动进入；若超过 1 分半未进入，
             多半需完全重启 Chrome（⌘Q，见下方提示）。
             <br />
             <strong>内容只在本机处理，不经过任何服务器。</strong>

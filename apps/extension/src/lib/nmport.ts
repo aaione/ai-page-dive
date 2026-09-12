@@ -75,8 +75,16 @@ export class NmPort {
 
   send(msg: ExtToHost): boolean {
     if (!this.connect()) return false
-    this.port!.postMessage(msg)
-    return true
+    try {
+      this.port!.postMessage(msg)
+      return true
+    } catch {
+      // host 刚死但 onDisconnect 尚未派发（下一 tick）：port 仍非 null，postMessage
+      // 同步抛「Attempting to use a disconnected port object」。清 port 让下次 connect
+      // 重建，返回 false 让上层按 host-not-found 处理（不让异常冒泡污染 currentTask 清理）
+      this.port = null
+      return false
+    }
   }
 
   onMessage(h: (m: HostToExt) => void): void {

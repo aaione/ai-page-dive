@@ -13,6 +13,8 @@ interface Props {
   beginTurn: (text: string) => void
   beginSession: () => void
   pageMeta: PageMeta | null
+  /** 会话是否可追问（CLI 回带过 sessionId）：codex 无 sessionId → false，关掉假追问入口 */
+  resumable: boolean
 }
 
 /** 读 localStorage 的 JSON string[]（容错：坏数据/非数组一律回退默认） */
@@ -71,7 +73,7 @@ export function useSetting(key: string): [string, (v: string) => void] {
   return [v, set]
 }
 
-export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta }: Props) {
+export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, resumable }: Props) {
   const disabledClis = useDisabledClis()
   const getEnabledSkills = useEnabledSkills()
   const [sumLang] = useSetting('pd-sum-lang')
@@ -93,12 +95,25 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   }, [messages.length])
   /** 追问轮实际执行会话的 CLI（SW 回带；头部展示与真实执行一致） */
   const [followAgent, setFollowAgent] = useState<string | null>(null)
+  // 会话切换（新对话/历史恢复：首条消息 id 变）时重置 followAgent——否则历史恢复后
+  // 完成任一轮，头部显示的是上一会话遗留的 followAgent（显示与真实执行不符）。
+  // 历史恢复的 agent 已由 App 写入 agentId（effectiveAgent），无需在此额外取值
+  const firstMsgId = stream.messages[0]?.id ?? ''
+  const prevFirstId = useRef(firstMsgId)
+  useEffect(() => {
+    if (prevFirstId.current !== firstMsgId) {
+      prevFirstId.current = firstMsgId
+      setFollowAgent(null)
+    }
+  }, [firstMsgId])
   // effectiveAgent 已由 App 完成整条回退链（本轮手选 > 默认 CLI > 首个可用 > claude）
   const effectiveAgent = agentId
   // running：首帧已到（activeId）或 send 后等首帧（pending——SW 提取往返窗口，
   // 该窗口曾无反馈且双发门失效，重页秒级）
   const running = stream.activeId !== null || stream.pending
-  const canFollowUp = messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text)
+  // hasSession 需 CLI 可追问（resumable：回带过 sessionId）——codex 无 sessionId 时
+  // 有完整回答但不可 resume，显示「继续追问…」会让追问必得 session-lost（误导）
+  const canFollowUp = resumable && messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text)
   const hasSession = canFollowUp
 
   const wfs = useMemo(() => {
@@ -171,6 +186,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   function newChat() {
     beginSession()
     setInput('')
+    // followAgent 不重置会让新会话头部/下拉显示上一会话遗留的 CLI（claude 追问过后
+    // 切 codex 首轮，头部仍显示 claude——显示与真实执行不符）
+    setFollowAgent(null)
     chrome.runtime.sendMessage({ t: 'new-session' }).catch(() => {})
   }
 
@@ -192,6 +210,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           items={usable.map((a) => ({ key: a.id, label: a.id, version: a.version, model: a.model }))}
           fallback="无可用 CLI"
           ariaLabel="选择 AI CLI"
+          disabled={hasSession}
+          disabledTitle="追问沿用首轮 CLI"
         />
         <WorkflowDropdown
           workflow={workflow}
@@ -202,7 +222,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       </div>
 
       <div className="pd-content" role="region" aria-live="polite">
-        {messages.length === 0 && <Placeholder />}
+        {messages.length === 0 && <Placeholder clis={usable.map((a) => a.id)} />}
         {messages.map((m) =>
           m.role === 'user' ? (
             <div key={m.id} className="pd-chat-user">
@@ -418,16 +438,21 @@ function MessageActions({ text, onNewChat }: { text: string; onNewChat: () => vo
 }
 
 export function ModelDropdown({
-  value, onChange, items, fallback, ariaLabel,
+  value, onChange, items, fallback, ariaLabel, disabled, disabledTitle,
 }: {
   value: string
   onChange: (key: string) =>  void
   items: { key: string; label: string; version?: string; model?: string }[]
   fallback?: string
   ariaLabel?: string
+  disabled?: boolean
+  disabledTitle?: string
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+
+  // 追问轮切禁用时若菜单开着必须收起（否则残留可点的过期菜单）
+  useEffect(() => { if (disabled) setOpen(false) }, [disabled])
 
   useEffect(() => {
     if (!open) return
@@ -448,9 +473,11 @@ export function ModelDropdown({
   const selected = items.find((it) => it.key === value)
 
   return (
-    <div ref={ref} className="pd-dropdown">
+    <div ref={ref} className={`pd-dropdown ${disabled ? 'inactive' : ''}`}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => { if (!disabled) setOpen((o) => !o) }}
+        disabled={disabled}
+        title={disabled ? disabledTitle : undefined}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -598,14 +625,34 @@ function PageTips({ meta }: { meta: PageMeta }) {
   )
 }
 
-function Placeholder() {
+function Placeholder({ clis }: { clis: string[] }) {
+  // 无可用 CLI：给出明确安装指引而非让用户对着灰按钮/无反应回车猜（F10）
+  if (!clis.length) {
+    return (
+      <div className="pd-placeholder">
+        <p className="pd-placeholder-title">未检测到本机 AI CLI</p>
+        <p className="pd-placeholder-hint">
+          请先安装并登录 <span className="pd-mono">claude</span> 或 <span className="pd-mono">codex</span>
+          <br />
+          安装后回到本页即可使用 · 内容只在本机处理
+        </p>
+      </div>
+    )
+  }
+  // 动态渲染实际检测到的 CLI（不再硬编码 opencode，避免未装者误以为可用，F14）
   return (
     <div className="pd-placeholder">
       <p className="pd-placeholder-title">想了解这个网页的什么？</p>
       <p className="pd-placeholder-hint">
         直接在下方输入问题，或选择一种总结模式
         <br />
-        <span className="pd-mono">claude</span> / <span className="pd-mono">codex</span> / <span className="pd-mono">opencode</span> · 内容只在本机处理
+        {clis.map((id, i) => (
+          <span key={id}>
+            {i > 0 && ' / '}
+            <span className="pd-mono">{id}</span>
+          </span>
+        ))}
+        {' · 内容只在本机处理'}
       </p>
     </div>
   )

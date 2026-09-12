@@ -33,10 +33,15 @@ export interface TaskStreamState {
   finished: string[]
   phase: string
   done: boolean
+  /** 本会话是否可追问（CLI 回带过 sessionId）：codex 不产 sessionId，据此关掉
+   * 「继续追问…」假入口，避免追问必得 session-lost */
+  resumable: boolean
+  /** 最后一次收到 host 存活信号（任一任务帧或 task-alive 心跳）的时刻——看门狗据此判死 */
+  aliveAt: number
 }
 
 const BLANK: TaskStreamState = {
-  taskId: null, messages: [], activeId: null, pending: false, finished: [], phase: '', done: false,
+  taskId: null, messages: [], activeId: null, pending: false, finished: [], phase: '', done: false, resumable: false, aliveAt: 0,
 }
 
 export interface PageMeta {
@@ -66,6 +71,39 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // 看门狗：SW 被 Chrome 回收（OOM/更新/崩溃）时 NM port 随之消亡，host 也随之被终止，
+  // 「心跳线」断——不再有任何 task-alive 帧。看门狗盯的是**host 存活**（心跳），不是
+  // 「UI 有无内容帧」：host 活着就每 HEARTBEAT_MS 一次 task-alive（SW 由 heartbeat 转译），
+  // codex 深度思考期整段静默无 chunk 但心跳照常 → 不误判（修复 R2-B1 的关键）。
+  // 依赖 aliveAt（任一存活信号刷新）而非整个 stream：避免每 chunk 重建 timer（R2-m6）。
+  const running = stream.activeId !== null || stream.pending
+  useEffect(() => {
+    if (!running) return
+    // WATCHDOG_MS = 6 × host 心跳间隔（stdio.ts HEARTBEAT 20s）：连丢 6 次心跳才判死，
+    // 容忍偶发丢帧/SW 短暂繁忙。三常量（此处 / heartbeat / 任务超时）关联见各处注释
+    const elapsed = Date.now() - stream.aliveAt
+    const timer = setTimeout(() => {
+      setStream((s) => {
+        if (s.activeId === null && !s.pending) return s
+        return {
+          ...s,
+          taskId: null,
+          pending: false,
+          done: true,
+          activeId: null,
+          // 记 finished：真 host 若稍后复活，迟到 chunk 不得重开矛盾气泡（R2-m3 兜底）
+          finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
+          messages: [
+            ...s.messages.map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg)),
+            // 中性文案：不预设死因（可能是 SW 死，也可能是极端慢），普通用户可懂（R2-m4）
+            { id: `w${Date.now()}`, role: 'assistant', text: '', error: '响应超时——请点「新对话」或重试', isError: true },
+          ],
+        }
+      })
+    }, Math.max(WATCHDOG_MS - elapsed, 1_000))
+    return () => clearTimeout(timer)
+  }, [running, stream.aliveAt])
+
   useEffect(() => {
     chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
       // SW 唤醒失败/通道异常：lastError 非空且 resp undefined——不等于「host 未装」，
@@ -89,6 +127,8 @@ export function App() {
         case 'task-meta':
           setStream((s) => ({
             ...s,
+            // sessionId 到达 = 该 CLI 支持追问（claude 有、codex 无）
+            resumable: s.resumable || !!m.sessionId,
             messages: s.messages.map((msg) =>
               msg.id === s.activeId || (msg.streaming && msg.id !== s.activeId)
                 ? { ...msg, model: m.model ?? msg.model }
@@ -112,10 +152,21 @@ export function App() {
             const idx = messages.findIndex((x) => x.id === activeId)
             if (idx >= 0) messages[idx] = { ...messages[idx], text: messages[idx].text + m.text }
             else messages.push({ id: activeId, role: 'assistant', text: m.text, streaming: true })
-            return { ...s, taskId: m.taskId, activeId, pending: false, messages }
+            return { ...s, taskId: m.taskId, activeId, pending: false, messages, aliveAt: Date.now() }
           })
           break
         }
+        case 'task-alive':
+          // host 存活信号（heartbeat 转译）：为看门狗续命 + 给静默期进度感。
+          // 不新建/改动气泡文本，只更新 aliveAt（看门狗依赖）+ phase 时长提示
+          setStream((s) => {
+            if (s.finished.includes(m.taskId)) return s
+            if (s.taskId !== null && s.taskId !== m.taskId) return s
+            const secs = m.elapsedMs ? Math.round(m.elapsedMs / 1000) : 0
+            const phase = secs > 30 ? `处理中（已 ${secs}s）…` : s.phase
+            return { ...s, phase, aliveAt: Date.now() }
+          })
+          break
         case 'task-status':
           // status 先于首 chunk 到达（SW 的 reading 占位帧/host 的 thinking 帧）：
           // 也置 activeId + 占位消息，否则 running=false → 环形 loading / 停止钮 /
@@ -144,6 +195,8 @@ export function App() {
               // 终局即解绑 + 记入 finished：收割前的迟到帧不得重开气泡/劫持新一轮
               taskId: null,
               pending: false,
+              // done 帧带 sessionId = 可追问（claude）；codex 无 → resumable 保持 false
+              resumable: s.resumable || !!m.sessionId,
               finished: [...s.finished, m.taskId].slice(-8),
               done: true,
               activeId: null,
@@ -168,6 +221,9 @@ export function App() {
           break
         case 'task-error':
           setStream((s) => {
+            // 已终局任务的迟到 error（如 content-mismatch 已收尾后 host 侧 cancelled 帧
+            // 迟到）：拒收——否则同一事故叠出第二个错误气泡（与 chunk/status 对齐）
+            if (s.finished.includes(m.taskId)) return s
             // 过期帧（绑定的是别的任务）：不劫持新一轮状态，仅收尾还在 streaming 的气泡
             if (s.taskId !== null && s.taskId !== m.taskId) {
               return {
@@ -217,7 +273,7 @@ export function App() {
         : resp.error === 'no-permission' ? '无提取权限：浏览器要求换页后重新授权——点击工具栏上的 AI PageDive 图标后重试'
         : resp.error === 'empty-content' ? '页面没有可提取的正文'
         : resp.error === 'cancelled' ? '已取消'
-        : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——本次将开始全新总结'
+        : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——请点「新对话」后重新发送本次问题'
         : String(resp.error)
       setStream((s) => ({
         ...s,
@@ -241,6 +297,7 @@ export function App() {
     setStream((s) => ({
       ...BLANK,
       pending: true,
+      aliveAt: Date.now(), // 看门狗起点：发送即计时，首个 host 帧/心跳到达前靠它兜住
       messages: [...s.messages, { id: `u${Date.now()}`, role: 'user', text }],
     }))
   }, [])
@@ -252,10 +309,15 @@ export function App() {
   const resumeHistory = useCallback((item: HistoryItem, body: string) => {
     setOverlay(null)
     setAgentId(item.agent)
-    const msgs: ChatMessage[] = parseHistoryTurns(body)
+    // 首条 id 带 item.ts 前缀：parseHistoryTurns 固定用 h0/h1…，连续恢复两条不同 agent
+    // 的历史时 firstMsgId 都是 h0 不变 → SummarizeView 的 followAgent 指纹不触发重置
+    // （头部 CLI 显示与真实执行不符，R2-M1）。带 ts 使跨条目唯一
+    const msgs: ChatMessage[] = parseHistoryTurns(body).map((m) => ({ ...m, id: `t${item.ts}-${m.id}` }))
     setStream({
       ...BLANK,
       done: true,
+      // 历史带 sessionId 才可续（HistoryView 也仅在有 sessionId 时显示「继续对话」）
+      resumable: !!item.sessionId,
       messages: msgs.length
         ? msgs
         // 空正文（error 历史）：给出占位说明，避免空白气泡 + 误判 hasSession
@@ -319,7 +381,7 @@ export function App() {
             <span>{outdated}</span>
           </div>
         )}
-        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} />
+        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} resumable={stream.resumable} />
       </main>
 
       {overlay === 'history' && (
@@ -358,6 +420,12 @@ function parseHistoryTurns(body: string): ChatMessage[] {
   }
   return msgs
 }
+
+// 看门狗判死阈值 = 6 × host 心跳间隔（packages/host/src/stdio.ts 的 20s heartbeat）。
+// host 活着就有心跳（SW 转译成 task-alive 喂 panel），连丢 6 次才判「host/SW 死」——
+// 远小于 host 侧任务超时 10min（task.ts TASK_TIMEOUT_MS），二者互补：host 活着靠心跳续命，
+// host 死了靠此看门狗解锁。改此值需同步核对 stdio.ts 心跳间隔。
+const WATCHDOG_MS = 120_000
 
 const PHASE_LABEL: Record<string, string> = {
   spawned: '已启动 CLI',

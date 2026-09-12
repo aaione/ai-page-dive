@@ -11,6 +11,7 @@ import type { AgentDef, AgentEvent } from '@ai-page-dive/shared'
  */
 export function createOpencodeParser() {
   let errored = false
+  let resultSent = false
   return (line: string): AgentEvent[] => {
     let d: any
     try {
@@ -36,7 +37,13 @@ export function createOpencodeParser() {
         break
       }
     }
-    if (errored) out.push({ type: 'result', isError: true, text: '' })
+    // result 恰发一次：errored 置位后每行都会走到这里，无 resultSent 门控会逐行重复
+    // push result（当前靠 task.ts finished 门控兜住不炸，但解析器契约上 result 应唯一，
+    // v2 多引擎并发下解析器契约干净更重要）
+    if (errored && !resultSent) {
+      resultSent = true
+      out.push({ type: 'result', isError: true, text: '' })
+    }
     return out
   }
 }

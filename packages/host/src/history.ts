@@ -132,13 +132,15 @@ export async function listHistory(query?: string, limit = 100): Promise<HistoryI
   const years = await readdir(ROOT, { withFileTypes: true }).catch(() => [])
   for (const y of years) {
     if (!y.isDirectory() || !/^\d{4}$/.test(y.name)) continue
-    const months = await readdir(join(ROOT, y.name), { withFileTypes: true })
+    // 各层 readdir 兜底 []：单个年/月/日目录 EACCES（共享 mac 属主/手动 chmod）不再
+    // 抛出未捕获 rejection 崩溃进程，只跳过该子树、其余历史照常返回
+    const months = await readdir(join(ROOT, y.name), { withFileTypes: true }).catch(() => [])
     for (const m of months) {
       if (!m.isDirectory() || !/^\d{2}$/.test(m.name)) continue
-      const days = await readdir(join(ROOT, y.name, m.name), { withFileTypes: true })
+      const days = await readdir(join(ROOT, y.name, m.name), { withFileTypes: true }).catch(() => [])
       for (const d of days) {
         if (!d.isDirectory() || !/^\d{2}$/.test(d.name)) continue
-        const files = await readdir(join(ROOT, y.name, m.name, d.name))
+        const files = await readdir(join(ROOT, y.name, m.name, d.name)).catch(() => [] as string[])
         for (const f of files) {
           if (!f.endsWith('.md')) continue
           const full = join(ROOT, y.name, m.name, d.name, f)

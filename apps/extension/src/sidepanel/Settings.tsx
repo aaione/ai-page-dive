@@ -188,6 +188,15 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
       setEditor({ ...editor, nameError: '名称仅限字母/数字/下划线/连字符，1–64 位', dirty: true })
       return
     }
+    // 空正文一律拒绝保存（新建 + 已有模式统一）：
+    // - 已有模式：workflow-file 帧未到达（读取窗口内抢救保存）或用户清空 → shadow 掉真实模式
+    // - 新建模式：originalName=null，空 body 落盘后 getWorkflow 命中空用户副本 → 静默退化默认摘要
+    // 两者都是静默数据破坏（违背「深度总结质量」）。workflow 空正文 = 空任务指令，无合法用途
+    if (!editor.body.trim()) {
+      setHostError('正文为空或尚未加载完成，未保存——请填写模式指令后再保存')
+      window.setTimeout(() => setHostError(null), 6000)
+      return
+    }
     setEditor({ ...editor, nameError: null, dirty: true })
     chrome.runtime.sendMessage(
       {

@@ -293,6 +293,10 @@ export type HostToExt =
   | ErrorMsg
   /** 任务期周期帧（~20s）：port 消息活动重置 MV3 SW 的 30s idle 计时器（保活） */
   | { t: 'heartbeat'; seq: number }
+  /** SW 合成：host 存活信号（heartbeat 转译，携当前 taskId）。panel 看门狗据此续命——
+   * host 活着就有心跳，看门狗要检测的是「host/SW 死」而非「UI 无内容帧」。
+   * elapsedMs：任务已运行时长，供 panel 展示「仍在处理（已 Ns）」进度感 */
+  | { t: 'task-alive'; taskId: string; elapsedMs?: number }
   /** SW 合成：NM host 断连（panel 据此停止 loading 并提示） */
   | { t: '__host-disconnected' }
 

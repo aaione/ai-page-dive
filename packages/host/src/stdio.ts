@@ -80,7 +80,11 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         break
       }
       case 'history-list':
-        listHistory(msg.query, msg.limit).then((items) => send({ t: 'history-list', items }))
+        // 无 .catch：任意年/月/日目录 EACCES → readdir reject → unhandledRejection
+        // → Node ≥18 默认策略进程退出 → NM 断连。与 history-read/delete 同构兜底
+        listHistory(msg.query, msg.limit)
+          .then((items) => send({ t: 'history-list', items }))
+          .catch((e) => send({ t: 'error', code: 'list-fail', message: String(e?.message ?? e) }))
         break
       case 'history-read':
         readHistory(msg.path)

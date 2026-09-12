@@ -158,6 +158,30 @@ describe('Task 状态机', () => {
     await rm(join(script, '..'), { recursive: true, force: true })
   }, 30_000)
 
+  it('spawn 窗口内取消：发 onError(cancelled) 恰一次（无终局帧 = panel 锁死 + 任务泄漏）', async () => {
+    // M1 回归：run() 在 spawn 前有多个 await（writeContentFile/getWorkflow/...），
+    // cancel 落在这些窗口内 → spawn 成功后命中 `if (this.cancelled)` 分支。
+    // 该分支此前只 reap、不发 onError → stdio.tasks 不 delete（泄漏 + 心跳永续）、
+    // panel running 永真锁死。断言：必发且只发一次 onError('cancelled')
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const script = await FAKE_CLI('slow') // 60s：确保不会自然终局，只由 cancel 收割
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const { task: mk, cbs } = makeCbs(); const task = mk('t-cancel-window')
+    task.start({ taskId: 't-cancel-window', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+    task.appendContent(BODY, true)
+    // 不 await：run() 同步执行到首个 await 即交还控制权
+    const p = task.run()
+    task.cancel() // 落在 run() 的 await 窗口内（spawn 前后皆可能，均须发终局）
+    await p
+    await new Promise((r) => setTimeout(r, 200))
+    expect(cbs.errors).toEqual([['cancelled', 'task cancelled']])
+    expect(cbs.done).toBeNull()
+    AGENTS[0].buildArgs = orig
+    await rm(join(script, '..'), { recursive: true, force: true })
+  }, 30_000)
+
   it('未知 agent → no-agent，不 spawn', async () => {
     const { task: mk, cbs } = makeCbs(); const task = mk()
     task.start({ taskId: 't3', agentId: 'nope', workflow: 'quick', page: PAGE as any })
