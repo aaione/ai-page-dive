@@ -54,7 +54,7 @@ export function Onboarding() {
 
   const copy = () => {
     navigator.clipboard.writeText(forbidden ? registerCmd : installCmd).then(() => {
-      if (!copiedAtRef.current) copiedAtRef.current = Date.now()
+      copiedAtRef.current = Date.now() // 每次复制刷新计时（重复复制 = 用户还在折腾，stuck 重新起算）
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     })
@@ -110,7 +110,7 @@ export function Onboarding() {
             <p>
               {forbidden
                 ? '复制命令已超过 1 分半仍未生效。登记通常立即生效，多半是 '
-                : '复制命令已超过 1 分半仍未检测到安装完成。若终端已显示 ✅ 但本页未进入，多半是 '}
+                : '复制命令已超过 1 分半仍未检测到安装完成。若终端已显示 🎉 安装完成 但本页未进入，多半是 '}
               <strong>Chrome 未完全重启</strong>（macOS 关闭窗口 ≠ 退出）：
               <br />
               请 <strong>⌘Q 完全退出 Chrome</strong> 再重新打开，然后点下方按钮。
@@ -118,14 +118,22 @@ export function Onboarding() {
           </div>
         ) : (
           <p className="pd-onboarding-note">
-            终端看到 <code>✅</code> 后回本页，通常会自动进入；若超过 1 分半未进入，
+            终端看到 <code>🎉 安装完成</code> 后回本页，通常会自动进入；若超过 1 分半未进入，
             多半需完全重启 Chrome（⌘Q，见下方提示）。
             <br />
             <strong>内容只在本机处理，不经过任何服务器。</strong>
           </p>
         )}
         <p className="pd-onboarding-note">本页自动检测（间隔渐放缓至 15 秒），装好后自动进入。</p>
-        <button onClick={() => location.reload()} className="pd-onboarding-check">
+        <button
+          onClick={() => {
+            // 重置卡装计时：用户主动复检 = 新一轮等待开始（F8）
+            setStuck(false)
+            copiedAtRef.current = Date.now()
+            location.reload()
+          }}
+          className="pd-onboarding-check"
+        >
           已安装 / 已重启？立即检测
         </button>
       </div>

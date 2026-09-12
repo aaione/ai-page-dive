@@ -73,13 +73,16 @@ export interface WorkflowReadMsg {
   name: string
 }
 
-/** 新建/覆盖：写用户目录（shadow 内置同名） */
+/** 新建/覆盖：写用户目录（shadow 内置同名）。
+ * originalName（改名保存时携带）：host 侧校验目标名未撞其他用户模式，
+ * 并在成功后删除旧目录（防孤儿副本） */
 export interface WorkflowSaveMsg {
   t: 'workflow-save'
   name: string
   description: string
   category?: string
   body: string
+  originalName?: string
 }
 
 /** 删除用户目录副本；内置的等价于「恢复默认」（重新露出内置版） */

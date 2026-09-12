@@ -104,14 +104,25 @@ export async function readWorkflow(name: string): Promise<string | undefined> {
   return undefined
 }
 
-/** 新建/覆盖用户副本（shadow 内置同名）：mkdir -p USER_DIR/<name>/ 再写 WORKFLOW.md */
+/** 新建/覆盖用户副本（shadow 内置同名）：mkdir -p USER_DIR/<name>/ 再写 WORKFLOW.md。
+ * 带 originalName = 改名保存：撞其他用户模式名时拒绝（静默覆盖 = 原创内容不可恢复
+ * 丢失，F7）；成功后删旧目录防孤儿。撞内置名不拒（shadow 是设计特性） */
 export async function saveWorkflow(input: {
   name: string
   description: string
   category?: string
   body: string
+  originalName?: string
 }): Promise<void> {
   assertValidWorkflowName(input.name)
+  if (input.originalName && input.originalName !== input.name) {
+    assertValidWorkflowName(input.originalName)
+    const clash = await readFile(join(USER_DIR, input.name, 'WORKFLOW.md'))
+      .then(() => true)
+      .catch(() => false)
+    if (clash) throw new Error(`已存在同名用户模式「${input.name}」，未保存——请换一个名称`)
+    await rm(join(USER_DIR, input.originalName), { recursive: true, force: true })
+  }
   const dir = join(USER_DIR, input.name)
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, 'WORKFLOW.md'), buildWorkflowMd(input), 'utf8')

@@ -127,6 +127,8 @@ export function App() {
         case 'task-meta':
           setStream((s) => ({
             ...s,
+            // 存活信号：重置看门狗（F4——重页提取+首心跳延迟叠加窗口）
+            aliveAt: Date.now(),
             // sessionId 到达 = 该 CLI 支持追问（claude 有、codex 无）
             resumable: s.resumable || !!m.sessionId,
             messages: s.messages.map((msg) =>
@@ -178,7 +180,7 @@ export function App() {
             const messages = s.messages.some((x) => x.id === activeId)
               ? s.messages
               : [...s.messages, { id: activeId, role: 'assistant' as const, text: '', streaming: true }]
-            return { ...s, taskId: m.taskId, activeId, pending: false, messages, phase: PHASE_LABEL[m.phase] ?? m.phase }
+            return { ...s, taskId: m.taskId, activeId, pending: false, messages, aliveAt: Date.now(), phase: PHASE_LABEL[m.phase] ?? m.phase }
           })
           break
         case 'task-done':
@@ -292,18 +294,26 @@ export function App() {
   }
 
   /** 发送前插入用户消息气泡 + 重置任务态（新一轮开始）。
-   * pending=true：send 后到首个任务帧前的窗口里 running 判定靠它兜住（防双发） */
+   * pending=true：send 后到首个任务帧前的窗口里 running 判定靠它兜住（防双发）。
+   * resumable 是会话级字段：追问轮间保留（F1——曾随 BLANK 清零，失败窗口后
+   * 下一句追问静默降级全新总结 + 下拉解锁闪变） */
   const beginTurn = useCallback((text: string) => {
     setStream((s) => ({
       ...BLANK,
       pending: true,
+      resumable: s.resumable,
       aliveAt: Date.now(), // 看门狗起点：发送即计时，首个 host 帧/心跳到达前靠它兜住
       messages: [...s.messages, { id: `u${Date.now()}`, role: 'user', text }],
     }))
   }, [])
 
-  /** 新任务开始（总结首轮）：清空消息重新开聊天 */
-  const beginSession = useCallback(() => setStream(BLANK), [])
+  /** 新任务开始（总结首轮）：清空消息重新开聊天。
+   * 在跑任务（被 newChat 取消）的尾巴 chunk 不得落入空会话——把在跑 taskId
+   * 记入 finished（F9：在跑任务从未终局、不在台账，仅保留旧台账无效） */
+  const beginSession = useCallback(
+    () => setStream((s) => ({ ...BLANK, finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished })),
+    [],
+  )
 
   /** 历史详情「继续对话」：解析 pd:user/pd:assistant 分段还原多轮气泡 + 通知 SW 恢复会话 */
   const resumeHistory = useCallback((item: HistoryItem, body: string) => {
@@ -313,16 +323,18 @@ export function App() {
     // 的历史时 firstMsgId 都是 h0 不变 → SummarizeView 的 followAgent 指纹不触发重置
     // （头部 CLI 显示与真实执行不符，R2-M1）。带 ts 使跨条目唯一
     const msgs: ChatMessage[] = parseHistoryTurns(body).map((m) => ({ ...m, id: `t${item.ts}-${m.id}` }))
-    setStream({
+    setStream((s) => ({
       ...BLANK,
       done: true,
       // 历史带 sessionId 才可续（HistoryView 也仅在有 sessionId 时显示「继续对话」）
       resumable: !!item.sessionId,
+      // 在跑任务尾巴同 F9：记入 finished 防首帧绑定落入恢复的会话
+      finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
       messages: msgs.length
         ? msgs
         // 空正文（error 历史）：给出占位说明，避免空白气泡 + 误判 hasSession
         : [{ id: `h${item.ts}`, role: 'assistant' as const, text: '（该记录无正文——发送消息将开始全新总结）', error: '该历史记录状态为失败，无对话上下文可续', isError: true }],
-    })
+    }))
     // tips 条同步为该历史条目的来源页
     if (item.title || item.url) setPageMeta({ title: item.title ?? '', url: item.url ?? '' })
     chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path }).catch(() => {})

@@ -197,11 +197,17 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
       window.setTimeout(() => setHostError(null), 6000)
       return
     }
+    // 重名预检（F7）：目标名已被另一个用户模式占用 → 拒绝（改名/新建撞名都会静默
+    // 覆盖对方正文，不可恢复）。撞内置名不在此列——shadow 内置是设计特性（新建副本）
+    if (workflows.some((w) => !w.builtin && w.name === editor.name && w.name !== editor.originalName)) {
+      setEditor({ ...editor, nameError: `已存在同名模式「${editor.name}」——请换一个名称`, dirty: true })
+      return
+    }
     setEditor({ ...editor, nameError: null, dirty: true })
     chrome.runtime.sendMessage(
       {
         t: 'nm',
-        msg: { t: 'workflow-save', name: editor.name, description: editor.description, category: editor.category || undefined, body: editor.body },
+        msg: { t: 'workflow-save', name: editor.name, description: editor.description, category: editor.category || undefined, body: editor.body, originalName: editor.originalName ?? undefined },
       },
       () => void chrome.runtime.lastError,
     )
@@ -209,6 +215,9 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
 
   function deleteWorkflow() {
     if (!editor || !editor.name) return
+    // 用户模式 = 原创目录，rm -rf 一步即毁不可恢复——与历史删除同款 confirm 防线（F11）；
+    // 内置项是「恢复默认」（删用户副本），无破坏面不加确认
+    if (!editor.builtin && !confirm(`删除模式「${editor.name}」？该操作不可恢复。`)) return
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-delete', name: editor.name } }, () => void chrome.runtime.lastError)
   }
 

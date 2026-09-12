@@ -22,6 +22,9 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
   const [viewing, setViewing] = useState<HistoryFileMsg | null>(null)
   // 当前查看项对应的列表元数据（含 sessionId）
   const [viewingItem, setViewingItem] = useState<HistoryItem | null>(null)
+  // 在途读取的 path（F10）：回帧 path 不符即丢——「返回后点下一条」时旧帧迟到
+  // 会把详情页拽回旧文（正文与 viewingItem 元数据/继续对话错配）
+  const pendingPathRef = useRef<string | null>(null)
 
   // 是否收到过 history-list 回帧（= host 已连接）。首帧到达前 3s 视为加载中；
   // 3s 后仍无回帧 → host 未连接，显示连接提示而非误导性的「暂无历史」
@@ -35,7 +38,11 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
   useEffect(() => {
     const listener = (m: HostToExt) => {
       if (m.t === 'history-list') { setItems((m as HistoryListResultMsg).items); setReplied(true) }
-      if (m.t === 'history-file') setViewing(m as HistoryFileMsg)
+      if (m.t === 'history-file') {
+        // 只收在途那条的回帧（同 Settings workflow-file 守卫）：迟到旧帧丢掉
+        if (pendingPathRef.current && (m as HistoryFileMsg).path !== pendingPathRef.current) return
+        setViewing(m as HistoryFileMsg)
+      }
       // 删除结果对账：删除是乐观更新（先移出列表），失败必须回滚——
       // host 是事实源，重拉列表即恢复；成功帧也重拉对齐（host 落盘后列表序可能变）
       if (m.t === 'deleted' || (m.t === 'error' && m.code === 'delete-fail')) refresh()
@@ -60,7 +67,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
     const body = viewing.content.replace(/^---\n[\s\S]*?\n---\n/, '')
     return (
       <div className="pd-history-detail">
-        <button onClick={() => setViewing(null)} className="pd-history-back">
+        <button onClick={() => { setViewing(null); pendingPathRef.current = null }} className="pd-history-back">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10 3 5 8l5 5" />
           </svg>
@@ -139,6 +146,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
             <button
               onClick={() => {
                 setViewingItem(it)
+                pendingPathRef.current = it.path
                 chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: it.path } })
               }}
               className="pd-history-item-main"
