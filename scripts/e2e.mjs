@@ -79,14 +79,9 @@ const srv = createServer((_q, res) => {
 }).listen(8765)
 await page.goto('http://127.0.0.1:8765/', { waitUntil: 'domcontentloaded' })
 await page.bringToFront()
-// SW eval：模拟 action 点击的 target 赋值（绕过浏览器 UI 的 E2E 通道）
-const sw = ctx.serviceWorkers()[0]
-await sw.evaluate(async (tabId) => {
-  // 与 action.onClicked 相同语义：target = 被总结的 tab
-  chrome.tabs.get(tabId).then(t => {
-    // 直接触发已在监听器之外，这里 eval 不能碰闭包 target——改用消息
-  })
-}, page.pageId).catch(() => {})
+// 总结目标页：bringToFront 后 SW 的 active-tab fallback（sw.ts startSummarize 的
+// tabs.query 兜底）命中本页——无显式 set-target 消息（曾经的 sw.evaluate 段是
+// no-op 死代码，page.pageId 也非合法 tabId，已删）
 const panel = await ctx.newPage()
 await panel.goto(`chrome-extension://${extId}/sidepanel.html`, { waitUntil: 'domcontentloaded' })
 await panel.waitForTimeout(2000)

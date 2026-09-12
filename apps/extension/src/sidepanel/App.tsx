@@ -105,15 +105,47 @@ export function App() {
   }, [running, stream.aliveAt])
 
   useEffect(() => {
-    chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
-      // SW 唤醒失败/通道异常：lastError 非空且 resp undefined——不等于「host 未装」，
-      // 保持 null（loading 态）等下一轮探测，不误导用户进安装引导
-      if (chrome.runtime.lastError) return
-      setHostOk(!!resp?.ok)
-      if (resp?.outdated) setOutdated(String(resp.outdated))
-      if (resp?.ok) requestLists()
-      if (resp?.page) setPageMeta(resp.page)
-    })
+    // SW 唤醒失败/通道异常：lastError 非空且 resp undefined——不等于「host 未装」，
+    // 退避重试 2 次（500ms/1s）后仍失败保持 null（loading 态），不误导用户进安装引导
+    let tries = 0
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const ping = () => {
+      chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
+        if (chrome.runtime.lastError && !resp) {
+          if (tries < 2) {
+            tries += 1
+            retry = setTimeout(ping, 500 * tries)
+            return
+          }
+          return // 重试耗尽仍失败：SW 唤醒异常 ≠ host 未装，保持 loading
+        }
+        setHostOk(!!resp?.ok)
+        if (resp?.outdated) setOutdated(String(resp.outdated))
+        if (resp?.ok) requestLists()
+        if (resp?.page) setPageMeta(resp.page)
+        // SW 侧态对齐（r4-ux）：面板切 tab 被收起后重开，React 态已丢——活会话 →
+        // 恢复 resumable（追问不再静默降级为全量重总结+抹掉 SW 会话）；在跑任务 →
+        // 重建 taskId 绑定 + 占位气泡（迟到 chunk 续流，不再孤儿流；任务已死则
+        // 看门狗 120s 收尾）
+        if (resp?.hasSession) setStream((s) => ({ ...s, resumable: true }))
+        if (resp?.activeTask) {
+          const at = resp.activeTask as { taskId: string; startedAt: number }
+          setStream((s) => {
+            if (s.taskId !== null || s.activeId !== null || s.pending) return s
+            const id = `a${at.taskId}`
+            return {
+              ...s,
+              taskId: at.taskId,
+              activeId: id,
+              messages: [...s.messages, { id, role: 'assistant' as const, text: '', streaming: true }],
+              aliveAt: Date.now(),
+              phase: `处理中（已 ${Math.max(1, Math.round((Date.now() - at.startedAt) / 1000))}s）…`,
+            }
+          })
+        }
+      })
+    }
+    ping()
     const listener = (m: any) => {
       switch (m.t) {
         case 'page-meta':
@@ -245,20 +277,25 @@ export function App() {
           })
           break
         case '__host-disconnected':
-          setHostOk(false)
+          // host 崩溃/被杀（能断连 = 曾连上过 ≠ 未安装）：不闪跳安装引导——卸载面板
+          // 丢对话态且「还差一步」文案误导重装（r4-ux）。收尾气泡即可：nmPort.send
+          // 断线自动重 spawn，重试发送即自愈；真死透时重试走 host-not-found → Onboarding
           setStream((s) => ({
             ...s,
             done: true,
             activeId: null,
             messages: s.messages.map((msg) =>
-              msg.streaming ? { ...msg, streaming: false, error: '本机 host 连接中断' } : msg,
+              msg.streaming ? { ...msg, streaming: false, error: '本机组件连接中断——请重试发送', isError: true } : msg,
             ),
           }))
           break
       }
     }
     chrome.runtime.onMessage.addListener(listener)
-    return () => chrome.runtime.onMessage.removeListener(listener)
+    return () => {
+      clearTimeout(retry)
+      chrome.runtime.onMessage.removeListener(listener)
+    }
   }, [])
 
   function requestLists() {
@@ -278,6 +315,9 @@ export function App() {
         : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——请点「新对话」后重新发送本次问题'
         : String(resp.error)
       setStream((s) => {
+        // 旧轮 send 的迟到取消回调（新对话后重发，SW 提取窗口秒级）：resp.taskId 已
+        // 在终局台账——静默丢弃，勿清掉新一轮 pending/滤掉其占位气泡（r4-regression）
+        if (typeof resp.taskId === 'string' && s.finished.includes(resp.taskId)) return s
         // 已被 newChat/新会话清场的空 stream = 旧轮 send 的迟到回调——错误气泡注入
         // 全新空会话是新用户首屏最常见的脏态（r3-ux R3-m1），静默丢弃
         if (s.pending === false && s.taskId === null && s.activeId === null && s.messages.length === 0) return s
@@ -307,6 +347,9 @@ export function App() {
       ...BLANK,
       pending: true,
       resumable: s.resumable,
+      // finished 台账保留（r4-regression）：展开 BLANK 曾清空台账，旧轮带 taskId 的
+      // 迟到 cancelled 回调无从对账而击穿 pending 态；台账只拒同 taskId，新 id 不撞
+      finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
       aliveAt: Date.now(), // 看门狗起点：发送即计时，首个 host 帧/心跳到达前靠它兜住
       messages: [...s.messages, { id: `u${Date.now()}`, role: 'user', text }],
     }))
@@ -361,6 +404,15 @@ export function App() {
     || 'claude'
 
   // 早退必须在所有 hooks 之后：hostOk 从 null 翻 false 会减少 hook 数量，React 直接崩树白屏
+  // 探测期（node 冷启动 probe 最长 8s）：中性 loading——主视图 agents=[] 会命中
+  // 「未检测到本机 AI CLI」假告示（r4-ux），误导已装用户
+  if (hostOk === null) {
+    return (
+      <div className="pd-app">
+        <main className="pd-history-empty" style={{ padding: 24 }}>正在连接本机组件…</main>
+      </div>
+    )
+  }
   if (hostOk === false) return <Onboarding />
 
   return (

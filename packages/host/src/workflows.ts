@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { WorkflowItem } from '@ai-page-dive/shared'
+import { splitFrontmatter } from './frontmatter.js'
 
 const USER_DIR = join(homedir(), '.ai-page-dive', 'workflows')
 // fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18
@@ -44,19 +45,15 @@ export function buildWorkflowMd(input: {
 
 /** 原文 → LoadedWorkflow（纯函数，export 供测试） */
 export function parseWorkflow(raw: string, name: string, builtin: boolean): LoadedWorkflow | undefined {
-  if (!raw.startsWith('---')) return undefined
-  const end = raw.indexOf('\n---', 3)
-  if (end < 0) return undefined
-  const fm = raw.slice(4, end)
-  const get = (k: string) => fm.match(new RegExp(`^${k}: (.*)$`, 'm'))?.[1]?.trim() ?? ''
-  const body = raw.slice(end + 4).trim()
-  if (!body) return undefined
+  const parts = splitFrontmatter(raw)
+  if (!parts || !parts.body) return undefined
+  const get = (k: string) => parts.fm.match(new RegExp(`^${k}: (.*)$`, 'm'))?.[1]?.trim() ?? ''
   return {
     name,
     description: get('description') || name,
     category: get('category') || undefined,
     builtin,
-    body,
+    body: parts.body,
   }
 }
 
@@ -115,12 +112,15 @@ export async function saveWorkflow(input: {
   originalName?: string
 }): Promise<void> {
   assertValidWorkflowName(input.name)
-  if (input.originalName && input.originalName !== input.name) {
-    assertValidWorkflowName(input.originalName)
-    const clash = await readFile(join(USER_DIR, input.name, 'WORKFLOW.md'))
-      .then(() => true)
-      .catch(() => false)
-    if (clash) throw new Error(`已存在同名用户模式「${input.name}」，未保存——请换一个名称`)
+  if (input.originalName) assertValidWorkflowName(input.originalName)
+  // 撞名守卫覆盖新建路径（r4-regression）：面板预检只对 panel 内存快照有效——
+  // 双 Chrome profile / 用户手工落盘的目录它看不见，host 是事实源，覆盖原创
+  // 正文不可恢复（F7）。originalName===name（原地覆盖自己）放行
+  const clash = await readFile(join(USER_DIR, input.name, 'WORKFLOW.md'))
+    .then(() => true)
+    .catch(() => false)
+  if (clash && input.originalName !== input.name) {
+    throw new Error(`已存在同名用户模式「${input.name}」，未保存——请换一个名称`)
   }
   const dir = join(USER_DIR, input.name)
   await mkdir(dir, { recursive: true })

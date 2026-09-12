@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import type { SkillItem } from '@ai-page-dive/shared'
 import { assertValidWorkflowName } from './workflows.js'
+import { splitFrontmatter } from './frontmatter.js'
 
 const DIR = join(homedir(), '.ai-page-dive', 'skills')
 // fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18
@@ -14,12 +15,10 @@ const BUILTIN_SKILL_DIRS = [join(dirname(fileURLToPath(import.meta.url)), '..', 
 
 /** SKILL.md 原文 → {description, body}（纯函数，export 供测试；description 缺省用目录名） */
 export function parseSkillMd(raw: string, fallbackName: string): { description: string; body: string } {
-  if (!raw.startsWith('---')) return { description: fallbackName, body: raw.trim() }
-  const end = raw.indexOf('\n---', 3)
-  if (end < 0) return { description: fallbackName, body: raw.trim() }
-  const fm = raw.slice(4, end)
-  const description = fm.match(/^description: (.*)$/m)?.[1]?.trim() || fallbackName
-  return { description, body: raw.slice(end + 4).trim() }
+  const parts = splitFrontmatter(raw)
+  if (!parts) return { description: fallbackName, body: raw.trim() }
+  const description = parts.fm.match(/^description: (.*)$/m)?.[1]?.trim() || fallbackName
+  return { description, body: parts.body }
 }
 
 export async function listSkills(): Promise<SkillItem[]> {

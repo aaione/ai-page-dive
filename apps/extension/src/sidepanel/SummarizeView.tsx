@@ -157,12 +157,14 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     }
   }
 
-  /** 附件选择：读文本（>512KB 或读失败标红提示并跳过）；二进制/图片不在 v1 范围 */
+  /** 附件选择：读文本（>512KB 或读失败标红提示并跳过）；二进制/图片不在 v1 范围。
+   * 数量截断与超限/读失败同源提示（r4-ux）：静默丢弃 = 用户不知道附件没带上 */
   async function pickAttachments(files: FileList | null) {
     if (!files?.length) return
+    const all = Array.from(files)
     const next: { name: string; text: string }[] = []
     const skipped: string[] = []
-    for (const f of Array.from(files).slice(0, 5)) {
+    for (const f of all.slice(0, 5)) {
       if (f.size > 512 * 1024) {
         skipped.push(`${f.name}（超过 512KB）`)
         continue
@@ -170,11 +172,14 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       try { next.push({ name: f.name, text: await f.text() }) }
       catch { skipped.push(`${f.name}（读取失败）`) }
     }
+    // 单批第 6+ 与合并累计超限都不静默（handler 闭包的 attachments 即当前快照）
+    for (const f of all.slice(5)) skipped.push(`${f.name}（单批最多 5 个）`)
+    const merged = [...attachments, ...next]
+    for (const f of merged.slice(5)) skipped.push(`${f.name}（附件已达 5 个上限）`)
+    setAttachments(merged.slice(0, 5))
     if (skipped.length) {
-      // 静默跳过 = 用户不知道附件没带上，总结偏差无从归因
       setAttachNotice(`已跳过：${skipped.join('、')}——请精简后重试`)
     }
-    setAttachments((prev) => [...prev, ...next].slice(0, 5))
     if (fileRef.current) fileRef.current.value = ''
   }
 

@@ -189,8 +189,18 @@ async function handleMessage(msg: any): Promise<unknown> {
         r.ok && r.hostVersion && versionLt(r.hostVersion, MIN_HOST_VERSION)
           ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），请在终端执行：npm i -g ai-page-dive`
           : undefined
-      // tips 条元数据无论 probe 成败都带回（panel 已开就有目标页）
-      return { ...r, ...(r.ok ? {} : { nmError: nmPort.lastError }), ...(outdated ? { outdated } : {}), page: pageMeta() }
+      // tips 条元数据无论 probe 成败都带回（panel 已开就有目标页）。
+      // hasSession/activeTask（r4-ux）：面板切 tab 被收起后重开时 React 态已丢——
+      // SW 侧活会话透出给 panel 恢复 resumable（追问不再静默降级为全量重总结），
+      // 在跑任务透出 taskId 供 panel 重建绑定（迟到 chunk 不再呈现为孤儿流）
+      return {
+        ...r,
+        ...(r.ok ? {} : { nmError: nmPort.lastError }),
+        ...(outdated ? { outdated } : {}),
+        page: pageMeta(),
+        ...(lastSession ? { hasSession: true } : {}),
+        ...(currentTask ? { activeTask: { taskId: currentTask.taskId, startedAt: currentTask.startedAt } } : {}),
+      }
     }
     case 'summarize': {
       const instruction = msg.instruction as string | undefined
@@ -312,18 +322,24 @@ nmPort.onMessage((m) => {
     return // 回执不转发（panel 不消费）
   }
   // 捕获会话 id 供追问（claude init 事件捕获，task-done 兜底）；historyPath 续存
-  // （追问轮 task-done 带回首轮文件路径，覆盖亦无损——路径不变）
+  // （追问轮 task-done 带回首轮文件路径，覆盖亦无损——路径不变）。
+  // 会话归属跟帧走（r4-arch）：帧自带 agentId，不用全局 currentAgentId——取消 A 后
+  // 立即起 B 时，A 的迟到 meta 会把 A 的 sessionId 记到 B 名下（多引擎审校模式会把
+  // 该窗口放大为必然）；无 agentId 的帧仅在 taskId 匹配 currentTask 时才归属当前 agent
   if (msg?.t === 'task-meta' || msg?.t === 'task-done') {
-    if (msg.sessionId) {
-      lastSession = { agentId: currentAgentId, sessionId: msg.sessionId, historyPath: msg.historyPath ?? lastSession?.historyPath }
+    const owner =
+      msg.agentId ??
+      (currentTask && msg.taskId === currentTask.taskId ? currentAgentId : undefined)
+    if (msg.sessionId && owner) {
+      lastSession = { agentId: owner, sessionId: msg.sessionId, historyPath: msg.historyPath ?? lastSession?.historyPath }
       persistSession()
     }
     // 记住该 CLI 最近模型，merge 进 agents 缓存即刻下发（下拉展示 claude · GLM-5.2）
-    if (msg.model) {
-      lastModels.set(currentAgentId, msg.model)
+    if (msg.model && owner) {
+      lastModels.set(owner, msg.model)
       persistSession()
       if (agentsCache) {
-        agentsCache = agentsCache.map((a) => (a.id === currentAgentId ? { ...a, model: msg.model } : a))
+        agentsCache = agentsCache.map((a) => (a.id === owner ? { ...a, model: msg.model } : a))
         chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
       }
     }
@@ -444,8 +460,10 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     currentTask = null
     return { error: page.error }
   }
-  // 提取窗口内被取消/被新任务顶替（currentTask 已易主）：终止，绝不再发 task-start
-  if (!currentTask || currentTask.taskId !== taskId) return { error: 'cancelled' }
+  // 提取窗口内被取消/被新任务顶替（currentTask 已易主）：终止，绝不再发 task-start。
+  // 带 taskId 让 panel 对账（F9 台账）——「新对话后立刻重发」时此迟到回调若不带
+  // 身份会击穿新一轮 pending 态（r4-regression）
+  if (!currentTask || currentTask.taskId !== taskId) return { error: 'cancelled', taskId }
 
   const { contentMarkdown, ...meta } = page
   currentTask = { taskId, page: meta, content: contentMarkdown, startedAt: currentTask?.startedAt ?? Date.now() }

@@ -28,8 +28,6 @@ export function cliPath(): string {
     // Node 版本管理器：npm i -g 的 CLI 落在这些 bin 下（NM 极简 PATH 看不见）
     extra.push(join(home, '.volta/bin'))
     extra.push(join(home, '.asdf/shims'))
-    extra.push(join(home, '.local/share/fnm/node-versions'))
-    extra.push(join(home, 'Library/Application Support/fnm/node-versions'))
   }
   try {
     const nvmDir = join(home, '.nvm/versions/node')

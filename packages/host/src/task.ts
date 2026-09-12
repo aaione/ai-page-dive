@@ -220,6 +220,7 @@ export class Task {
     // 永续，SW 不回收），panel 收不到终局帧 running 永真、输入锁死（唯一出路「新对话」）
     if (this.cancelled) {
       this.proc.reap()
+      this.cleanupCwd()
       this.cb.onError('cancelled', 'task cancelled')
       return
     }
@@ -236,6 +237,7 @@ export class Task {
         this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
       }
       void this.persist('interrupted')
+      this.cleanupCwd() // 不经过 finish()：timeout 路径自回收 cwd（r4-impl）
       this.cancel()
     }, TASK_TIMEOUT_MS)
 
@@ -288,6 +290,7 @@ export class Task {
           this.doneSent = true
           clearTimeout(this.timeoutTimer)
           this.proc?.reap()
+          this.cleanupCwd() // 不经过 finish()：isError 路径自回收 cwd（r4-impl）
           if (!this.input.resumeSessionId) this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
           // 落盘完成再发终局：host 若在 persist 期间断连退出，错误轮历史不再丢失
           await this.persist('error')
@@ -331,17 +334,19 @@ export class Task {
     }
   }
 
+  /** CLI 临时工作目录（mkdtemp）回收——固定工作区（stableCwd）与已被会话映射
+   * 记录的 cwd 不删（后续 resume 要用同 cwd）。isError/timeout/spawn 窗口期
+   * cancel 三条终局路径不经过 finish()，各自补调（r4-impl：cwd 曾在此泄漏） */
+  private cleanupCwd(): void {
+    const cwd = this.proc?.cwd
+    if (cwd && cwd !== stableCwd && ![...sessionCwds.values()].includes(cwd)) {
+      rm(cwd, { recursive: true, force: true }).catch(() => {})
+    }
+  }
+
   private async finish(code: number | null, signal: string | null, stderrTail: string, contentFile: string): Promise<void> {
     clearTimeout(this.timeoutTimer)
-    // CLI 临时工作目录（mkdtemp）回收——固定工作区（stableCwd）与已被会话映射
-    // 记录的 cwd 不删（后续 resume 要用同 cwd）
-    if (
-      this.proc?.cwd &&
-      this.proc.cwd !== stableCwd &&
-      ![...sessionCwds.values()].includes(this.proc.cwd)
-    ) {
-      rm(this.proc.cwd, { recursive: true, force: true }).catch(() => {})
-    }
+    this.cleanupCwd()
     const durationMs = Date.now() - this.startedAt
     // 追问轮不建新历史路径（append 首轮文件）
     if (!this.input.resumeSessionId) {

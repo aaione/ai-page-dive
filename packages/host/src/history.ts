@@ -8,6 +8,7 @@ import { join, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
 import { existsSync, renameSync } from 'node:fs'
 import type { HistoryItem } from '@ai-page-dive/shared'
+import { splitFrontmatter } from './frontmatter.js'
 
 /** v1 目录名 → v2：一次性迁移（rename 原子，已存在则逐项并入） */
 function rootDir(): string {
@@ -169,17 +170,13 @@ async function readFrontmatter(path: string): Promise<Omit<HistoryItem, 'path'> 
   const { bytesRead } = await fh.read(head, 0, 4096, 0)
   await fh.close()
   const raw = head.subarray(0, bytesRead).toString('utf8')
-  if (!raw.startsWith('---')) return undefined
-  let end = raw.indexOf('\n---', 3)
-  if (end < 0) {
+  let parts = splitFrontmatter(raw)
+  if (!parts) {
     // 4KB 内没找到 frontmatter 结束线：超大 frontmatter 回退全量读（罕见兜底）
-    const full = await readFile(path, 'utf8')
-    end = full.indexOf('\n---', 3)
-    if (end < 0) return undefined
-    const fmFull = full.slice(4, end)
-    return await parseFm(fmFull, path)
+    parts = splitFrontmatter(await readFile(path, 'utf8'))
+    if (!parts) return undefined
   }
-  return await parseFm(raw.slice(4, end), path)
+  return await parseFm(parts.fm, path)
 }
 
 async function parseFm(fm: string, path: string): Promise<Omit<HistoryItem, 'path'>> {

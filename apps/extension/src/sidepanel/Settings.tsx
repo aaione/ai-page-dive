@@ -59,6 +59,8 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const [hostError, setHostError] = useState<string | null>(null)
   /** workflow 读取超时的名字（只读提示态，不污染 editor.body/dirty） */
   const [readTimeout, setReadTimeout] = useState<string | null>(null)
+  /** 保存成功反馈（2s 自清）：正向操作此前零反馈，用户只能靠猜（r4-ux） */
+  const [savedFlash, setSavedFlash] = useState(false)
 
   // ── 模式（workflow） ──
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
@@ -133,7 +135,12 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
             if (cur && cur.originalName && cur.originalName !== m.name) {
               // 另存新名：originalName 切到新名
               setEditor(cur => cur && { ...cur, originalName: m.name, dirty: false })
+            } else {
+              // 同名保存（最常见路径）：也清 dirty（r4-ux）
+              setEditor(cur => cur && { ...cur, dirty: false })
             }
+            setSavedFlash(true)
+            window.setTimeout(() => setSavedFlash(false), 2000)
           }
           break
         case 'error':
@@ -361,7 +368,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                     />
                   </div>
                   <div className="pd-set-actions">
-                    <button className="pd-set-btn primary" onClick={saveWorkflow}>保存</button>
+                    <button className="pd-set-btn primary" onClick={saveWorkflow}>{savedFlash ? '已保存 ✓' : '保存'}</button>
                     <button className="pd-set-btn danger" onClick={deleteWorkflow} disabled={!editor.name}>
                       {editor.builtin ? '恢复默认' : '删除'}
                     </button>
