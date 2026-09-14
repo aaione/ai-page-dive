@@ -31,7 +31,14 @@ export function createFrameReader(onMsg: (obj: any) => void, maxLength = NM_MAX)
     for (;;) {
       if (buf.length < 4) break
       const len = buf.readUInt32LE(0)
-      if (len > maxLength) throw new Error(`frame length ${len} exceeds max ${maxLength}`)
+      if (len > maxLength) {
+        // r5-sec：超限帧曾在 stdin 回调内同步 throw → uncaughtException 崩整个
+        // host（多附件可组出 >1MB 单帧）。改为丢缓冲降级：协议已失步，后续由
+        // SW 看门狗/超时发现断流；SW 侧附件总量预算是第一道防线
+        console.error(`[pd] frame length ${len} exceeds max ${maxLength}, dropping stream`)
+        buf = Buffer.alloc(0)
+        return
+      }
       if (buf.length < 4 + len) break
       try {
         onMsg(JSON.parse(buf.subarray(4, 4 + len).toString('utf8')))

@@ -174,9 +174,20 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     }
     // 单批第 6+ 与合并累计超限都不静默（handler 闭包的 attachments 即当前快照）
     for (const f of all.slice(5)) skipped.push(`${f.name}（单批最多 5 个）`)
-    const merged = [...attachments, ...next]
+    let merged = [...attachments, ...next]
     for (const f of merged.slice(5)) skipped.push(`${f.name}（附件已达 5 个上限）`)
-    setAttachments(merged.slice(0, 5))
+    merged = merged.slice(0, 5)
+    // 附件总字节预算（r5-sec）：task-start 帧内嵌全量附件文本，无预算时 3×500KB
+    // 即组出 >1MB 帧击穿 NM 上限（host 侧超限丢流兜底，此处是第一道防线）
+    const BUDGET = 768 * 1024
+    let used = 0
+    const withinBudget: typeof merged = []
+    for (const a of merged) {
+      if (used + a.text.length > BUDGET) { skipped.push(`${a.name}（附件总量超 768KB 上限）`); continue }
+      used += a.text.length
+      withinBudget.push(a)
+    }
+    setAttachments(withinBudget)
     if (skipped.length) {
       setAttachNotice(`已跳过：${skipped.join('、')}——请精简后重试`)
     }
@@ -227,7 +238,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       </div>
 
       <div className="pd-content" role="region" aria-live="polite">
-        {messages.length === 0 && <Placeholder clis={usable.map((a) => a.id)} />}
+        {messages.length === 0 && <Placeholder clis={usable.map((a) => a.id)} anyInstalled={agents.some((a) => a.available)} />}
         {messages.map((m) =>
           m.role === 'user' ? (
             <div key={m.id} className="pd-chat-user">
@@ -271,6 +282,13 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         )}
         <ActionBar
           input={input}
+          workflowNotice={
+            // r5-ux：host 语义是 instruction 优先（既定设计），但顶栏仍显示模式已
+            // 选中——不告知则用户以为模式生效，实际执行等价默认
+            input.trim() && workflow !== 'default' && workflow !== 'quick'
+              ? `自定义问题将替代「${WF_LABEL[workflow] ?? workflow}」模式指令`
+              : undefined
+          }
           onInputChange={setInput}
           inputRef={inputRef}
           running={running}
@@ -389,7 +407,7 @@ function AssistantMessage({
             <path d="M8 11.2v.1" />
           </svg>
           <span>
-            {msg.isError ? 'CLI 报告运行失败：' : ''}
+            {msg.isError && !msg.cancelled ? 'CLI 报告运行失败：' : ''}
             {msg.error}
           </span>
         </div>
@@ -526,11 +544,13 @@ export function ModelDropdown({
 }
 
 function ActionBar({
-  input, onInputChange, inputRef,
+  input, workflowNotice, onInputChange, inputRef,
   running, usableCount, hasSession,
   onStart, onCancel, onAttach, attachCount, attachRef, onPickFiles,
 }: {
   input: string
+  /** 非空 = 输入自定义问题时提示所选模式将被替代（r5-ux） */
+  workflowNotice?: string
   onInputChange: (v: string) => void
   inputRef: React.RefObject<HTMLInputElement | null>
   running: boolean
@@ -545,6 +565,11 @@ function ActionBar({
 }) {
   return (
     <div className="pd-action-bar-inner">
+      {workflowNotice && (
+        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice, #8a6d3b)' }}>
+          ⚠ {workflowNotice}
+        </p>
+      )}
       <button
         onClick={onAttach}
         disabled={running || attachCount >= 5}
@@ -637,16 +662,27 @@ function PageTips({ meta }: { meta: PageMeta }) {
   )
 }
 
-function Placeholder({ clis }: { clis: string[] }) {
-  // 无可用 CLI：给出明确安装指引而非让用户对着灰按钮/无反应回车猜（F10）
+function Placeholder({ clis, anyInstalled }: { clis: string[]; anyInstalled?: boolean }) {
+  // 无可用 CLI：给出明确指引而非让用户对着灰按钮/无反应回车猜（F10）。
+  // 区分「未安装」与「已装但全被停用」（r5-ux：文案曾把后者引向重装排查）
   if (!clis.length) {
     return (
       <div className="pd-placeholder">
-        <p className="pd-placeholder-title">未检测到本机 AI CLI</p>
+        <p className="pd-placeholder-title">{anyInstalled ? '本机 CLI 已全部停用' : '未检测到本机 AI CLI'}</p>
         <p className="pd-placeholder-hint">
-          请先安装并登录 <span className="pd-mono">claude</span> 或 <span className="pd-mono">codex</span>
-          <br />
-          安装后回到本页即可使用 · 内容只在本机处理
+          {anyInstalled ? (
+            <>
+              在「设置 → 本机 CLI」中开启至少一个即可使用
+              <br />
+              内容只在本机处理
+            </>
+          ) : (
+            <>
+              请先安装并登录 <span className="pd-mono">claude</span> 或 <span className="pd-mono">codex</span>
+              <br />
+              安装后回到本页即可使用 · 内容只在本机处理
+            </>
+          )}
         </p>
       </div>
     )

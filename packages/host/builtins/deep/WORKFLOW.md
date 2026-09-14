@@ -3,9 +3,6 @@ name: deep
 description: 深度研读：结构化研读报告，多步通读全文
 category: general
 ---
-
-（不可信声明围栏由 host 的 buildPrompt 模板恒定注入，workflow 正文无需自带）
-
 深度研读。请先完整读取正文文件（分段读完，不要只读开头），然后输出结构化研读报告：
 
 1. **核心论点**：作者想说服你什么

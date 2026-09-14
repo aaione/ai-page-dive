@@ -221,6 +221,15 @@ describe('Task 状态机', () => {
     expect(pDefault).toContain('安全边界')
   })
 
+  it('buildPrompt：空串任务段回退内置默认（r5-ux：仅附件发送曾产出空「## 任务」）', () => {
+    // '' 对 ?? 是非 nullish 不回退——曾让 CLI 收到无指令的 prompt
+    const p = buildPrompt(PAGE as any, '/tmp/f.md', 'quick', '')
+    expect(p).toContain('5-8 条要点')
+    // prompt 里无内部批注泄漏（r5-fix-audit：维护者批注曾随模板下发）
+    expect(p).not.toContain('r4-sec')
+    expect(p).not.toContain('r5')
+  })
+
   it('buildPrompt：lang 拼尾部指令，缺省自动无指令', () => {
     const zh = buildPrompt(PAGE as any, '/tmp/f.md', 'quick', undefined, undefined, 'zh')
     expect(zh).toContain('始终使用中文回答')

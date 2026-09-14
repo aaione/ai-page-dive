@@ -16,6 +16,8 @@ export interface ChatMessage {
   usage?: { inputTokens?: number; outputTokens?: number }
   error?: string | null
   isError?: boolean
+  /** 用户主动停止等非故障终局：红样式保留但不带「CLI 报告运行失败」前缀（r5-ux） */
+  cancelled?: boolean
   agentId?: string
 }
 
@@ -157,7 +159,12 @@ export function App() {
           break
         case 'workflows': setWorkflows(m.items); break
         case 'task-meta':
-          setStream((s) => ({
+          setStream((s) => {
+            // 台账/绑定双守卫（r5：曾是 6 个帧 handler 中唯一缺席者——取消 A 后起 B，
+            // A 的迟到 meta 把 model 写上 B 的气泡并虚刷 B 的看门狗）
+            if (s.finished.includes(m.taskId)) return s
+            if (s.taskId !== null && s.taskId !== m.taskId) return s
+            return ({
             ...s,
             // 存活信号：重置看门狗（F4——重页提取+首心跳延迟叠加窗口）
             aliveAt: Date.now(),
@@ -168,7 +175,8 @@ export function App() {
                 ? { ...msg, model: m.model ?? msg.model }
                 : msg,
             ),
-          }))
+          })
+          })
           // 模型名收敛到下拉：帧自带 agentId，panel 直接 merge（不依赖 SW 内存态，
           // SW 长任务期间重启也不丢）
           if (m.model && m.agentId) {
@@ -272,7 +280,15 @@ export function App() {
             }
             const messages = s.messages.map((msg) =>
               msg.streaming
-                ? { ...msg, streaming: false, error: `${ERROR_LABEL[m.code] ?? m.code}: ${m.message}`, isError: true }
+                ? {
+                    ...msg,
+                    streaming: false,
+                    // 用户主动停止：文案只「已取消」不拼英文 message、不标故障（r5-ux：
+                    // 曾显示「CLI 报告运行失败：已取消: task cancelled」错怪 CLI）
+                    error: m.code === 'cancelled' ? '已取消' : `${ERROR_LABEL[m.code] ?? m.code}: ${m.message}`,
+                    isError: true,
+                    cancelled: m.code === 'cancelled',
+                  }
                 : msg,
             )
             // 终局即解绑 + 记入 finished（同 task-done：拒迟到帧重开）
@@ -290,7 +306,9 @@ export function App() {
             const messages = s.messages.map((msg) =>
               msg.streaming ? { ...msg, streaming: false, error: TEXT, isError: true } : msg,
             )
-            const needBubble = s.pending && !messages.some((m) => m.isError)
+            // pending ⟺ 本轮尚无任何 assistant 帧——必然零气泡，断连即补（r5 修正：
+            // 曾用 !messages.some(isError) 判定，上一轮遗留的错误气泡会吞掉本轮反馈）
+            const needBubble = s.pending
             return {
               ...s,
               taskId: null,
@@ -349,7 +367,7 @@ export function App() {
           activeId: null,
           messages: [
             ...s.messages.filter((x) => !(x.streaming && !x.text)),
-            { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true },
+            { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true, cancelled: resp.error === 'cancelled' },
           ],
         }
       })

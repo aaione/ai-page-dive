@@ -3,9 +3,6 @@ name: paper
 description: 论文模式：研究问题/方法/结果/局限的阅读框架
 category: research
 ---
-
-（不可信声明围栏由 host 的 buildPrompt 模板恒定注入，workflow 正文无需自带）
-
 论文阅读模式。请完整读取正文后按框架输出：
 
 1. **研究问题**：解决什么问题，为什么重要

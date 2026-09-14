@@ -23,6 +23,20 @@ describe('claude stream-json parser', () => {
     expect(p(line)).toEqual([{ type: 'text-delta', text: '你好' }])
   })
 
+  it('工具流多消息：msg2 的 assistant 镜像不重推终答（r5-impl 回归）', () => {
+    // buildPrompt 指示 CLI 读文件 → Read 工具流产生多条 assistant 消息：
+    // prevText 跨消息累积含 msg1 前缀，msg2 镜像的 startsWith 必然失配——
+    // 曾把终答全文再次作为 delta 推出（panel 与历史落盘重复两份）
+    const p = createClaudeParser()
+    const delta = (t: string) => JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: t } } })
+    const mirror = (t: string) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: t }] } })
+    const out: string[] = []
+    for (const line of [delta('先读文件'), mirror('先读文件'), delta('这是终答'), mirror('这是终答')]) {
+      for (const ev of p(line)) if (ev.type === 'text-delta') out.push(ev.text)
+    }
+    expect(out.join('')).toBe('先读文件这是终答') // 修复前 = '先读文件这是终答这是终答'
+  })
+
   it('多轮 assistant 文本累积 diff（partial 不可用时的兜底路径）', () => {
     const p = createClaudeParser()
     const mk = (t: string) =>

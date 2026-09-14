@@ -56,6 +56,11 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
         opts.onSpawnError?.(err)
         reject(err)
       })
+      // stdin 异步 EPIPE（r5-impl：大 prompt 塞管道 + CLI 快速退出——未登录/
+      // resume 失效会话）：writeStdin 的同步 try/catch 捕不到异步 error 事件，
+      // 无监听则 uncaughtException 崩掉整个 host（连带杀死同 host 在途任务）。
+      // 空监听吞掉——CLI 死亡由 exit 路径收割
+      child.stdin!.on('error', () => {})
 
       const writeStdin = (data: string) => {
         try {

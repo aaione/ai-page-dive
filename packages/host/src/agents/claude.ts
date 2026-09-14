@@ -36,10 +36,15 @@ export function createClaudeParser() {
       let text = ''
       for (const b of blocks) if (b.type === 'text') text += b.text
       // partial 增量已发过时这里是镜像（diff 出空增量，自然跳过）；
-      // 旧版 CLI 无 partial 时这里是累积全量，diff 正好取增量——统一走 startsWith diff
+      // 旧版 CLI 无 partial 时这里是累积全量，diff 正好取增量——统一走 startsWith diff。
+      // 工具流多消息（r5-impl）：prevText 跨消息累积含前序消息前缀，本条消息的
+      // 全文是它的后缀——startsWith 必然失配曾把终答整段重推。endsWith = 本条
+      // 已全部经增量推出（镜像），跳过
       if (text.startsWith(prevText)) {
         const delta = text.slice(prevText.length)
         if (delta) out.push({ type: 'text-delta', text: delta })
+      } else if (text && prevText.endsWith(text)) {
+        // 跨消息镜像：本条消息文本已作为流式增量推出，跳过
       } else if (text) {
         out.push({ type: 'text-delta', text })
       }
