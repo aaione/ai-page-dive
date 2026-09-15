@@ -105,6 +105,7 @@ export async function registerManifests(extIds: string[], quiet = false): Promis
 export async function install(extIds: string[]): Promise<void> {
   // root/sudo 守卫：与 postinstall 同一防线（install 是用户显式执行，直接中止而非跳过）
   assertNotRoot('install')
+  const valid = extIds.filter((id) => /^[a-p]{32}$/.test(id))
   const written = await registerManifests(extIds)
   if (!written.length) {
     console.log('⚠️  未发现 Chrome 数据目录（Chrome 从未启动过？）——启动一次 Chrome 后重新运行 install')
@@ -117,6 +118,12 @@ export async function install(extIds: string[]): Promise<void> {
   for (const a of agents) {
     console.log(a.available ? `  ✅ ${a.id} ${a.version ?? ''}` : `  ⛔ ${a.id} 未安装`)
   }
+  // 退出码语义（r6-ux 假成功修复）：0=完全就绪；1=硬失败（无 Chrome 数据目录 /
+  // 显式传入的 ext-id 全非法——登记目的未达成）；2=组件就绪但零可用 CLI（用户
+  // 还需装 CLI——install.sh 据此区分完成文案，不再无条件 🎉 假成功）
+  const anyCli = agents.some((a) => a.available)
+  if (!written.length || (extIds.length > 0 && valid.length === 0)) process.exitCode = 1
+  else if (!anyCli) process.exitCode = 2
 }
 
 function readFileSyncSafe(p: string): any {

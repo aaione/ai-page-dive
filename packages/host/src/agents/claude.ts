@@ -81,6 +81,12 @@ export const claudeDef: AgentDef = {
     '--output-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
+    // 进程级工具围栏（r6-sec，与 codex --sandbox read-only 对称）：任务语义只需读
+    // 临时正文/附件文件——白名单外工具（Bash/Write/网络等）在 CLI 层一律拒绝，
+    // prompt 注入的越权指令到此被拦。等号形式：--allowedTools 是 variadic 参数，
+    // 空格形式会吞掉后续 argv（本产品 prompt 走 stdin 不受影响，等号防御参数序
+    // 变动）。实测（claude 2.x）：Read 围栏下读文件+总结链路 exit 0 / is_error false
+    '--allowedTools=Read',
     ...(opts.resumeSessionId ? ['--resume', opts.resumeSessionId] : []),
   ],
 }

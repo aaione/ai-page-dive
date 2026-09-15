@@ -40,10 +40,20 @@ if ! npm i -g @aaione/ai-page-dive; then
 fi
 
 # ── 3. 注册 NM host + 探测本机 CLI（幂等，origins 追加不覆盖）──
+if ! command -v ai-page-dive >/dev/null 2>&1; then
+  die "npm 安装完成但 ai-page-dive 命令不可用——请重开终端（刷新 PATH）后重跑本命令"
+fi
+# 退出码语义：0=完全就绪 / 2=组件就绪但零可用 CLI / 其他=硬失败（install 已打印原因）
+set +e
 if [ -n "$EXT_ID" ]; then
   ai-page-dive install --ext-id "$EXT_ID"
 else
   ai-page-dive install
 fi
-
-say "🎉 安装完成——回到浏览器，面板通常会自动进入；若 1 分半内未进入，请完全退出 Chrome（⌘Q）后重开。"
+RC=$?
+set -e
+case "$RC" in
+  0) say "🎉 安装完成——回到浏览器，面板通常会自动进入；若 1 分半内未进入，请完全退出 Chrome（⌘Q）后重开。" ;;
+  2) say "✅ 本机组件已装好，但未检测到 AI CLI——装好并登录 claude 或 codex 后，回到浏览器即可使用（无需重跑本命令）。" ;;
+  *) die "安装未完全成功（exit $RC）——请按上方 ⚠️ 提示处理后重跑；仍卡住请携输出反馈到 GitHub Issues" ;;
+esac

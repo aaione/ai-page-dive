@@ -1,0 +1,30 @@
+# 最小 CI（r6-arch blocker）：host <2000 行红线此前只靠本地自觉——
+# scripts/ 豁免后门 + 本地可跳过 = push 无拦截。本 workflow 把
+# 「行数红线 + 类型检查 + 全量测试」变成 main/PR 的硬门禁。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 18 = host engines 声明的下界（每次 CI 真实验证）；22 = 主流 LTS
+        node: [18, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - run: pnpm test # 内含 scripts/check-host-lines.mjs 行数红线断言

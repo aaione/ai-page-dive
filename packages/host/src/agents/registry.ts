@@ -28,6 +28,9 @@ export function cliPath(): string {
     // Node 版本管理器：npm i -g 的 CLI 落在这些 bin 下（NM 极简 PATH 看不见）
     extra.push(join(home, '.volta/bin'))
     extra.push(join(home, '.asdf/shims'))
+    // claude native installer 默认路径（2026 起官方首选安装形态，免 Node——
+    // 用户「明明装了 claude 却探测不到」的主因）；亦覆盖 pipx/uv 等 ~/.local 生态
+    extra.push(join(home, '.local/bin'))
   }
   try {
     const nvmDir = join(home, '.nvm/versions/node')

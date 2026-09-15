@@ -300,8 +300,9 @@ export type HostToExt =
    * host 活着就有心跳，看门狗要检测的是「host/SW 死」而非「UI 无内容帧」。
    * elapsedMs：任务已运行时长，供 panel 展示「仍在处理（已 Ns）」进度感 */
   | { t: 'task-alive'; taskId: string; elapsedMs?: number }
-  /** SW 合成：NM host 断连（panel 据此停止 loading 并提示） */
-  | { t: '__host-disconnected' }
+  /** SW 合成：NM host 断连（panel 据此停止 loading 并提示）；taskId = 断连时
+   * 在跑的任务（r6-sec：panel 据此拒收迟到帧、不误伤重 spawn 后的新一轮） */
+  | { t: '__host-disconnected'; taskId?: string }
 
 /** 单帧最大 payload（NM 限制 1MB，host→ext 的 chunk 必须分片到线下） */
 export const MAX_CHUNK = 512 * 1024

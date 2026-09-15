@@ -248,8 +248,10 @@ async function handleMessage(msg: any): Promise<unknown> {
       return { ok: true }
     case 'nm':
       // panel → host 的通用转发（list-agents / list-workflows / history 等）
-      if ((msg.msg as any)?.t === 'list-agents' && agentsCache) {
-        // SW 内存缓存优先（含最近模型），直接回 panel；host 探测兜底
+      if ((msg.msg as any)?.t === 'list-agents' && agentsCache && agentsCache.some((a) => a.available)) {
+        // SW 内存缓存优先（含最近模型），直接回 panel；host 探测兜底。
+        // r6-ux：仅在有 CLI 可用时缓存命中——零可用 = 用户可能刚装好 CLI，
+        // 永远穿透重探测（否则面板永远空态且无自愈入口）
         chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
         return { ok: true }
       }
@@ -347,8 +349,13 @@ nmPort.onMessage((m) => {
   chrome.runtime.sendMessage(m).catch(() => {})
 })
 nmPort.onDisconnect(() => {
+  // r6-sec：带断连时在跑任务的 taskId（panel 据此拒收迟到帧、不误伤重 spawn 后的
+  // 新一轮）；同步清 currentTask——断连 = 该连接上的任务必死（Chrome 收割 NM host
+  // 进程树），句柄残留会让后续 cancel 发向死连接、新任务误判「已有在跑」
+  const tid = currentTask?.taskId
+  currentTask = null
   chrome.runtime
-    .sendMessage({ t: '__host-disconnected' } as HostToExt)
+    .sendMessage({ t: '__host-disconnected', ...(tid ? { taskId: tid } : {}) } as HostToExt)
     .catch(() => {})
 })
 

@@ -18,6 +18,8 @@ export interface ChatMessage {
   isError?: boolean
   /** 用户主动停止等非故障终局：红样式保留但不带「CLI 报告运行失败」前缀（r5-ux） */
   cancelled?: boolean
+  /** 本次回答观测到 chunk 丢片（host seq 跳变）：终局后提示「内容可能不完整」（r6-ux） */
+  incomplete?: boolean
   agentId?: string
 }
 
@@ -38,6 +40,8 @@ export interface TaskStreamState {
   /** 本会话是否可追问（CLI 回带过 sessionId）：codex 不产 sessionId，据此关掉
    * 「继续追问…」假入口，避免追问必得 session-lost */
   resumable: boolean
+  /** 末次收到的 chunk seq（host 每 chunk 递增，任务切换自然重置）：跳变 = 传输丢片 */
+  lastChunkSeq?: number
   /** 最后一次收到 host 存活信号（任一任务帧或 task-alive 心跳）的时刻——看门狗据此判死 */
   aliveAt: number
 }
@@ -189,12 +193,17 @@ export function App() {
             if (s.finished.includes(m.taskId)) return s
             // 首帧绑定或已绑定同任务；绑定后不同 taskId = 过期帧（取消后尾随），丢弃
             if (s.taskId !== null && s.taskId !== m.taskId) return s
+            // r6-ux seq 跳变检测：host 每 chunk 递增 seq，SW 重放/断连窗口丢片时跳变
+            // ——静默缺头比失败更误导，标记气泡，终局后提示重试（host 零改动）
+            const gap =
+              typeof s.lastChunkSeq === 'number' && typeof m.seq === 'number' && m.seq > s.lastChunkSeq + 1
             const activeId = s.activeId ?? `a${m.taskId}`
             const messages = [...s.messages]
             const idx = messages.findIndex((x) => x.id === activeId)
-            if (idx >= 0) messages[idx] = { ...messages[idx], text: messages[idx].text + m.text }
+            if (idx >= 0)
+              messages[idx] = { ...messages[idx], text: messages[idx].text + m.text, ...(gap ? { incomplete: true } : {}) }
             else messages.push({ id: activeId, role: 'assistant', text: m.text, streaming: true })
-            return { ...s, taskId: m.taskId, activeId, pending: false, messages, aliveAt: Date.now() }
+            return { ...s, taskId: m.taskId, activeId, pending: false, messages, aliveAt: Date.now(), lastChunkSeq: m.seq }
           })
           break
         }
@@ -302,6 +311,14 @@ export function App() {
           // pending 也必须终局（r4-ux F1）：spawn 窗口断连时 pending=true 且无任何气泡，
           // 不清则输入锁死至看门狗 120s 且零提示
           setStream((s) => {
+            // 双守卫（r6-sec，与其余 6 个帧 handler 对齐）：带 taskId 的断连帧——
+            // ① 该任务已终局（finished 台账）→ 拒收；② 面板绑定的是别的任务
+            // （SW 已重 spawn、新一轮健在）→ 整体拒收，不得把新一轮标「连接中断」。
+            // 无 taskId（断连时无在跑任务）保持原语义（spawn 窗口 pending 兜底）
+            if (m.taskId != null) {
+              if (s.finished.includes(m.taskId)) return s
+              if (s.taskId !== null && s.taskId !== m.taskId) return s
+            }
             const TEXT = '本机组件连接中断——请重试发送'
             const messages = s.messages.map((msg) =>
               msg.streaming ? { ...msg, streaming: false, error: TEXT, isError: true } : msg,

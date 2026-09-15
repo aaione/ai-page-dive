@@ -178,13 +178,18 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     for (const f of merged.slice(5)) skipped.push(`${f.name}（附件已达 5 个上限）`)
     merged = merged.slice(0, 5)
     // 附件总字节预算（r5-sec）：task-start 帧内嵌全量附件文本，无预算时 3×500KB
-    // 即组出 >1MB 帧击穿 NM 上限（host 侧超限丢流兜底，此处是第一道防线）
+    // 即组出 >1MB 帧击穿 NM 上限（host 侧超限终结兜底，此处是第一道防线）。
+    // r6-sec：曾用 .length（UTF-16 码元）计量——中文 1 码元 = UTF-8 3 字节，
+    // 768KB 预算下纯中文附件实际可组出 >2MB 帧照样击穿（与上方 f.size 字节口径
+    // 自相矛盾）。TextEncoder 计真实 UTF-8 字节，与 NM 帧序列化口径一致
     const BUDGET = 768 * 1024
+    const utf8Len = (s: string) => new TextEncoder().encode(s).length
     let used = 0
     const withinBudget: typeof merged = []
     for (const a of merged) {
-      if (used + a.text.length > BUDGET) { skipped.push(`${a.name}（附件总量超 768KB 上限）`); continue }
-      used += a.text.length
+      const bytes = utf8Len(a.text)
+      if (used + bytes > BUDGET) { skipped.push(`${a.name}（附件总量超 768KB 上限）`); continue }
+      used += bytes
       withinBudget.push(a)
     }
     setAttachments(withinBudget)
@@ -229,6 +234,21 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           disabled={hasSession}
           disabledTitle="追问沿用首轮 CLI"
         />
+        {usable.length === 0 && (
+          // r6-ux 空态自愈入口：SW 对零可用结果永不缓存命中（穿透重探测），
+          // 用户装好 CLI 后点此按钮即见——无需重装本机组件/重开面板
+          <button
+            onClick={() => chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-agents' } })}
+            className="pd-new-chat-btn"
+            title="装好 CLI 后点此重新检测（无需重装本机组件）"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.5 8a5.5 5.5 0 1 1-1.7-4" />
+              <path d="M13.6 2.6v2.4h-2.4" />
+            </svg>
+            <span>重试检测</span>
+          </button>
+        )}
         <WorkflowDropdown
           workflow={workflow}
           onWorkflowChange={setWorkflow}
@@ -410,6 +430,18 @@ function AssistantMessage({
             {msg.isError && !msg.cancelled ? 'CLI 报告运行失败：' : ''}
             {msg.error}
           </span>
+        </div>
+      )}
+      {!running && msg.incomplete && (
+        // r6-ux：chunk seq 跳变（传输丢片）——任务本身成功，但正文可能缺头，
+        // 弱于 error 的提示（pd-warn 黄），不阻断复制/下载
+        <div className="pd-error pd-warn" role="status">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.2" />
+            <path d="M8 7.4v3" />
+            <path d="M8 4.9v.1" />
+          </svg>
+          <span>内容可能不完整（传输中断片）——如觉缺头少尾，请重试</span>
         </div>
       )}
       {!running && msg.text && (

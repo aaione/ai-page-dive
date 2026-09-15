@@ -25,4 +25,17 @@ describe('NM 帧编解码', () => {
   it('>1MB 帧 encode 拒绝', () => {
     expect(() => encodeFrame({ t: 'x', text: 'a'.repeat(1024 * 1024) })).toThrow()
   })
+
+  it('超限帧头 → onDesync 终结，不再丢缓冲假降级（r6-sec 失步不可自愈）', () => {
+    const desynced: number[] = []
+    const got: any[] = []
+    // maxLength=64 模拟超限；失步必须经 onDesync 上报（stdio 层收割+退出），不走默认 exit 杀测试进程
+    const feed = createFrameReader((o) => got.push(o), 64, () => desynced.push(1))
+    const evilHead = Buffer.alloc(4)
+    evilHead.writeUInt32LE(0xffffffff, 0) // 损坏/恶意帧头
+    feed(evilHead)
+    feed(encodeFrame({ t: 'ping' })) // 失步后的正常字节不得被当新帧解析（丢缓冲时代会成随机帧头）
+    expect(desynced).toEqual([1])
+    expect(got).toEqual([])
+  })
 })

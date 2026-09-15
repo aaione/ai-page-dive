@@ -319,6 +319,12 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   flex-shrink: 0;
 }
 
+/* r6-ux：弱于 error 的黄色告警（chunk 丢片「内容可能不完整」类提示——任务成功但正文可疑） */
+.pd-error.pd-warn {
+  border-left-color: #d29922;
+  background: rgba(187, 128, 9, 0.12);
+}
+
 /* ── Placeholder ── */
 .pd-placeholder {
   margin-top: 40px;

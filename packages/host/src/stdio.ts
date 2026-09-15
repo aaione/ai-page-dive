@@ -205,7 +205,9 @@ export function runNative(): void {
     setTimeout(() => process.exit(0), REAP_GRACE_MS + 200)
     // 窗口后强制退出；期间事件循环自然驱动 persist / SIGKILL 定时器
   }
-  process.stdin.on('data', createFrameReader(handle, NM_MAX))
+  // 帧流失步（超限帧头）：走收割路径终结——直接杀在跑任务树再退出，CLI 进程
+  // 不泄漏；对扩展侧表现为断连（可重连自愈），而非假超时
+  process.stdin.on('data', createFrameReader(handle, NM_MAX, shutdown))
   process.stdin.on('end', shutdown)
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)
