@@ -1,5 +1,5 @@
 #!/bin/sh
-# PageDive 一键安装：Node>=18 探测 → npm i -g ai-page-dive → ai-page-dive install
+# PageDive 一键安装：Node>=18 探测 → npm i -g @aaione/ai-page-dive → ai-page-dive install
 # 用法：curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- <扩展ID>
 # 托管在仓库本身（raw.githubusercontent）——零基建；内部仍走 npm（registry 自带完整性校验，
 # 脚本不下载任何二进制，无需附加 checksum 机制）。
@@ -31,7 +31,7 @@ MAJOR="${NODE_VER#v}"; MAJOR="${MAJOR%%.*}"
 say "✅ Node $NODE_VER"
 
 # ── 2. npm 全局安装（捕获常见失败给指引）──
-if ! npm i -g ai-page-dive; then
+if ! npm i -g @aaione/ai-page-dive; then
   printf '\033[1;33m%s\033[0m\n' "npm 全局安装失败。常见原因：
   • EACCES 权限错误 → 改用 nvm/Homebrew 的 Node（推荐，免 sudo；勿用 sudo npm——会写坏 NM 注册属主）
   • nvm 切过版本 → 全局包按版本隔离，重装一次即可

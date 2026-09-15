@@ -1,5 +1,5 @@
 {
-  "name": "ai-page-dive",
+  "name": "@aaione/ai-page-dive",
   "version": "0.1.1",
   "description": "PageDive native messaging host — 零依赖薄壳，桥接 Chrome 扩展与本机 AI CLI（claude / codex）",
   "license": "MIT",
@@ -9,6 +9,9 @@
   },
   "bin": {
     "ai-page-dive": "./dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist",

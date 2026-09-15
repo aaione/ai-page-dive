@@ -47,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh
 
 ```bash
 # 需要 Node >= 18（nvm/Homebrew 安装的 Node 免 sudo；勿用 sudo npm——会写坏本机组件注册属主）
-npm i -g ai-page-dive && ai-page-dive install --ext-id <扩展ID>
+npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id <扩展ID>
 ```
 </details>
 

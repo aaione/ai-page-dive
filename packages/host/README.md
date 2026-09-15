@@ -7,7 +7,7 @@ PageDive 的本机组件（Native Messaging host）：桥接 Chrome 扩展与本
 需要 macOS + Chrome + Node.js >= 18，以及本机已装并登录的 [claude](https://claude.com/claude-code) 或 [codex](https://github.com/openai/codex) CLI。
 
 ```sh
-npm i -g ai-page-dive && ai-page-dive install --ext-id <扩展ID>
+npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id <扩展ID>
 ```
 
 `install` 幂等：写 NM host manifest（`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`）+ 探测本机 CLI。扩展端的 Onboarding 页会给出完整命令（含扩展 ID）。

@@ -59,12 +59,12 @@
 1. Side Panel 一键总结当前页（提取 → 本地临时文件 → CLI agent → 流式渲染）
 2. claude + codex 双适配器
 3. 内置 3-4 个 workflow（快速摘要 / 深度研读多步 / 论文模式）
-4. `npm i -g ai-page-dive && ai-page-dive install`（自动注册 NM + 探测已装 CLI）
+4. `npm i -g @aaione/ai-page-dive && ai-page-dive install`（自动注册 NM + 探测已装 CLI）
 5. 历史 B+ 档
 
 ### Host 分发形态定案（2026-09-06 全网调研 + 三评委裁决，D10）
 
-- **结论：npm 主线不变（`npm i -g ai-page-dive && ai-page-dive install`），补失败兜底文案；二进制/安装器路线全部否决。** 三评委（UX/成本/风险）一致最高分给「npm + 兜底增强」。
+- **结论：npm 主线不变（`npm i -g @aaione/ai-page-dive && ai-page-dive install`），补失败兜底文案；二进制/安装器路线全部否决。** 三评委（UX/成本/风险）一致最高分给「npm + 兜底增强」。2026-09-15 修订：npm 组织 `aaione` 建立，包名由裸名 `ai-page-dive` 改为 `@aaione/ai-page-dive`（bin 命令名 `ai-page-dive` 不变，用户全局命令零感知；NM host 名 `com.pagedive.host` 与包名解耦不受影响）。
 - 否决编译单二进制（deno compile / bun --compile / node SEA / @yao-pkg/pkg）：① 受众零增益——用户必先装 AI CLI（均需 Node），「免 Node」这一唯一差异化收益在本人群为零；② 本地审计确认 3 个 fatal blocker（`workflows.ts:11`/`skills.ts:12` 的 builtins 相对 `import.meta.url` 解析、`install.ts:35` hostPath 校验——编译产物下内置 workflows/skills 静默消失、install 直接 throw），修复 2.5 人日 + 永久维护二进制管线；③ vercel/pkg 已归档。
 - 否决 dmg/pkg/.command 无签名安装器：macOS Sequoia 起 Gatekeeper 对未公证产物的「Open Anyway」路径更严苛，Chrome 拉起 NM host 时同样过 Gatekeeper——体验反而比 npm 差；签名公证需 $99/年 + 永久 CI。
 - CWS 政策核实：扩展引导用户**自行**安装本机 NM host 不触红线（KeePassXC 70 万 / 1Password 700 万在架先例）；NM host 不属 remote code。红线是扩展运行时自下载执行代码。

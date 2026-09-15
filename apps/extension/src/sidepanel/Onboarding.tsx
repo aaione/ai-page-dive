@@ -95,7 +95,7 @@ export function Onboarding() {
           <summary>命令报错了？</summary>
           <p>
             <code>curl</code> 走不了代理/被墙 → 用 npm 方式手动安装：
-            <code>npm i -g ai-page-dive && ai-page-dive install --ext-id {extId}</code>。
+            <code>npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id {extId}</code>。
           </p>
           <p>
             <code>EACCES</code> / 权限错误 → 改用 nvm/Homebrew 的 Node 重装（免 sudo；

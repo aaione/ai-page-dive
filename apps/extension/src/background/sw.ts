@@ -187,7 +187,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       // 版本握手：host 过旧时带提示（panel 一次性横幅），升级命令一条到底
       const outdated =
         r.ok && r.hostVersion && versionLt(r.hostVersion, MIN_HOST_VERSION)
-          ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），请在终端执行：npm i -g ai-page-dive`
+          ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），请在终端执行：npm i -g @aaione/ai-page-dive`
           : undefined
       // tips 条元数据无论 probe 成败都带回（panel 已开就有目标页）。
       // hasSession/activeTask（r4-ux）：面板切 tab 被收起后重开时 React 态已丢——

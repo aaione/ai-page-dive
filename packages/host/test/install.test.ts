@@ -76,28 +76,28 @@ describe('registerManifests', () => {
 })
 
 describe('postinstall 守卫（纯函数）', () => {
-  const MAC = '/Users/u/.nvm/versions/node/v20.0.0/lib/node_modules/ai-page-dive'
+  const MAC = '/Users/u/.nvm/versions/node/v20.0.0/lib/node_modules/@aaione/ai-page-dive'
 
   it('detectGlobalInstall：npm -g / pnpm（含尾斜杠）/ yarn 命中，本地与路径前缀陷阱不命中', () => {
     expect(detectGlobalInstall({ npm_config_global: 'true' }, '/any/where')).toBe(true)
     // pnpm：PNPM_HOME 前缀 + sep 边界
-    expect(detectGlobalInstall({ PNPM_HOME: '/Users/u/Library/pnpm' }, '/Users/u/Library/pnpm/global/v1/packages/ai-page-dive')).toBe(true)
+    expect(detectGlobalInstall({ PNPM_HOME: '/Users/u/Library/pnpm' }, '/Users/u/Library/pnpm/global/v1/packages/@aaione/ai-page-dive')).toBe(true)
     // 尾斜杠 PNPM_HOME（shell 配置常见）——resolve 规范化后仍命中
-    expect(detectGlobalInstall({ PNPM_HOME: '/Users/u/Library/pnpm/' }, '/Users/u/Library/pnpm/global/v1/packages/ai-page-dive')).toBe(true)
+    expect(detectGlobalInstall({ PNPM_HOME: '/Users/u/Library/pnpm/' }, '/Users/u/Library/pnpm/global/v1/packages/@aaione/ai-page-dive')).toBe(true)
     // 边界陷阱：pnpm-foo 不是 pnpm 目录
-    expect(detectGlobalInstall({ PNPM_HOME: '/Users/u/Library/pnpm' }, '/Users/u/Library/pnpm-foo/node_modules/ai-page-dive')).toBe(false)
+    expect(detectGlobalInstall({ PNPM_HOME: '/Users/u/Library/pnpm' }, '/Users/u/Library/pnpm-foo/node_modules/@aaione/ai-page-dive')).toBe(false)
     // yarn v1 全局路径特征
-    expect(detectGlobalInstall({}, '/Users/u/.config/yarn/global/node_modules/ai-page-dive')).toBe(true)
+    expect(detectGlobalInstall({}, '/Users/u/.config/yarn/global/node_modules/@aaione/ai-page-dive')).toBe(true)
     // 本地/monorepo：无任何特征
     expect(detectGlobalInstall({}, MAC)).toBe(false)
     expect(detectGlobalInstall({}, '/Users/u/work/ai-page-dive/packages/host')).toBe(false)
   })
 
-  it('isTopLevelGlobal：顶层 node_modules 直接子目录为真，嵌套宿主为假', async () => {
-    // 顶层：.../npm-global/lib/node_modules/ai-page-dive
+  it('isTopLevelGlobal：顶层 node_modules 直接子目录（含 scoped）为真，嵌套宿主为假', async () => {
+    // 顶层（scoped）：.../npm-global/lib/node_modules/@aaione/ai-page-dive
     expect(isTopLevelGlobal(MAC)).toBe(true)
-    // 嵌套：.../node_modules/host-tool/node_modules/ai-page-dive（grandparent package.json 的 name 是宿主）
-    const hostDir = join(SANDBOX, 'host-tool', 'node_modules', 'ai-page-dive')
+    // 嵌套（scoped）：.../host-tool/node_modules/@aaione/ai-page-dive（grandparent package.json 的 name 是宿主）
+    const hostDir = join(SANDBOX, 'host-tool', 'node_modules', '@aaione', 'ai-page-dive')
     await mkdir(hostDir, { recursive: true })
     await writeFile(join(SANDBOX, 'host-tool', 'package.json'), JSON.stringify({ name: 'host-tool' }))
     expect(isTopLevelGlobal(hostDir)).toBe(false)

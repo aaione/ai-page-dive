@@ -2,7 +2,7 @@
 // 设计约束（D10 定案）：只用 node: 内置；永不抛错、永不阻塞安装；
 // 只在「包管理器全局安装 + macOS + 非 root + dist 已构建」时静默注册 NM host。
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerManifests } from '../install.js'
 
@@ -37,15 +37,20 @@ export function detectGlobalInstall(env: NodeJS.ProcessEnv, pkgDir: string): boo
 }
 
 /** 顶层全局判定：npm i -g <宿主> 时嵌套依赖也会看到 npm_config_global——
- * 顶层全局包的父目录是 node_modules，且其上一级没有另一个包的 package.json */
+ * 顶层全局包的父级是 node_modules（scoped 包父级是 node_modules/@scope），
+ * 且其上一级没有另一个包的 package.json */
 export function isTopLevelGlobal(pkgDir: string): boolean {
-  const parent = dirname(pkgDir)
+  let parent = dirname(pkgDir)
+  // scoped 包（@scope/<pkg>）：真实父级在再上一级
+  if (!parent.endsWith(`${sep}node_modules`) && basename(parent).startsWith('@')) {
+    parent = dirname(parent)
+  }
   if (!parent.endsWith(`${sep}node_modules`)) return false
   const grandparentPkg = join(dirname(parent), 'package.json')
   try {
     if (existsSync(grandparentPkg)) {
       const gp = JSON.parse(readFileSync(grandparentPkg, 'utf8'))
-      if (gp.name && gp.name !== 'ai-page-dive') return false // 嵌套在宿主包里
+      if (gp.name && gp.name !== '@aaione/ai-page-dive') return false // 嵌套在宿主包里
     }
   } catch { /* 读不到按顶层处理 */ }
   return true
@@ -78,7 +83,7 @@ async function main(): Promise<void> {
   // 5) root/sudo 守卫（语义见 rootguard.ts）：postinstall 永不阻塞安装——跳过注册并指引
   if (typeof process.getuid === 'function' && process.getuid() === 0) {
     log('检测到以 root/sudo 运行，已跳过自动注册（避免写坏用户目录属主）。')
-    log('建议：用 nvm/Homebrew 的 Node 以普通用户重装（npm i -g ai-page-dive，无需 sudo）。')
+    log('建议：用 nvm/Homebrew 的 Node 以普通用户重装（npm i -g @aaione/ai-page-dive，无需 sudo）。')
     pointToPanel()
     return
   }

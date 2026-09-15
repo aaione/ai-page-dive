@@ -4,7 +4,7 @@
 export function assertNotRoot(cmd: string): void {
   if (typeof process.getuid === 'function' && process.getuid() === 0) {
     console.error(`[ai-page-dive] 检测到以 root/sudo 运行 ${cmd}，已中止（避免写坏用户目录属主）。`)
-    console.error('[ai-page-dive] 建议：用 nvm/Homebrew 的 Node 以普通用户重装（npm i -g ai-page-dive，无需 sudo）。')
+    console.error('[ai-page-dive] 建议：用 nvm/Homebrew 的 Node 以普通用户重装（npm i -g @aaione/ai-page-dive，无需 sudo）。')
     process.exit(1)
   }
 }
