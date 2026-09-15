@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentStatus, HistoryItem, HostToExt, WorkflowItem } from '@ai-page-dive/shared'
 import { Onboarding } from './Onboarding.js'
 import { SummarizeView, useDisabledClis } from './SummarizeView.js'
@@ -70,6 +70,12 @@ export function App() {
   const [stream, setStream] = useState<TaskStreamState>(BLANK)
   const [agentId, setAgentId] = useState('')
   const [pageMeta, setPageMeta] = useState<PageMeta | null>(null)
+  /** SW 侧活会话归属的 CLI（panel-ready 回带）：面板重开后头部下拉的初始显示——
+   * 与追问实际执行的 CLI 一致（r7-review：曾错标为默认链结果，错标窗口=重开后首问） */
+  const [sessionAgent, setSessionAgent] = useState('')
+  // 看门狗 judge 回调需读最新 aliveAt（睡眠唤醒场景，闭包快照会滞后）
+  const streamRef = useRef(stream)
+  streamRef.current = stream
 
   useEffect(() => {
     // Esc 关 overlay（输入框/下拉自身的 Esc 处理在前，事件冒泡到此处才关面板）
@@ -90,8 +96,16 @@ export function App() {
     if (!running) return
     // WATCHDOG_MS = 6 × host 心跳间隔（stdio.ts HEARTBEAT 20s）：连丢 6 次心跳才判死，
     // 容忍偶发丢帧/SW 短暂繁忙。三常量（此处 / heartbeat / 任务超时）关联见各处注释
-    const elapsed = Date.now() - stream.aliveAt
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout>
+    const judge = () => {
+      // 睡眠唤醒保护（r7-review）：timer 在睡眠中冻结、唤醒即派发，此刻 host 的
+      // 首个 post-wake 心跳（最长 20s）可能未到——重读最新 aliveAt，未真超时则
+      // 重订而非判死（误杀存活任务）。心跳到达时 effect 会因 aliveAt 变化重建
+      const sinceAlive = Date.now() - streamRef.current.aliveAt
+      if (sinceAlive < WATCHDOG_MS) {
+        timer = setTimeout(judge, Math.max(WATCHDOG_MS - sinceAlive, 5_000))
+        return
+      }
       // 判死即取消（r7-ux，对齐 sw.ts「不白烧订阅额度」收敛原则）：SW 活/host 卡死
       // 场景收割在跑任务；SW 已死场景消息会唤醒 SW（currentTask 内存已空，无操作）
       // 但 host 早随 port 消亡被 Chrome 收割，无害
@@ -113,7 +127,8 @@ export function App() {
           ],
         }
       })
-    }, Math.max(WATCHDOG_MS - elapsed, 25_000))
+    }
+    timer = setTimeout(judge, Math.max(WATCHDOG_MS - (Date.now() - stream.aliveAt), 25_000))
     return () => clearTimeout(timer)
   }, [running, stream.aliveAt])
 
@@ -140,6 +155,7 @@ export function App() {
         // 重建 taskId 绑定 + 占位气泡（迟到 chunk 续流，不再孤儿流；任务已死则
         // 看门狗 120s 收尾）
         if (resp?.hasSession) {
+          if (typeof resp.sessionAgentId === 'string') setSessionAgent(resp.sessionAgentId)
           setStream((s) => ({
             ...s,
             resumable: true,
@@ -380,7 +396,7 @@ export function App() {
         : resp.error === 'no-permission' ? '无提取权限：浏览器要求换页后重新授权——点击工具栏上的 AI PageDive 图标后重试'
         : resp.error === 'empty-content' ? '页面没有可提取的正文'
         : resp.error === 'cancelled' ? '已取消'
-        : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——请点「新对话」后重新发送本次问题'
+        : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——直接重新发送即可（将开始全新总结）'
         : String(resp.error)
       setStream((s) => {
         // 旧轮 send 的迟到取消回调（新对话后重发，SW 提取窗口秒级）：resp.taskId 已
@@ -400,6 +416,10 @@ export function App() {
           pending: false,
           done: true,
           activeId: null,
+          // session-lost 自愈（r7-review）：SW 会话已丢，保持 resumable 会让重发
+          // 再次 followUp → 再次 session-lost 死循环——置 false 后下一条自动走
+          // 全新总结，与上方「直接重新发送即可」文案闭环
+          ...(resp.error === 'session-lost' ? { resumable: false } : {}),
           messages: [
             ...s.messages.filter((x) => !(x.streaming && !x.text)),
             { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true, cancelled: resp.error === 'cancelled' },
@@ -445,8 +465,9 @@ export function App() {
     if (agentOk) setAgentId(item.agent)
     // 首条 id 带 item.ts 前缀：parseHistoryTurns 固定用 h0/h1…，连续恢复两条不同 agent
     // 的历史时 firstMsgId 都是 h0 不变 → SummarizeView 的 followAgent 指纹不触发重置
-    // （头部 CLI 显示与真实执行不符，R2-M1）。带 ts 使跨条目唯一
-    const msgs: ChatMessage[] = parseHistoryTurns(body).map((m) => ({ ...m, id: `t${item.ts}-${m.id}` }))
+    // （头部 CLI 显示与真实执行不符，R2-M1）。带 ts 使跨条目唯一。
+    // agentId 快照（r7-review）：历史气泡不带快照会在 CLI 停用时被错标成回退 CLI
+    const msgs: ChatMessage[] = parseHistoryTurns(body).map((m) => ({ ...m, id: `t${item.ts}-${m.id}`, agentId: item.agent }))
     setStream((s) => ({
       ...BLANK,
       done: true,
@@ -459,11 +480,12 @@ export function App() {
           ? msgs
           // 空正文（error 历史）：给出占位说明，避免空白气泡 + 误判 hasSession
           : [{ id: `h${item.ts}`, role: 'assistant' as const, text: '（该记录无正文——发送消息将开始全新总结）', error: '该历史记录状态为失败，无对话上下文可续', isError: true }]),
-        ...(agentOk ? [] : [{ id: `w${item.ts}`, role: 'assistant' as const, text: `> ⚠️ 该记录的 CLI（${item.agent}）当前不可用——继续发送将开始全新总结` }]),
+        ...(agentOk ? [] : [{ id: `w${item.ts}`, role: 'assistant' as const, text: `> ⚠️ 该记录的 CLI（${item.agent}）当前不可用——继续发送将总结**当前打开的页面**（非本条历史）` }]),
       ],
     }))
-    // tips 条同步为该历史条目的来源页
-    if (item.title || item.url) setPageMeta({ title: item.title ?? '', url: item.url ?? '' })
+    // tips 条同步为该历史条目的来源页——仅可续会话时（r7-review：CLI 不可用走全新
+    // 总结，SW 提取的是当前 tab，显示历史来源页会与执行相矛盾）
+    if (agentOk && (item.title || item.url)) setPageMeta({ title: item.title ?? '', url: item.url ?? '' })
     if (agentOk) {
       chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path }).catch(() => {})
     } else {
@@ -534,7 +556,7 @@ export function App() {
             <span>{outdated}</span>
           </div>
         )}
-        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} resumable={stream.resumable} />
+        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} resumable={stream.resumable} sessionAgentId={sessionAgent} />
       </main>
 
       {overlay === 'history' && (
@@ -593,6 +615,7 @@ const ERROR_LABEL: Record<string, string> = {
   'no-agent': '未知 CLI',
   'bad-request': '请求参数不完整',
   'content-mismatch': '正文传输不完整，已取消——请重试',
+  'host-shutting-down': '本机组件正在重启',
 }
 
 /** CLI 鉴权类错误归一化（r7-ux）：install 探测不含登录态（--version 无需登录），

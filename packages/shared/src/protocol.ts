@@ -243,7 +243,7 @@ export interface TaskDoneMsg {
 export interface TaskErrorMsg {
   t: 'task-error'
   taskId: string
-  code: 'spawn-fail' | 'timeout' | 'cancelled' | 'parse' | 'no-agent' | 'bad-request' | 'content-mismatch'
+  code: 'spawn-fail' | 'timeout' | 'cancelled' | 'parse' | 'no-agent' | 'bad-request' | 'content-mismatch' | 'host-shutting-down'
   message: string
 }
 

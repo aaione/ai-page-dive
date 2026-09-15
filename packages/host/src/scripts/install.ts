@@ -32,9 +32,12 @@ async function writeHostWrapper(hostEntry: string): Promise<string> {
   const stableNode = stableNodePath(rawNode)
   const wrapper = join(homedir(), '.ai-page-dive', 'host-wrapper.sh')
   await mkdir(join(homedir(), '.ai-page-dive'), { recursive: true })
+  // 单引号转义（r7-review）：双引号插值时路径含 $/`/\" 会被 /bin/sh 运行时展开或
+  // 破引——hostEntry 经 npm 全局路径含 homedir，特殊字符用户名的防御
+  const sq = (p: string) => `'${p.replace(/'/g, "'\\''")}'`
   await writeFile(
     wrapper,
-    `#!/bin/sh\nif [ -x "${stableNode}" ]; then exec "${stableNode}" "${hostEntry}" --stdio; fi\nif [ -x "${rawNode}" ]; then exec "${rawNode}" "${hostEntry}" --stdio; fi\nexec /usr/bin/env node "${hostEntry}" --stdio\n`,
+    `#!/bin/sh\nif [ -x ${sq(stableNode)} ]; then exec ${sq(stableNode)} ${sq(hostEntry)} --stdio; fi\nif [ -x ${sq(rawNode)} ]; then exec ${sq(rawNode)} ${sq(hostEntry)} --stdio; fi\nexec /usr/bin/env node ${sq(hostEntry)} --stdio\n`,
     { mode: 0o755 },
   )
   await chmod(wrapper, 0o755)
@@ -132,15 +135,19 @@ export async function install(extIds: string[]): Promise<void> {
   for (const a of agents) {
     console.log(a.available ? `  ✅ ${a.id} ${a.version ?? ''}` : `  ⛔ ${a.id} 未安装`)
   }
-  // 退出码语义（r6-ux 假成功修复）：0=完全就绪；1=硬失败（无 Chrome 数据目录 /
-  // 显式传入的 ext-id 全非法——登记目的未达成）；2=组件就绪但零可用 CLI（用户
-  // 还需装 CLI——install.sh 据此区分完成文案，不再无条件 🎉 假成功）
+  // 退出码语义（r6-ux 假成功修复 + r7-review 第四态）：0=完全就绪；1=硬失败
+  // （无 Chrome 数据目录 / 显式传入的 ext-id 全非法——登记目的未达成）；2=组件
+  // 就绪但零可用 CLI（用户还需装 CLI）；3=manifest 已写但 allowed_origins 为空
+  // 且未显式传参（install.sh 无 EXT_ID 路径——组件装好了但扩展从未登记，面板必
+  // forbidden，不能 🎉——r6 三态漏掉的「登记未达成 ≠ 硬失败 ≠ 零 CLI」）
   const anyCli = agents.some((a) => a.available)
   // 登录态提示（r7-ux）：available 只探测到二进制（--version 无需登录），未登录
   // 用户此前拿到 🎉 后首次总结才见 CLI 原始鉴权报错——就绪输出补一句前置提醒
   if (anyCli) console.log('💡 请确保上方 ✅ 的 CLI 已完成登录（在终端跑一次该 CLI 确认无鉴权提示）。')
+  const hasOrigins = written.some((p) => readFileSyncSafe(p).allowed_origins?.length)
   if (!written.length || (extIds.length > 0 && valid.length === 0)) process.exitCode = 1
   else if (!anyCli) process.exitCode = 2
+  else if (!hasOrigins) process.exitCode = 3
 }
 
 function readFileSyncSafe(p: string): any {

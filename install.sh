@@ -32,8 +32,10 @@ say "✅ Node $NODE_VER"
 
 # ── 2. npm 全局安装（捕获常见失败给指引）──
 # 告知 postinstall：本脚本随后自动跑 install --ext-id 完成登记——跳过
-# 「请回到扩展面板复制命令」的矛盾指引（r7-ux：两段指令曾互相拉扯）
-PAGEDIVE_SILENT_POSTINSTALL_HINT=1
+# 「请回到扩展面板复制命令」的矛盾指引（r7-ux：两段指令曾互相拉扯）。
+# 必须 export：裸赋值只建 shell 变量不进子进程环境，npm i -g 及其 postinstall
+# 看不到（r7-review 实证：整条静默链曾是 no-op）
+export PAGEDIVE_SILENT_POSTINSTALL_HINT=1
 if ! npm i -g @aaione/ai-page-dive; then
   printf '\033[1;33m%s\033[0m\n' "npm 全局安装失败。常见原因：
   • EACCES 权限错误 → 改用 nvm/Homebrew 的 Node（推荐，免 sudo；勿用 sudo npm——会写坏 NM 注册属主）
@@ -59,5 +61,6 @@ case "$RC" in
   0) say "🎉 安装完成——回到浏览器，面板通常会自动进入；若 1 分半内未进入，请完全退出 Chrome（⌘Q）后重开。"
      say "💡 首次使用前，请确保 AI CLI 已在终端登录（跑一次 claude 或 codex 确认无鉴权提示）。" ;;
   2) say "✅ 本机组件已装好，但未检测到 AI CLI——装好并登录 claude 或 codex 后，回到浏览器即可使用（无需重跑本命令）。" ;;
+  3) say "⚠️ 本机组件已就绪，但未带扩展 ID——扩展尚未登记。请回到扩展面板复制完整命令（末尾带一串扩展 ID）重跑本命令即可。" ;;
   *) die "安装未完全成功（exit $RC）——请按上方 ⚠️ 提示处理后重跑；仍卡住请携输出反馈到 GitHub Issues" ;;
 esac

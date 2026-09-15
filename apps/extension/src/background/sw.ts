@@ -198,7 +198,7 @@ async function handleMessage(msg: any): Promise<unknown> {
         ...(r.ok ? {} : { nmError: nmPort.lastError }),
         ...(outdated ? { outdated } : {}),
         page: pageMeta(),
-        ...(lastSession ? { hasSession: true } : {}),
+        ...(lastSession ? { hasSession: true, sessionAgentId: lastSession.agentId } : {}),
         ...(currentTask ? { activeTask: { taskId: currentTask.taskId, startedAt: currentTask.startedAt } } : {}),
       }
     }
@@ -333,7 +333,9 @@ nmPort.onMessage((m) => {
       msg.agentId ??
       (currentTask && msg.taskId === currentTask.taskId ? currentAgentId : undefined)
     if (msg.sessionId && owner) {
-      lastSession = { agentId: owner, sessionId: msg.sessionId, historyPath: msg.historyPath ?? lastSession?.historyPath }
+      // || 而非 ??：host 首轮 persist 失败时回传空串（不虚构路径），跳过且保留
+      // 上一会话已有路径（r7-review）；合法路径永非空串
+      lastSession = { agentId: owner, sessionId: msg.sessionId, historyPath: msg.historyPath || lastSession?.historyPath }
       persistSession()
     }
     // 记住该 CLI 最近模型，merge 进 agents 缓存即刻下发（下拉展示 claude · GLM-5.2）

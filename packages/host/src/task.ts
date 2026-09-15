@@ -21,9 +21,10 @@ const TASK_TIMEOUT_MS = 10 * 60_000
 
 /**
  * CLI 会话 id → 首轮 spawn cwd 的映射（追问用，内存加速）。
- * claude 的会话记录按 cwd 分区存储（~/.claude/projects/<cwd 编码>/），
- * resume 轮 cwd 不一致会报 No conversation found。
- * 兜底：miss 时用固定工作区 ~/.ai-page-dive/agent-workspace/（host 重启后仍可复现）
+ * 现状澄清（r7-review）：当前三适配器下 value 恒为 stableCwd——唯一走 mkdtemp
+ * 独立 cwd 的 opencode 解析器不产 meta 事件，claude/codex 恒用固定工作区。
+ * 此机制为「未来引入按会话隔离 cwd 的引擎」预留：届时 meta.sessionId 进映射、
+ * resume 轮取回同 cwd、cleanupCwd 的保留判断才真正承重。
  */
 const sessionCwds = new Map<string, string>()
 
@@ -74,6 +75,9 @@ export class Task {
   private timeoutSent = false
   /** claude 已交付完整 result 且 is_error=false（exit code 异常时仍算成功——硬约束 #4 的精神） */
   private gotResultOk = false
+  /** 首轮 saveHistory 成功落盘（r7-review）：失败时终局回传空串——虚构路径会让
+   * SW 记进 lastSession，追问轮 append 出无 frontmatter 的孤儿历史文件 */
+  private persistOk = false
   private historyPath = ''
   private timeoutTimer?: ReturnType<typeof setTimeout>
 
@@ -175,7 +179,9 @@ export class Task {
       agentCwd = await getStableAgentCwd()
     }
     let fileForPrompt = contentFile
-    if (def.filePathInPrompt && agentCwd) {
+    // resume 轮 contentFile 为 ''：symlink('') 必抛被 catch 吞、fileForPrompt 死计算
+    // （prompt 走 resume 分支不用它）——直接跳过（r7-review）
+    if (def.filePathInPrompt && agentCwd && !isResume) {
       await linkIntoCwd(contentFile, agentCwd)
       fileForPrompt = def.filePathInPrompt({ contentFile, contentRelPath: basename(contentFile), agentCwd })
     }
@@ -386,9 +392,11 @@ export class Task {
   }
 
   /** 终局回传的历史路径：resume 轮用 input 带来的首轮路径（this.historyPath 为空——
-   * SW 侧 `'' ?? fallback` 不生效会把 lastSession 覆盖成空串，第 2 次追问起不再落盘） */
+   * SW 侧 `'' ?? fallback` 不生效会把 lastSession 覆盖成空串，第 2 次追问起不再落盘）。
+   * 首轮 saveHistory 失败（磁盘满/EACCES）时回传空串：虚构路径会让 SW 记进
+   * lastSession，追问轮 appendHistoryTurn 在该路径凭空创建文件（r7-review） */
   private get effectiveHistoryPath(): string {
-    return this.input.historyPath || this.historyPath
+    return this.input.historyPath || (this.persistOk ? this.historyPath : '')
   }
 
   private async persist(status: 'done' | 'interrupted' | 'error'): Promise<void> {
@@ -419,7 +427,10 @@ export class Task {
       },
       this.accText,
     )
-      .then((actual) => { this.historyPath = actual }) // 冲突重试换了文件名：终局回传实际路径
+      .then((actual) => { // 冲突重试换了文件名：终局回传实际路径；成功才置 persistOk
+        this.historyPath = actual
+        this.persistOk = true
+      })
       .catch(logFail)
   }
 

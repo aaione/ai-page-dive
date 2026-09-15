@@ -22,8 +22,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prepublishOnly": "tsc -p tsconfig.json",
-    "prepack": "tsc -p tsconfig.json",
+    "prepack": "rm -rf dist && tsc -p tsconfig.json",
     "postinstall": "node -e \"const fs=require('fs'),cp=require('child_process');if(fs.existsSync('dist/scripts/postinstall.js'))cp.spawnSync(process.execPath,[require('path').resolve('dist/scripts/postinstall.js')],{stdio:'inherit'})\""
   },
   "devDependencies": {

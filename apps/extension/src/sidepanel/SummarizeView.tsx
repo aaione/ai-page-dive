@@ -15,6 +15,9 @@ interface Props {
   pageMeta: PageMeta | null
   /** 会话是否可追问（CLI 回带过 sessionId）：codex 无 sessionId → false，关掉假追问入口 */
   resumable: boolean
+  /** SW 侧活会话归属的 CLI（panel-ready 回带）：面板重开后头部下拉初始显示与
+   * 追问实际执行的 CLI 一致（r7-review） */
+  sessionAgentId?: string
 }
 
 /** 读 localStorage 的 JSON string[]（容错：坏数据/非数组一律回退默认） */
@@ -73,7 +76,7 @@ export function useSetting(key: string): [string, (v: string) => void] {
   return [v, set]
 }
 
-export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, resumable }: Props) {
+export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, resumable, sessionAgentId }: Props) {
   const disabledClis = useDisabledClis()
   const getEnabledSkills = useEnabledSkills()
   const [sumLang] = useSetting('pd-sum-lang')
@@ -136,12 +139,14 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   }, [workflows])
 
   /** 发送失败回填（r7-ux）：错误属于本轮时把输入/附件回填输入框（可改后重发），
-   * 不回填则用户得凭记忆重敲。空会话中的错误 = 旧轮迟到回调（对齐 App 的
-   * 静默丢弃判据），不得把旧文本灌进新一轮 */
-  function refillOnFailure(text: string, atts: { name: string; text: string }[]) {
+   * 不回填则用户得凭记忆重敲。判据与 App 的迟到回调守卫同向（r7-review）：
+   * 带 taskId 的错误与当前绑定比对（旧轮 taskId≠当前 → 新一轮运行中，旧文本
+   * 不得覆写用户预输入）；无 taskId（SW 提取期即失败）要求本轮仍 pending */
+  function refillOnFailure(resp: { error?: string; taskId?: string }, text: string, atts: { name: string; text: string }[]) {
     return () => {
       const s = streamRef.current
-      if (s.pending === false && s.taskId === null && s.activeId === null && s.messages.length === 0) return
+      const mine = typeof resp.taskId === 'string' ? resp.taskId === s.taskId : s.pending
+      if (!mine) return
       setInput(text)
       if (atts.length) setAttachments(atts)
     }
@@ -164,7 +169,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           if (!chrome.runtime.lastError && resp) {
             if (resp.agentId) setFollowAgent(resp.agentId)
             onStartResult(resp)
-            if (resp.error && resp.error !== 'cancelled') refillOnFailure(text, atts)()
+            if (resp.error && resp.error !== 'cancelled') refillOnFailure(resp, text, atts)()
           }
         },
       )
@@ -175,7 +180,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             onStartResult(resp)
-            if (resp.error && resp.error !== 'cancelled') refillOnFailure(text, atts)()
+            if (resp.error && resp.error !== 'cancelled') refillOnFailure(resp, text, atts)()
           }
         },
       )
@@ -253,7 +258,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           <span>新对话</span>
         </button>
         <ModelDropdown
-          value={hasSession ? (followAgent ?? effectiveAgent) : effectiveAgent}
+          // sessionAgentId 兜底（r7-review）：重开面板后首问尚未发生（followAgent
+          // 未回带），显示 SW 活会话真实归属的 CLI——显示与执行一致
+          value={hasSession ? (followAgent ?? sessionAgentId ?? effectiveAgent) : effectiveAgent}
           onChange={onAgentChange}
           items={usable.map((a) => ({
             key: a.id,
@@ -653,7 +660,8 @@ function ActionBar({
       )}
       <button
         onClick={onAttach}
-        disabled={running || attachCount >= 5}
+        // r7-review：与输入框同放开——附件仅暂存不触发任务，运行中预备下一问
+        disabled={attachCount >= 5}
         aria-label="添加附件"
         title="添加附件（文本文件，≤5 个）"
         className="pd-attach-btn"

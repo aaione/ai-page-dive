@@ -179,7 +179,9 @@ export function runNative(): void {
   // 显式拒绝并报错，把「面板突然失联」变成可理解的错误
   const handle = (msg: ExtToHost) => {
     if (shuttingDown && (msg as any)?.t === 'task-start') {
-      send({ t: 'task-error', taskId: (msg as any).task.taskId, code: 'spawn-fail', message: 'host 正在关闭，请重试' })
+      // r7-review：专用 code——复用 'spawn-fail' 会让 panel 拼出「CLI 启动失败
+      // （未安装或不在 PATH）： host 正在关闭」的自相矛盾文案，误导用户重装 CLI
+      send({ t: 'task-error', taskId: (msg as any).task.taskId, code: 'host-shutting-down', message: 'host 正在关闭，请重试' })
       return
     }
     rawHandle(msg)
