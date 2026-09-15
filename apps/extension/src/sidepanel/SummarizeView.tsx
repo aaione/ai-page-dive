@@ -95,6 +95,11 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   }, [messages.length])
   /** 追问轮实际执行会话的 CLI（SW 回带；头部展示与真实执行一致） */
   const [followAgent, setFollowAgent] = useState<string | null>(null)
+  /** 重试检测按钮的 loading 态（r7-ux：host 探测最长 8s，零反馈会被当成没反应） */
+  const [probing, setProbing] = useState(false)
+  // send 回调判定「错误是否属于本轮」用最新 stream（闭包快照会滞后）
+  const streamRef = useRef(stream)
+  streamRef.current = stream
   // 会话切换（新对话/历史恢复：首条消息 id 变）时重置 followAgent——否则历史恢复后
   // 完成任一轮，头部显示的是上一会话遗留的 followAgent（显示与真实执行不符）。
   // 历史恢复的 agent 已由 App 写入 agentId（effectiveAgent），无需在此额外取值
@@ -112,8 +117,11 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   // 该窗口曾无反馈且双发门失效，重页秒级）
   const running = stream.activeId !== null || stream.pending
   // hasSession 需 CLI 可追问（resumable：回带过 sessionId）——codex 无 sessionId 时
-  // 有完整回答但不可 resume，显示「继续追问…」会让追问必得 session-lost（误导）
-  const canFollowUp = resumable && messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text)
+  // 有完整回答但不可 resume，显示「继续追问…」会让追问必得 session-lost（误导）。
+  // reopened（r7-ux）：面板重开但 SW 侧活会话健在——React 态丢不代表 CLI 会话丢，
+  // 直接放开追问（上下文在 CLI 会话里）
+  const canFollowUp =
+    resumable && (stream.reopened || messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text))
   const hasSession = canFollowUp
 
   const wfs = useMemo(() => {
@@ -127,12 +135,23 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     return [{ name: 'default', description: '按输入框内容执行；留空则快速摘要', builtin: true }, ...rest]
   }, [workflows])
 
+  /** 发送失败回填（r7-ux）：错误属于本轮时把输入/附件回填输入框（可改后重发），
+   * 不回填则用户得凭记忆重敲。空会话中的错误 = 旧轮迟到回调（对齐 App 的
+   * 静默丢弃判据），不得把旧文本灌进新一轮 */
+  function refillOnFailure(text: string, atts: { name: string; text: string }[]) {
+    return () => {
+      const s = streamRef.current
+      if (s.pending === false && s.taskId === null && s.activeId === null && s.messages.length === 0) return
+      setInput(text)
+      if (atts.length) setAttachments(atts)
+    }
+  }
+
   function send() {
     const text = input.trim()
     if ((!text && !attachments.length) || running || !usable.length) return
     beginTurn(text || `（附件：${attachments.map((a) => a.name).join('、')}）`)
     setAttachNotice('') // 提示已在输入区即时展示（r4-ux F3），发送即消费
-    setAttachNotice('')
     setInput('')
     const atts = attachments
     setAttachments([])
@@ -145,6 +164,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           if (!chrome.runtime.lastError && resp) {
             if (resp.agentId) setFollowAgent(resp.agentId)
             onStartResult(resp)
+            if (resp.error && resp.error !== 'cancelled') refillOnFailure(text, atts)()
           }
         },
       )
@@ -152,7 +172,12 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       const wf = workflow === 'default' ? 'quick' : workflow
       chrome.runtime.sendMessage(
         { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined, attachments: atts },
-        (resp) => { if (!chrome.runtime.lastError && resp) onStartResult(resp) },
+        (resp) => {
+          if (!chrome.runtime.lastError && resp) {
+            onStartResult(resp)
+            if (resp.error && resp.error !== 'cancelled') refillOnFailure(text, atts)()
+          }
+        },
       )
     }
   }
@@ -180,10 +205,12 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // 附件总字节预算（r5-sec）：task-start 帧内嵌全量附件文本，无预算时 3×500KB
     // 即组出 >1MB 帧击穿 NM 上限（host 侧超限终结兜底，此处是第一道防线）。
     // r6-sec：曾用 .length（UTF-16 码元）计量——中文 1 码元 = UTF-8 3 字节，
-    // 768KB 预算下纯中文附件实际可组出 >2MB 帧照样击穿（与上方 f.size 字节口径
-    // 自相矛盾）。TextEncoder 计真实 UTF-8 字节，与 NM 帧序列化口径一致
+    // 768KB 预算下纯中文附件实际可组出 >2MB 帧照样击穿。r7-sec：TextEncoder 计
+    // 裸 UTF-8 仍漏算 JSON 转义膨胀（\ " 控制字符最坏 6x/字符）——与 host 侧
+    // sendChunk 同口径：按 JSON.stringify 后的字节计量，注释「与 NM 帧序列化
+    // 口径一致」至此真正成立（与 sw.ts 分片循环同款）
     const BUDGET = 768 * 1024
-    const utf8Len = (s: string) => new TextEncoder().encode(s).length
+    const utf8Len = (s: string) => new TextEncoder().encode(JSON.stringify(s)).length
     let used = 0
     const withinBudget: typeof merged = []
     for (const a of merged) {
@@ -228,7 +255,14 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         <ModelDropdown
           value={hasSession ? (followAgent ?? effectiveAgent) : effectiveAgent}
           onChange={onAgentChange}
-          items={usable.map((a) => ({ key: a.id, label: a.id, version: a.version, model: a.model }))}
+          items={usable.map((a) => ({
+            key: a.id,
+            // r7-sec：opencode 无进程级工具围栏（claude 有 --allowedTools、codex 有
+            // --sandbox，opencode CLI 无等效 flag）——标注实验性管理预期
+            label: a.id === 'opencode' ? 'opencode·实验' : a.id,
+            version: a.version,
+            model: a.model,
+          }))}
           fallback="无可用 CLI"
           ariaLabel="选择 AI CLI"
           disabled={hasSession}
@@ -236,9 +270,15 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         />
         {usable.length === 0 && (
           // r6-ux 空态自愈入口：SW 对零可用结果永不缓存命中（穿透重探测），
-          // 用户装好 CLI 后点此按钮即见——无需重装本机组件/重开面板
+          // 用户装好 CLI 后点此按钮即见——无需重装本机组件/重开面板。
+          // r7-ux：点击即 loading（host 探测最长 8s，零反馈会被当成没反应连点）
           <button
-            onClick={() => chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-agents' } })}
+            onClick={() => {
+              setProbing(true)
+              chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-agents' } })
+              setTimeout(() => setProbing(false), 8_000)
+            }}
+            disabled={probing}
             className="pd-new-chat-btn"
             title="装好 CLI 后点此重新检测（无需重装本机组件）"
           >
@@ -246,7 +286,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
               <path d="M13.5 8a5.5 5.5 0 1 1-1.7-4" />
               <path d="M13.6 2.6v2.4h-2.4" />
             </svg>
-            <span>重试检测</span>
+            <span>{probing ? '检测中…' : '重试检测'}</span>
           </button>
         )}
         <WorkflowDropdown
@@ -258,6 +298,13 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       </div>
 
       <div className="pd-content" role="region" aria-live="polite">
+        {stream.reopened && !running && (
+          // r7-ux：切 tab 面板收起后重开，React 态已丢但 SW 侧活会话健在——明示
+          // 此前对话去哪了（不静默空白），且追问可接续原会话上下文（canFollowUp 已放开）
+          <div className="pd-error pd-warn" role="status" style={{ margin: '8px 12px 0' }}>
+            <span>面板重开：此前对话已清空——完整内容可在「总结历史」中查看；继续提问将接续原会话。</span>
+          </div>
+        )}
         {messages.length === 0 && <Placeholder clis={usable.map((a) => a.id)} anyInstalled={agents.some((a) => a.available)} />}
         {messages.map((m) =>
           m.role === 'user' ? (
@@ -271,7 +318,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
               phase={stream.phase}
               running={running && !!m.streaming}
               onNewChat={newChat}
-              agentId={followAgent && m.streaming !== true ? followAgent : effectiveAgent}
+              // 气泡创建时快照的归属 CLI（r7-ux）：流式中切下拉不错标；
+              // 旧气泡无快照时回退 effectiveAgent/followAgent
+              agentId={m.agentId ?? (followAgent && m.streaming !== true ? followAgent : effectiveAgent)}
             />
           ),
         )}
@@ -631,7 +680,8 @@ function ActionBar({
           // keyCode 229：部分 IME（韩文等）compositionend 先于 keydown，isComposing 已 false
           if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && !running && usableCount) onStart()
         }}
-        disabled={running}
+        // r7-ux：不再 disabled——运行中允许预输入下一问（Enter 已有 !running 守卫，
+        // 发送按钮不受影响；锁死输入框只是防重发，守卫已覆盖）
         placeholder={hasSession ? '继续追问…' : '想了解这个网页什么？'}
         aria-label="自定义指令"
         className="pd-input"

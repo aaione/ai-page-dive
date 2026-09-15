@@ -39,4 +39,16 @@ describe('buildArgs 快照', () => {
     const args = codexDef.buildArgs({ contentFile: '/tmp/x.md' })
     expect(args).not.toContain('-o')
   })
+
+  it('codex：resume 轮走 exec resume + -c sandbox 围栏（resume 子命令无 --sandbox flag，实测 0.151）', () => {
+    expect(codexDef.buildArgs({ contentFile: '', resumeSessionId: 'th-1' })).toEqual([
+      'exec',
+      'resume', 'th-1',
+      '--json',
+      '-c', 'sandbox_mode="read-only"',
+      '--skip-git-repo-check',
+    ])
+    // resume 轮无 -o（lastMsgFile 为空，上层 isResume 不落临时文件）
+    expect(codexDef.buildArgs({ contentFile: '', resumeSessionId: 'th-1' })).not.toContain('-o')
+  })
 })

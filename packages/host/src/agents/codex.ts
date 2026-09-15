@@ -23,6 +23,9 @@ export function createCodexParser() {
     const out: AgentEvent[] = []
     switch (d.type) {
       case 'thread.started':
+        // thread_id 即会话锚点（r7-impl）：与 claude init 帧对称发 meta，panel 才能
+        // 解锁追问；resume 轮（exec resume）会再发新 thread.started，meta 天然更新
+        if (d.thread_id) out.push({ type: 'meta', sessionId: d.thread_id })
         out.push({ type: 'status', phase: 'thinking' })
         break
       case 'item.completed':
@@ -52,11 +55,17 @@ export const codexDef: AgentDef = {
   bin: 'codex',
   versionArgs: ['--version'],
   streamFormat: 'codex-jsonl',
-  buildArgs: (opts) => [
-    'exec',
-    '--json',
-    '--sandbox', 'read-only',
-    '--skip-git-repo-check',
-    ...(opts.lastMsgFile ? ['-o', opts.lastMsgFile] : []),
-  ],
+  // resume 轮（r7-impl，实测 codex 0.151）：exec resume <id>，prompt 省略参数即读
+  // stdin。resume 子命令无 --sandbox flag——read-only 围栏用 -c config 覆盖等价
+  // 保持（sandbox_mode 的 value 按 TOML 解析，字符串需内层引号）
+  buildArgs: (opts) =>
+    opts.resumeSessionId
+      ? ['exec', 'resume', opts.resumeSessionId, '--json', '-c', 'sandbox_mode="read-only"', '--skip-git-repo-check']
+      : [
+          'exec',
+          '--json',
+          '--sandbox', 'read-only',
+          '--skip-git-repo-check',
+          ...(opts.lastMsgFile ? ['-o', opts.lastMsgFile] : []),
+        ],
 }

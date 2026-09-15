@@ -10,7 +10,7 @@ switch (cmd) {
     runNative()
     break
   case 'install': {
-    const { install } = await import('./install.js')
+    const { install } = await import('./scripts/install.js')
     const ids = rest.flatMap((a, i, arr) => (a === '--ext-id' ? [arr[i + 1]] : [])).filter(Boolean)
     await install(ids)
     break

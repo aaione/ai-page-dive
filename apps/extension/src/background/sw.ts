@@ -442,8 +442,9 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     content: '',
     startedAt: Date.now(),
   }
-  // 面板未开时无接收端是常态，静默
-  chrome.runtime.sendMessage({ t: 'task-status', taskId, phase: 'reading' }).catch(() => {})
+  // 面板未开时无接收端是常态，静默。agentId（r7-ux）：气泡创建即快照归属 CLI，
+  // 流式中切下拉不错标（host 侧 status 帧不带，meta 帧到时再补）
+  chrome.runtime.sendMessage({ t: 'task-status', taskId, phase: 'reading', agentId: currentAgentId }).catch(() => {})
 
   // content script 需 modules → 动态 files 注入（activeTab 授权下用户手势有效）。
   // allFrames：豆包文档等 SPA 正文渲染在 iframe，只注 top frame 会拿到空壳误报

@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { registerManifests } from '../install.js'
+import { registerManifests } from './install.js'
 
 /** 包根（dist/scripts/ 的上两级）：比 cwd 稳，npm link 场景也正确 */
 const pkgDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -99,7 +99,13 @@ async function main(): Promise<void> {
       return
     }
     log('NM host 已自动注册（许可名单为空属预期）。')
-    pointToPanel()
+    if (process.env.PAGEDIVE_SILENT_POSTINSTALL_HINT) {
+      // curl|sh 主路径（r7-ux）：install.sh 随后会自动跑 install --ext-id 完成登记，
+      // 「回面板复制命令」的指引与脚本的自动登记互相矛盾——只留一句衔接说明
+      log('扩展登记将由安装脚本自动完成，无需其他操作。')
+    } else {
+      pointToPanel()
+    }
   } catch (e) {
     log(`自动注册失败（不影响安装）: ${e instanceof Error ? e.message : String(e)}`)
     pointToPanel()

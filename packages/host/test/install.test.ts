@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { registerManifests } from '../src/install.js'
+import { registerManifests, stableNodePath } from '../src/scripts/install.js'
 import { detectGlobalInstall, isTopLevelGlobal } from '../src/scripts/postinstall.js'
 
 /**
@@ -101,5 +101,25 @@ describe('postinstall 守卫（纯函数）', () => {
     await mkdir(hostDir, { recursive: true })
     await writeFile(join(SANDBOX, 'host-tool', 'package.json'), JSON.stringify({ name: 'host-tool' }))
     expect(isTopLevelGlobal(hostDir)).toBe(false)
+  })
+
+  it('stableNodePath：brew Cellar 版本化路径改写 opt 稳定链，非 brew 原样（r7-impl 回归）', () => {
+    const yes = () => true, no = () => false
+    // Apple Silicon brew：版本化 Cellar → opt 稳定链（brew upgrade 清旧 Cellar 后仍存活）
+    expect(stableNodePath('/opt/homebrew/Cellar/node/22.14.0/bin/node', yes))
+      .toBe('/opt/homebrew/opt/node/bin/node')
+    // 版本化包名 node@22 同样映射（opt/node@22 由 brew 维护）
+    expect(stableNodePath('/opt/homebrew/Cellar/node@22/22.14.0/bin/node', yes))
+      .toBe('/opt/homebrew/opt/node@22/bin/node')
+    // Intel brew
+    expect(stableNodePath('/usr/local/Cellar/node/20.10.0/bin/node', yes))
+      .toBe('/usr/local/opt/node/bin/node')
+    // opt 链不存在（brew 卸载/异常）：保守回退原路径
+    expect(stableNodePath('/opt/homebrew/Cellar/node/22.14.0/bin/node', no))
+      .toBe('/opt/homebrew/Cellar/node/22.14.0/bin/node')
+    // nvm / 官方 pkg / 系统路径：非 Cellar 形态原样返回
+    expect(stableNodePath('/Users/u/.nvm/versions/node/v20.0.0/bin/node', yes))
+      .toBe('/Users/u/.nvm/versions/node/v20.0.0/bin/node')
+    expect(stableNodePath('/usr/local/bin/node', yes)).toBe('/usr/local/bin/node')
   })
 })

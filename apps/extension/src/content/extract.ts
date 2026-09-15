@@ -66,6 +66,16 @@ export function extractPage(): PageContent | { error: string } {
     const adapted = applySiteAdapter(location.href, document)
     if (adapted) return adapted
 
+    // 微型 frame 早退（r7-perf）：广告/埋点 iframe 也跑全量 Readability+DOMPurify+
+    // Turndown 是纯浪费（SW 对 allFrames 每 frame 调一次）。只对 iframe 生效（主
+    // frame 不设限），阈值远低于任何正文页；empty-content 在 SW 侧按「该 frame
+    // 无正文」处理，正文主体在长 frame 中竞选出（extractBest 取最长）
+    try {
+      if (window !== window.top && (document.body?.innerText || '').length < 500) {
+        return { error: 'empty-content' }
+      }
+    } catch { /* frame 环境异常时继续常规管线 */ }
+
     const docClone = document.cloneNode(true) as Document
     const article = new Readability(docClone).parse()
     const html = DOMPurify.sanitize(article?.content || '', {

@@ -3,9 +3,14 @@ import { createCodexParser } from '../src/agents/codex.js'
 
 // fixture 采自 codex-cli 0.151.0 真实输出（2026-09-01）
 describe('codex jsonl parser', () => {
-  it('thread.started → status', () => {
+  it('thread.started → meta(thread_id 作 sessionId，追问锚点) + status', () => {
     const p = createCodexParser()
     expect(p(JSON.stringify({ type: 'thread.started', thread_id: 't1' }))).toEqual([
+      { type: 'meta', sessionId: 't1' },
+      { type: 'status', phase: 'thinking' },
+    ])
+    // 无 thread_id 的畸形帧：只发 status，不造空 meta
+    expect(p(JSON.stringify({ type: 'thread.started' }))).toEqual([
       { type: 'status', phase: 'thinking' },
     ])
   })

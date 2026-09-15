@@ -4,23 +4,37 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { probeAgents } from './agents/registry.js'
-import { assertNotRoot } from './rootguard.js'
+import { probeAgents } from '../agents/registry.js'
+import { assertNotRoot } from '../rootguard.js'
 
 const HOST_NAME = 'com.pagedive.host'
 
 /**
  * NM host 由 Chrome 以极简 PATH（/usr/bin:/bin:…）exec——nvm/brew 的 node 不在
- * 其中，#!/usr/bin/env node 会失败。生成写死当前 node 绝对路径的 wrapper；
- * 该路径失效时（nvm 切版本/卸载）回退 PATH 上的 node，面板再引导重装刷新。
+ * 其中，#!/usr/bin/env node 会失败。生成写死当前 node 绝对路径的 wrapper。
+ * 稳定入口优先（r7-impl）：macOS libuv 的 process.execPath 走 realpath，brew 装的
+ * node 被解析成 Cellar 版本化真实路径（…/Cellar/node/22.x.y/bin/node），brew
+ * upgrade 清掉旧 Cellar 后即成死路径——改写 brew 的 opt 稳定软链（…/opt/node/bin/
+ * node，跨版本由 brew 维护）。wrapper 三段回退：稳定链 → 原真实路径 → PATH node。
  */
+export function stableNodePath(execPath: string, existsFn: (p: string) => boolean = existsSync): string {
+  // Cellar 版本化路径 → opt 稳定软链（Apple Silicon /opt/homebrew，Intel /usr/local）；
+  // opt 链不存在（非 brew 管理/已被卸载）时保守回退原路径。existsFn 可注入——
+  // 纯函数测试不依赖测试机是否装了 brew（CI Linux 无 /opt/homebrew）
+  const m = execPath.match(/^(\/(?:opt\/homebrew|usr\/local)\/Cellar\/(node[^/]*))\/[^/]+\/bin\/node$/)
+  if (!m) return execPath
+  const stable = `${m[1].replace('/Cellar/', '/opt/')}/bin/node`
+  return existsFn(stable) ? stable : execPath
+}
+
 async function writeHostWrapper(hostEntry: string): Promise<string> {
-  const nodeBin = process.execPath
+  const rawNode = process.execPath
+  const stableNode = stableNodePath(rawNode)
   const wrapper = join(homedir(), '.ai-page-dive', 'host-wrapper.sh')
   await mkdir(join(homedir(), '.ai-page-dive'), { recursive: true })
   await writeFile(
     wrapper,
-    `#!/bin/sh\n[ -x "${nodeBin}" ] || exec /usr/bin/env node "${hostEntry}" --stdio\nexec "${nodeBin}" "${hostEntry}" --stdio\n`,
+    `#!/bin/sh\nif [ -x "${stableNode}" ]; then exec "${stableNode}" "${hostEntry}" --stdio; fi\nif [ -x "${rawNode}" ]; then exec "${rawNode}" "${hostEntry}" --stdio; fi\nexec /usr/bin/env node "${hostEntry}" --stdio\n`,
     { mode: 0o755 },
   )
   await chmod(wrapper, 0o755)
@@ -122,6 +136,9 @@ export async function install(extIds: string[]): Promise<void> {
   // 显式传入的 ext-id 全非法——登记目的未达成）；2=组件就绪但零可用 CLI（用户
   // 还需装 CLI——install.sh 据此区分完成文案，不再无条件 🎉 假成功）
   const anyCli = agents.some((a) => a.available)
+  // 登录态提示（r7-ux）：available 只探测到二进制（--version 无需登录），未登录
+  // 用户此前拿到 🎉 后首次总结才见 CLI 原始鉴权报错——就绪输出补一句前置提醒
+  if (anyCli) console.log('💡 请确保上方 ✅ 的 CLI 已完成登录（在终端跑一次该 CLI 确认无鉴权提示）。')
   if (!written.length || (extIds.length > 0 && valid.length === 0)) process.exitCode = 1
   else if (!anyCli) process.exitCode = 2
 }

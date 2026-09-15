@@ -44,6 +44,9 @@ export interface TaskStreamState {
   lastChunkSeq?: number
   /** 最后一次收到 host 存活信号（任一任务帧或 task-alive 心跳）的时刻——看门狗据此判死 */
   aliveAt: number
+  /** 面板重开且 SW 侧仍有活会话（r7-ux）：React 态已丢但 CLI 会话健在——提示
+   * 「此前对话已清空」并解锁追问（接续原会话上下文）；beginTurn 展 BLANK 自然清除 */
+  reopened?: boolean
 }
 
 const BLANK: TaskStreamState = {
@@ -89,6 +92,10 @@ export function App() {
     // 容忍偶发丢帧/SW 短暂繁忙。三常量（此处 / heartbeat / 任务超时）关联见各处注释
     const elapsed = Date.now() - stream.aliveAt
     const timer = setTimeout(() => {
+      // 判死即取消（r7-ux，对齐 sw.ts「不白烧订阅额度」收敛原则）：SW 活/host 卡死
+      // 场景收割在跑任务；SW 已死场景消息会唤醒 SW（currentTask 内存已空，无操作）
+      // 但 host 早随 port 消亡被 Chrome 收割，无害
+      chrome.runtime.sendMessage({ t: 'cancel' }).catch(() => {})
       setStream((s) => {
         if (s.activeId === null && !s.pending) return s
         return {
@@ -132,7 +139,14 @@ export function App() {
         // 恢复 resumable（追问不再静默降级为全量重总结+抹掉 SW 会话）；在跑任务 →
         // 重建 taskId 绑定 + 占位气泡（迟到 chunk 续流，不再孤儿流；任务已死则
         // 看门狗 120s 收尾）
-        if (resp?.hasSession) setStream((s) => ({ ...s, resumable: true }))
+        if (resp?.hasSession) {
+          setStream((s) => ({
+            ...s,
+            resumable: true,
+            // 无在跑任务时才提示（activeTask 在跑 = 迟到 chunk 会续流，不算丢失）
+            ...(resp?.activeTask ? {} : { reopened: true }),
+          }))
+        }
         if (resp?.activeTask) {
           const at = resp.activeTask as { taskId: string; startedAt: number }
           setStream((s) => {
@@ -176,7 +190,7 @@ export function App() {
             resumable: s.resumable || !!m.sessionId,
             messages: s.messages.map((msg) =>
               msg.id === s.activeId || (msg.streaming && msg.id !== s.activeId)
-                ? { ...msg, model: m.model ?? msg.model }
+                ? { ...msg, model: m.model ?? msg.model, agentId: m.agentId ?? msg.agentId }
                 : msg,
             ),
           })
@@ -228,8 +242,12 @@ export function App() {
             const activeId = s.activeId ?? `a${m.taskId}`
             const messages = s.messages.some((x) => x.id === activeId)
               ? s.messages
-              : [...s.messages, { id: activeId, role: 'assistant' as const, text: '', streaming: true }]
-            return { ...s, taskId: m.taskId, activeId, pending: false, messages, aliveAt: Date.now(), phase: PHASE_LABEL[m.phase] ?? m.phase }
+              : [...s.messages, { id: activeId, role: 'assistant' as const, text: '', streaming: true, agentId: m.agentId }]
+            // 已有气泡顺手快照 agentId（reading 占位帧先建气泡、meta 后到的次序）
+            const patched = m.agentId
+              ? messages.map((x) => (x.id === activeId ? { ...x, agentId: m.agentId as string | undefined } : x))
+              : messages
+            return { ...s, taskId: m.taskId, activeId, pending: false, messages: patched, aliveAt: Date.now(), phase: PHASE_LABEL[m.phase] ?? m.phase }
           })
           break
         case 'task-done':
@@ -260,7 +278,7 @@ export function App() {
                       ...msg,
                       streaming: false,
                       isError: m.isError,
-                      error: m.isError ? m.errorText ?? 'CLI 运行内失败' : null,
+                      error: m.isError ? authHint(m.errorText ?? 'CLI 运行内失败') : null,
                       usage: m.usage,
                       model: m.model ?? msg.model,
                     }
@@ -294,7 +312,7 @@ export function App() {
                     streaming: false,
                     // 用户主动停止：文案只「已取消」不拼英文 message、不标故障（r5-ux：
                     // 曾显示「CLI 报告运行失败：已取消: task cancelled」错怪 CLI）
-                    error: m.code === 'cancelled' ? '已取消' : `${ERROR_LABEL[m.code] ?? m.code}: ${m.message}`,
+                    error: m.code === 'cancelled' ? '已取消' : `${ERROR_LABEL[m.code] ?? m.code}: ${authHint(m.message)}`,
                     isError: true,
                     cancelled: m.code === 'cancelled',
                   }
@@ -419,7 +437,12 @@ export function App() {
   /** 历史详情「继续对话」：解析 pd:user/pd:assistant 分段还原多轮气泡 + 通知 SW 恢复会话 */
   const resumeHistory = useCallback((item: HistoryItem, body: string) => {
     setOverlay(null)
-    setAgentId(item.agent)
+    // 记录的 CLI 已停用/卸载（r7-ux）：显示与执行必须一致——effectiveAgent 会回退到
+    // 其他 CLI，若 SW 仍装载旧会话，追问实际执行的是历史 agent（必然失败）。改走
+    // 「只恢复正文、不装载会话」。agents 未加载完（空列表）按可用处理（首屏窗口极短）
+    const rec = agents.find((a) => a.id === item.agent)
+    const agentOk = !agents.length || !!rec?.available
+    if (agentOk) setAgentId(item.agent)
     // 首条 id 带 item.ts 前缀：parseHistoryTurns 固定用 h0/h1…，连续恢复两条不同 agent
     // 的历史时 firstMsgId 都是 h0 不变 → SummarizeView 的 followAgent 指纹不触发重置
     // （头部 CLI 显示与真实执行不符，R2-M1）。带 ts 使跨条目唯一
@@ -428,18 +451,26 @@ export function App() {
       ...BLANK,
       done: true,
       // 历史带 sessionId 才可续（HistoryView 也仅在有 sessionId 时显示「继续对话」）
-      resumable: !!item.sessionId,
+      resumable: agentOk && !!item.sessionId,
       // 在跑任务尾巴同 F9：记入 finished 防首帧绑定落入恢复的会话
       finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
-      messages: msgs.length
-        ? msgs
-        // 空正文（error 历史）：给出占位说明，避免空白气泡 + 误判 hasSession
-        : [{ id: `h${item.ts}`, role: 'assistant' as const, text: '（该记录无正文——发送消息将开始全新总结）', error: '该历史记录状态为失败，无对话上下文可续', isError: true }],
+      messages: [
+        ...(msgs.length
+          ? msgs
+          // 空正文（error 历史）：给出占位说明，避免空白气泡 + 误判 hasSession
+          : [{ id: `h${item.ts}`, role: 'assistant' as const, text: '（该记录无正文——发送消息将开始全新总结）', error: '该历史记录状态为失败，无对话上下文可续', isError: true }]),
+        ...(agentOk ? [] : [{ id: `w${item.ts}`, role: 'assistant' as const, text: `> ⚠️ 该记录的 CLI（${item.agent}）当前不可用——继续发送将开始全新总结` }]),
+      ],
     }))
     // tips 条同步为该历史条目的来源页
     if (item.title || item.url) setPageMeta({ title: item.title ?? '', url: item.url ?? '' })
-    chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path }).catch(() => {})
-  }, [])
+    if (agentOk) {
+      chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path }).catch(() => {})
+    } else {
+      // SW 侧 resume-history 原本顺带收割在跑任务——不装载会话时手动补 cancel
+      chrome.runtime.sendMessage({ t: 'cancel' }).catch(() => {})
+    }
+  }, [agents])
 
   // 设置页开关 CLI 后（pd-settings-changed）联动：手动选中被禁用时回退到默认 CLI，再到首个可用
   const disabledClis = useDisabledClis()
@@ -562,4 +593,12 @@ const ERROR_LABEL: Record<string, string> = {
   'no-agent': '未知 CLI',
   'bad-request': '请求参数不完整',
   'content-mismatch': '正文传输不完整，已取消——请重试',
+}
+
+/** CLI 鉴权类错误归一化（r7-ux）：install 探测不含登录态（--version 无需登录），
+ * 未登录用户首次总结才见 CLI 原始英文鉴权报错——前置中文指引；非鉴权文本原样返回 */
+function authHint(text: string): string {
+  return /log ?in|sign ?in|authenticat|unauthorized|api[ _-]?key|credential|401/i.test(text)
+    ? `该 CLI 尚未登录或凭证已失效——请在终端运行一次该 CLI 完成登录后重试。原始信息：${text}`
+    : text
 }

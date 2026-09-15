@@ -14,7 +14,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 18 = host engines 声明的下界（每次 CI 真实验证）；22 = 主流 LTS
+        # 18 = host engines 声明的下界；22 = 主流 LTS。r7-repo：18 腿不再跑全仓
+        # build/test——扩展构建用 vite 8（vitest 传递依赖 vite 7 同理）已不支持
+        # Node 18，跑必红。18 腿的本意是「host 在 engines 下界可用」，改为
+        # host 专属：tsc 构建 + dist 冒烟加载 + 行数红线（不依赖 vite 链路）；
+        # 22 腿跑全仓构建 + 全量测试
         node: [18, 22]
     steps:
       - uses: actions/checkout@v4
@@ -26,5 +30,15 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # 22 腿：全仓构建（host tsc + 扩展 vite）+ 全量测试（含红线断言）
       - run: pnpm -r build
+        if: matrix.node == 22
       - run: pnpm test # 内含 scripts/check-host-lines.mjs 行数红线断言
+        if: matrix.node == 22
+      # 18 腿：host 在 engines 下界的真实验证——构建产物能被 node 18 加载执行
+      - run: pnpm --filter @aaione/ai-page-dive build
+        if: matrix.node == 18
+      - run: node -e "import('./packages/host/dist/index.js').then(() => console.log('host dist loads on node', process.version)).catch((e) => { console.error(e); process.exit(1) })"
+        if: matrix.node == 18
+      - run: node scripts/check-host-lines.mjs
+        if: matrix.node == 18

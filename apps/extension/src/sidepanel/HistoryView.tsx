@@ -202,7 +202,12 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
           </li>
         ))}
         {!items.length && (
-          replied ? <p className="pd-history-empty">暂无历史</p>
+          // r7-ux：搜索语境区分——「暂无历史」会把有历史但无匹配的用户引向重装排查
+          replied ? (
+            <p className="pd-history-empty">
+              {query.trim() ? `无匹配「${query.trim()}」的历史——换个关键词试试` : '暂无历史'}
+            </p>
+          )
           : waited ? <p className="pd-history-empty">本机组件未连接，历史暂不可读</p>
           : <p className="pd-history-empty">加载中…</p>
         )}

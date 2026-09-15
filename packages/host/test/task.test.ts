@@ -56,6 +56,12 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'完成',usage:{
     is_error: `console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'部分'}]}}))
 console.log(JSON.stringify({type:'result',is_error:true,result:'认证失败'}))`,
     slow: `setTimeout(() => console.log(JSON.stringify({type:'result',is_error:false,result:'完成'})), 60_000)`,
+    // r7-blocker 回归：exit≠0 的两种形态（无 result 崩溃 / result 成功交付后异常退出）
+    crash: `console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'半截'}]}}))
+process.exit(1)`,
+    'ok-exit1': `console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'完整回答'}]}}))
+console.log(JSON.stringify({type:'result',is_error:false,result:'完整回答',usage:{input_tokens:1,output_tokens:2}}))
+process.exit(1)`,
     noagent: '',
   }[mode]
   await writeFile(script, code ?? '', 'utf8')
@@ -180,6 +186,66 @@ describe('Task 状态机', () => {
     expect(cbs.done).toBeNull()
     AGENTS[0].buildArgs = orig
     await rm(join(script, '..'), { recursive: true, force: true })
+  }, 30_000)
+
+  it('CLI 崩溃（exit 1 无 result）：onError(parse)，截断文本不得标成功（r7-blocker 回归）', async () => {
+    // 条件曾写反（!gotResultOk 进成功分支）：崩溃路径半截 delta 被标完整成功，
+    // 且落盘 'error' 与终局 onDone(isError:false) 自相矛盾。HOME 指向临时目录，
+    // persist 写的 'error' 历史不落真实用户目录
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const script = await FAKE_CLI('crash')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const fakeHome = await mkdtemp(join(tmpdir(), 'pd-home-'))
+    const origHome = process.env.HOME
+    process.env.HOME = fakeHome
+    try {
+      const { task: mk, cbs } = makeCbs(); const task = mk('t-crash')
+      task.start({ taskId: 't-crash', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+      task.appendContent(BODY, true)
+      await task.run()
+      await new Promise(r => setTimeout(r, 300))
+      expect(cbs.done).toBeNull()
+      expect(cbs.errors[0][0]).toBe('parse')
+      expect(cbs.errors[0][1]).toMatch(/exit 1/)
+      // 半截 delta 已流出（对账：传输确实发生过），但终局必须失败
+      expect(cbs.chunks.map(c => c[0])).toEqual(['半截'])
+    } finally {
+      process.env.HOME = origHome
+      AGENTS[0].buildArgs = orig
+      await rm(fakeHome, { recursive: true, force: true })
+      await rm(join(script, '..'), { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('result 成功交付后 exit 1：按成功终局 onDone(isError:false) + 落盘 done（r7-blocker 回归）', async () => {
+    // 曾反报 onError('parse')——完整答案配失败红条。硬约束 #4 的精神：失败语义
+    // 在 is_error，不在退出码
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const script = await FAKE_CLI('ok-exit1')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const fakeHome = await mkdtemp(join(tmpdir(), 'pd-home-'))
+    const origHome = process.env.HOME
+    process.env.HOME = fakeHome
+    try {
+      const { task: mk, cbs } = makeCbs(); const task = mk('t-okexit1')
+      task.start({ taskId: 't-okexit1', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+      task.appendContent(BODY, true)
+      await task.run()
+      await new Promise(r => setTimeout(r, 300))
+      expect(cbs.errors).toEqual([])
+      expect(cbs.done?.isError).toBe(false)
+      const raw = await readFile(cbs.done.historyPath, 'utf8')
+      expect(raw).toContain('status: done') // 落盘口径与终局帧一致
+    } finally {
+      process.env.HOME = origHome
+      AGENTS[0].buildArgs = orig
+      await rm(fakeHome, { recursive: true, force: true })
+      await rm(join(script, '..'), { recursive: true, force: true })
+    }
   }, 30_000)
 
   it('未知 agent → no-agent，不 spawn', async () => {

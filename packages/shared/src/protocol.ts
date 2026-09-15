@@ -191,6 +191,9 @@ export interface TaskStatusMsg {
   t: 'task-status'
   taskId: string
   phase: 'spawned' | 'reading' | 'thinking'
+  /** 归属 CLI（SW 的 reading 占位帧带 currentAgentId；host 侧 status 帧不带）：
+   * panel 据此在气泡创建时快照——流式中切下拉不再错标（r7-ux） */
+  agentId?: string
   /** 低频状态更新（不含正文增量） */
 }
 

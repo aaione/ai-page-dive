@@ -360,19 +360,16 @@ export class Task {
       this.cb.onError('cancelled', 'task cancelled')
       return
     }
-    const isError = code !== 0 || !this.accText
+    // 终局判定（r7-blocker：条件曾写反——!gotResultOk 反而进了成功分支）。
+    // delivered = 成功 result 已交付（gotResultOk 置位路径保证 accText 非空，&& 为
+    // 防御性冗余）：① CLI 崩溃（exit≠0 无 result）→ onError('parse')，截断文本
+    // 不得标成功；② result 完整交付后 exit≠0 → 按成功终局（硬约束 #4 的精神：
+    // claude 的失败语义在 is_error，不在退出码）。落盘口径与终局帧同式（曾
+    // persist 'error' + onDone 成功自相矛盾）
+    const delivered = this.gotResultOk && !!this.accText
+    const isError = code !== 0 ? !delivered : !this.accText
     await this.persist(isError ? 'error' : 'done')
-    if (code !== 0 && !this.gotResultOk) {
-      // result 已成功交付（is_error=false）后 exit code 异常：内容完整，按成功终局
-      this.cb.onDone({
-        historyPath: this.effectiveHistoryPath,
-        isError: false,
-        usage: this.usage,
-        durationMs,
-        model: this.meta?.model,
-        sessionId: this.meta?.sessionId,
-      })
-    } else if (code !== 0) {
+    if (code !== 0 && !delivered) {
       this.cb.onError('parse', `exit ${code}: ${stderrTail.slice(-500)}`)
     } else if (!this.accText) {
       this.cb.onError('parse', `no output${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}`)
