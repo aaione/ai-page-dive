@@ -36,7 +36,9 @@ jobs:
       - run: pnpm test # 内含 scripts/check-host-lines.mjs 行数红线断言
         if: matrix.node == 22
       # 18 腿：host 在 engines 下界的真实验证——构建产物能被 node 18 加载执行
-      - run: pnpm --filter @aaione/ai-page-dive build
+      # （r8-ci：host tsc 需要 shared 的类型产物，必须连带选中 shared 一起构建——
+      # 只 filter host 时 fresh checkout 无 shared/dist，TS2307 必红）
+      - run: pnpm --filter @ai-page-dive/shared --filter @aaione/ai-page-dive build
         if: matrix.node == 18
       - run: node -e "import('./packages/host/dist/index.js').then(() => console.log('host dist loads on node', process.version)).catch((e) => { console.error(e); process.exit(1) })"
         if: matrix.node == 18
