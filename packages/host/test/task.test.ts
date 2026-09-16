@@ -106,8 +106,9 @@ describe('Task 状态机', () => {
     task.appendContent(BODY, true)
     await task.run()
 
-    expect(cbs.chunks.map(c => c[0])).toEqual(['第一段', '第二段'])
-    expect(cbs.chunks.map(c => c[1])).toEqual([0, 1])
+    // r8-perf 攒批：50ms 窗口内 delta 合并成一片（seq 从 0 连续；多片切分语义由 CJK 大 delta 测试覆盖）
+    expect(cbs.chunks.map(c => c[0])).toEqual(['第一段第二段'])
+    expect(cbs.chunks.map(c => c[1])).toEqual([0])
     expect(cbs.done?.isError).toBe(false)
     expect(cbs.done?.historyPath).toMatch(/\.ai-page-dive\/history\/\d{4}\/\d{2}\/\d{2}\/.*\.md$/)
     const raw = await readFile(cbs.done.historyPath, 'utf8')
@@ -417,7 +418,7 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))
     // 追问轮：instruction 前拼附件段
     const { task: mk } = makeCbs(); const task = mk('t-att')
     task.start({
-      taskId: 't-att', agentId: 'claude', resumeSessionId: 's1', instruction: '结合附件回答',
+      taskId: 't-att', agentId: 'claude', resumeSessionId: 'sess-1234', instruction: '结合附件回答',
       attachments: [{ name: '数据.md', text: '销售额：100 万' }],
       page: PAGE as any,
     })

@@ -2,7 +2,7 @@ import type { PageContent } from './page.js'
 
 /**
  * CLI 适配器定义（声明式）。接口按六家字段并集设计（claude/codex/opencode/
- * gemini/qwen/dsh），v1 只实现 claude + codex 两家。
+ * gemini/qwen/dsh）。v1 实现 claude + codex（opencode 实验档，见 DECISIONS D5）。
  */
 export interface AgentDef {
   id: string
@@ -11,8 +11,6 @@ export interface AgentDef {
   /** argv 兼容替身（如 bun 装的 cli） */
   fallbackBins?: string[]
   versionArgs: string[]
-  /** 接受的 release line；不匹配只告警不阻断 */
-  supportedVersionPattern?: RegExp
 
   /** 构造 CLI argv。prompt 一律走 stdin（硬约束），此处不含正文 */
   buildArgs: (opts: BuildArgsOpts) => string[]
@@ -23,8 +21,9 @@ export interface AgentDef {
    */
   filePathInPrompt?: (opts: BuildArgsOpts) => string
 
-  /** 会话恢复位：claude 用 --resume <id>（specify 模式） */
-  resume?: { mode: 'specify' } | { mode: 'capture'; eventId: string }
+  /** 探测时从 CLI 本地配置读默认模型（best-effort，读不到 undefined）——
+   * 各 CLI 的私有配置路径/格式知识留在各自适配器内，registry 不做 id 特判 */
+  probeModel?: () => string | undefined
 }
 
 export interface BuildArgsOpts {
@@ -34,8 +33,6 @@ export interface BuildArgsOpts {
   contentRelPath?: string
   /** CLI 工作目录（opencode 需 --dir 显式钉死，防 git root 漂移） */
   agentCwd?: string
-  /** codex -o 最终消息落盘路径 */
-  lastMsgFile?: string
   /** 追问轮：续接上一轮 CLI 会话（claude --resume） */
   resumeSessionId?: string
 }

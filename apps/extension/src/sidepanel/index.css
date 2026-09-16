@@ -121,6 +121,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   text-transform: uppercase;
   color: var(--color-pd-ink-2);
 }
+/* r8-ux：气泡头 token 用量/耗时（订阅消耗可见性） */
+.pd-chat-usage {
+  font-size: 10.5px;
+  color: var(--color-pd-ink-2);
+}
 .pd-chat-thinking {
   display: flex;
   align-items: center;
@@ -414,6 +419,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   line-height: 1.6;
   color: var(--color-pd-ink);
   font-family: var(--font-serif-read);
+  /* r8-ux：input → textarea（多行提问）——禁拖拽手柄，高度由 JS 自适应 */
+  resize: none;
+  overflow-y: auto;
 }
 .pd-input::placeholder {
   color: rgba(148,163,184,.70);
@@ -967,6 +975,15 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   background: var(--color-pd-danger-bg);
   color: var(--color-pd-danger);
 }
+/* r8-ux：两步删除的确认态——鼠标移出条目也保持可见（3s 窗口内等待二次点击） */
+.pd-history-item-action.confirming {
+  display: flex;
+  width: auto;
+  padding: 0 8px;
+  font-size: 11px;
+  background: var(--color-pd-danger-bg);
+  color: var(--color-pd-danger);
+}
 .pd-history-item-action svg {
   width: 14px;
   height: 14px;
@@ -976,6 +993,13 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   text-align: center;
   font-size: 11.5px;
   line-height: 1.9;
+  color: var(--color-pd-ink-2);
+}
+/* r8-ux：满 100 条截断提示 */
+.pd-history-truncated {
+  padding: 0 16px 16px;
+  text-align: center;
+  font-size: 11px;
   color: var(--color-pd-ink-2);
 }
 

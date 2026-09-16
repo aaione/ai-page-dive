@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { AgentDef, AgentEvent } from '@ai-page-dive/shared'
 
 /**
@@ -43,12 +46,15 @@ export function createClaudeParser() {
       if (text.startsWith(prevText)) {
         const delta = text.slice(prevText.length)
         if (delta) out.push({ type: 'text-delta', text: delta })
+        prevText = text
       } else if (text && prevText.endsWith(text)) {
-        // 跨消息镜像：本条消息文本已作为流式增量推出，跳过
+        // 跨消息镜像：本条消息文本已作为流式增量推出，跳过且不回写 prevText
+        // （r8-host：回写会把累积全文缩窄成本条文本，连续两条相同消息时
+        // 第二条的 startsWith 差分因此误命中、正文被吞）
       } else if (text) {
         out.push({ type: 'text-delta', text })
+        prevText = text
       }
-      prevText = text
     } else if (d.type === 'result') {
       const u = d.usage ?? {}
       if (u.input_tokens != null || u.output_tokens != null) {
@@ -76,6 +82,15 @@ export const claudeDef: AgentDef = {
   bin: 'claude',
   versionArgs: ['--version'],
   streamFormat: 'claude-stream-json',
+  // 探测时读 settings.json 的 model 字段（用户显式设定）；best-effort
+  probeModel: () => {
+    try {
+      const s = JSON.parse(readFileSync(join(homedir(), '.claude/settings.json'), 'utf8'))
+      return s.model || undefined
+    } catch {
+      return undefined
+    }
+  },
   buildArgs: (opts) => [
     '-p',
     '--output-format', 'stream-json',

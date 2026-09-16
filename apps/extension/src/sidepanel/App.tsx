@@ -14,6 +14,8 @@ export interface ChatMessage {
   streaming?: boolean
   model?: string
   usage?: { inputTokens?: number; outputTokens?: number }
+  /** 本轮耗时（r8-ux：气泡头与 usage 一起透出——订阅用量可见性） */
+  durationMs?: number
   error?: string | null
   isError?: boolean
   /** 用户主动停止等非故障终局：红样式保留但不带「CLI 报告运行失败」前缀（r5-ux） */
@@ -47,6 +49,9 @@ export interface TaskStreamState {
   /** 面板重开且 SW 侧仍有活会话（r7-ux）：React 态已丢但 CLI 会话健在——提示
    * 「此前对话已清空」并解锁追问（接续原会话上下文）；beginTurn 展 BLANK 自然清除 */
   reopened?: boolean
+  /** 终局异常（看门狗/断连）时回填输入框的文本 + 递增序号（r8-ux：发送时输入框
+   * 已清空，无回填则重试只能对着气泡手抄；n 递增使同文本两次终局也触发 effect） */
+  refill?: { n: number; text: string }
 }
 
 const BLANK: TaskStreamState = {
@@ -70,6 +75,8 @@ export function App() {
   const [stream, setStream] = useState<TaskStreamState>(BLANK)
   const [agentId, setAgentId] = useState('')
   const [pageMeta, setPageMeta] = useState<PageMeta | null>(null)
+  // r8-ux：当前锚定页不可提取（chrome:// 等）——placeholder 直接说明，失败前移
+  const [pageUnsupported, setPageUnsupported] = useState(false)
   /** SW 侧活会话归属的 CLI（panel-ready 回带）：面板重开后头部下拉的初始显示——
    * 与追问实际执行的 CLI 一致（r7-review：曾错标为默认链结果，错标窗口=重开后首问） */
   const [sessionAgent, setSessionAgent] = useState('')
@@ -90,7 +97,9 @@ export function App() {
   // 「心跳线」断——不再有任何 task-alive 帧。看门狗盯的是**host 存活**（心跳），不是
   // 「UI 有无内容帧」：host 活着就每 HEARTBEAT_MS 一次 task-alive（SW 由 heartbeat 转译），
   // codex 深度思考期整段静默无 chunk 但心跳照常 → 不误判（修复 R2-B1 的关键）。
-  // 依赖 aliveAt（任一存活信号刷新）而非整个 stream：避免每 chunk 重建 timer（R2-m6）。
+  // 依赖仅 running（r8-ext：曾依赖 aliveAt——每个 task-chunk 都写 aliveAt，恰使
+  // timer 每 chunk 重建，与 R2-m6 注释宣称的相反；judge 经 streamRef 读最新 aliveAt
+  // 自行重订，语义不变且高频 chunk 下零冗余重建）
   const running = stream.activeId !== null || stream.pending
   useEffect(() => {
     if (!running) return
@@ -112,25 +121,28 @@ export function App() {
       chrome.runtime.sendMessage({ t: 'cancel' }).catch(() => {})
       setStream((s) => {
         if (s.activeId === null && !s.pending) return s
+        // r8-ux：把本轮问题放回输入框（发送时已清空）——重发不必对着气泡手抄
+        const lastUser = [...s.messages].reverse().find((m) => m.role === 'user')
         return {
           ...s,
           taskId: null,
           pending: false,
           done: true,
           activeId: null,
+          ...(lastUser?.text ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lastUser.text } } : {}),
           // 记 finished：真 host 若稍后复活，迟到 chunk 不得重开矛盾气泡（R2-m3 兜底）
           finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
           messages: [
             ...s.messages.map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg)),
             // 中性文案：不预设死因（可能是 SW 死，也可能是极端慢），普通用户可懂（R2-m4）
-            { id: `w${Date.now()}`, role: 'assistant', text: '', error: '响应超时——请点「新对话」或重试', isError: true },
+            { id: `w${Date.now()}`, role: 'assistant', text: '', error: '响应超时——你的问题已放回输入框，可直接重发', isError: true },
           ],
         }
       })
     }
     timer = setTimeout(judge, Math.max(WATCHDOG_MS - (Date.now() - stream.aliveAt), 25_000))
     return () => clearTimeout(timer)
-  }, [running, stream.aliveAt])
+  }, [running])
 
   useEffect(() => {
     // SW 唤醒失败/通道异常：lastError 非空且 resp undefined——不等于「host 未装」，
@@ -150,6 +162,7 @@ export function App() {
         if (resp?.outdated) setOutdated(String(resp.outdated))
         if (resp?.ok) requestLists()
         if (resp?.page) setPageMeta(resp.page)
+        setPageUnsupported(!!(resp as any).pageUnsupported)
         // SW 侧态对齐（r4-ux）：面板切 tab 被收起后重开，React 态已丢——活会话 →
         // 恢复 resumable（追问不再静默降级为全量重总结+抹掉 SW 会话）；在跑任务 →
         // 重建 taskId 绑定 + 占位气泡（迟到 chunk 续流，不再孤儿流；任务已死则
@@ -186,6 +199,9 @@ export function App() {
       switch (m.t) {
         case 'page-meta':
           setPageMeta(m.page)
+          // r8-review：pageUnsupported 只在 panel-ready 同步过一次——tab 导航/切换后
+          // placeholder 会与当前页事实不符，随 page-meta 广播一起更新
+          setPageUnsupported(!!m.pageUnsupported)
           break
         case 'agents':
           // 单一事实源：SW 下发前已 merge 最近模型（agentsCache），panel 只渲染
@@ -296,6 +312,7 @@ export function App() {
                       isError: m.isError,
                       error: m.isError ? authHint(m.errorText ?? 'CLI 运行内失败') : null,
                       usage: m.usage,
+                      durationMs: m.durationMs,
                       model: m.model ?? msg.model,
                     }
                   : msg,
@@ -353,19 +370,22 @@ export function App() {
               if (s.finished.includes(m.taskId)) return s
               if (s.taskId !== null && s.taskId !== m.taskId) return s
             }
-            const TEXT = '本机组件连接中断——请重试发送'
+            const TEXT = '本机组件连接中断——你的问题已放回输入框，可直接重发'
             const messages = s.messages.map((msg) =>
               msg.streaming ? { ...msg, streaming: false, error: TEXT, isError: true } : msg,
             )
             // pending ⟺ 本轮尚无任何 assistant 帧——必然零气泡，断连即补（r5 修正：
             // 曾用 !messages.some(isError) 判定，上一轮遗留的错误气泡会吞掉本轮反馈）
             const needBubble = s.pending
+            // r8-ux：断连终局同样回填本轮问题（与看门狗判死同式）
+            const lastUser = [...s.messages].reverse().find((msg) => msg.role === 'user')
             return {
               ...s,
               taskId: null,
               pending: false,
               done: true,
               activeId: null,
+              ...(lastUser?.text ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lastUser.text } } : {}),
               finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
               messages: needBubble
                 ? [...messages, { id: `e${Date.now()}`, role: 'assistant' as const, text: '', error: TEXT, isError: true }]
@@ -454,14 +474,19 @@ export function App() {
     [],
   )
 
+  // 设置页开关 CLI 后（pd-settings-changed）联动：手动选中被禁用时回退到默认 CLI，再到首个可用
+  const disabledClis = useDisabledClis()
+
   /** 历史详情「继续对话」：解析 pd:user/pd:assistant 分段还原多轮气泡 + 通知 SW 恢复会话 */
   const resumeHistory = useCallback((item: HistoryItem, body: string) => {
     setOverlay(null)
     // 记录的 CLI 已停用/卸载（r7-ux）：显示与执行必须一致——effectiveAgent 会回退到
     // 其他 CLI，若 SW 仍装载旧会话，追问实际执行的是历史 agent（必然失败）。改走
-    // 「只恢复正文、不装载会话」。agents 未加载完（空列表）按可用处理（首屏窗口极短）
+    // 「只恢复正文、不装载会话」。agents 未加载完（空列表）按可用处理（首屏窗口极短）。
+    // r8-review：只查 available 漏了停用——SW 无停用概念，装载后追问照样执行被停用
+    // CLI 而下拉显示回退 CLI，「关闭仅从主界面下拉隐藏」的设置文案也被打破
     const rec = agents.find((a) => a.id === item.agent)
-    const agentOk = !agents.length || !!rec?.available
+    const agentOk = !agents.length || (!!rec?.available && !disabledClis.has(item.agent))
     if (agentOk) setAgentId(item.agent)
     // 首条 id 带 item.ts 前缀：parseHistoryTurns 固定用 h0/h1…，连续恢复两条不同 agent
     // 的历史时 firstMsgId 都是 h0 不变 → SummarizeView 的 followAgent 指纹不触发重置
@@ -480,7 +505,7 @@ export function App() {
           ? msgs
           // 空正文（error 历史）：给出占位说明，避免空白气泡 + 误判 hasSession
           : [{ id: `h${item.ts}`, role: 'assistant' as const, text: '（该记录无正文——发送消息将开始全新总结）', error: '该历史记录状态为失败，无对话上下文可续', isError: true }]),
-        ...(agentOk ? [] : [{ id: `w${item.ts}`, role: 'assistant' as const, text: `> ⚠️ 该记录的 CLI（${item.agent}）当前不可用——继续发送将总结**当前打开的页面**（非本条历史）` }]),
+        ...(agentOk ? [] : [{ id: `w${item.ts}`, role: 'assistant' as const, text: `> ⚠️ 该记录的 CLI（${item.agent}）当前不可用或已在设置中停用——继续发送将总结**当前打开的页面**（非本条历史）` }]),
       ],
     }))
     // tips 条同步为该历史条目的来源页——仅可续会话时（r7-review：CLI 不可用走全新
@@ -492,10 +517,8 @@ export function App() {
       // SW 侧 resume-history 原本顺带收割在跑任务——不装载会话时手动补 cancel
       chrome.runtime.sendMessage({ t: 'cancel' }).catch(() => {})
     }
-  }, [agents])
+  }, [agents, disabledClis])
 
-  // 设置页开关 CLI 后（pd-settings-changed）联动：手动选中被禁用时回退到默认 CLI，再到首个可用
-  const disabledClis = useDisabledClis()
   const [defaultCli, setDefaultCli] = useState('')
   useEffect(() => {
     const sync = () => { try { setDefaultCli(localStorage.getItem('pd-default-cli') ?? '') } catch { /* */ } }
@@ -556,7 +579,7 @@ export function App() {
             <span>{outdated}</span>
           </div>
         )}
-        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} resumable={stream.resumable} sessionAgentId={sessionAgent} />
+        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} resumable={stream.resumable} sessionAgentId={sessionAgent} pageUnsupported={pageUnsupported} />
       </main>
 
       {overlay === 'history' && (

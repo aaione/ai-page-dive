@@ -18,6 +18,8 @@ interface Props {
   /** SW 侧活会话归属的 CLI（panel-ready 回带）：面板重开后头部下拉初始显示与
    * 追问实际执行的 CLI 一致（r7-review） */
   sessionAgentId?: string
+  /** 当前锚定页不可提取（chrome:// 等）：placeholder 前置说明（r8-ux） */
+  pageUnsupported?: boolean
 }
 
 /** 读 localStorage 的 JSON string[]（容错：坏数据/非数组一律回退默认） */
@@ -76,7 +78,7 @@ export function useSetting(key: string): [string, (v: string) => void] {
   return [v, set]
 }
 
-export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, resumable, sessionAgentId }: Props) {
+export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, resumable, sessionAgentId, pageUnsupported }: Props) {
   const disabledClis = useDisabledClis()
   const getEnabledSkills = useEnabledSkills()
   const [sumLang] = useSetting('pd-sum-lang')
@@ -89,13 +91,32 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   /** 附件跳过提示（超限/读失败）：下一条 notice 类消息展示后清除 */
   const [attachNotice, setAttachNotice] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  // r8-ux：input → textarea（Shift+Enter 换行，多行提问/粘贴大纲不再被压扁）
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   // 打开面板/新对话后自动聚焦输入框（点击下拉不抢焦点：仅在消息从有到无时）
   const prevMsgCount = useRef(0)
   useEffect(() => {
     if (prevMsgCount.current > 0 && messages.length === 0) inputRef.current?.focus()
     prevMsgCount.current = messages.length
   }, [messages.length])
+  // 终局异常（看门狗/断连）回填：refill.n 递增保证同文本也触发。
+  // r8-review：输入框已有新草稿时不覆写——同一事故的错误回调与断连帧先后到达，
+  // 用户已开始重敲时第二次 refill 会把改到一半的草稿整体冲掉
+  const lastRefill = useRef(0)
+  useEffect(() => {
+    if (stream.refill && stream.refill.n !== lastRefill.current) {
+      lastRefill.current = stream.refill.n
+      setInput((cur) => cur.trim() ? cur : stream.refill!.text)
+      if (!input.trim()) inputRef.current?.focus()
+    }
+  }, [stream.refill])
+  // textarea 自适应高度：内容行数增长到 5 行封顶，删除/清空回落
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 110)}px`
+  }, [input])
   /** 追问轮实际执行会话的 CLI（SW 回带；头部展示与真实执行一致） */
   const [followAgent, setFollowAgent] = useState<string | null>(null)
   /** 重试检测按钮的 loading 态（r7-ux：host 探测最长 8s，零反馈会被当成没反应） */
@@ -155,16 +176,22 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   function send() {
     const text = input.trim()
     if ((!text && !attachments.length) || running || !usable.length) return
-    beginTurn(text || `（附件：${attachments.map((a) => a.name).join('、')}）`)
+    // 附件-only 轮的展示与发送指令同文（r8-review：显示与执行一致——气泡显示
+    // 「（附件：x）」而 instruction 发空串，CLI 收到的与用户看到的不是一回事）
+    const shown = text || `（附件：${attachments.map((a) => a.name).join('、')}）`
+    beginTurn(shown)
     setAttachNotice('') // 提示已在输入区即时展示（r4-ux F3），发送即消费
     setInput('')
     const atts = attachments
     setAttachments([])
     const skills = getEnabledSkills()
+    // 追问轮无 workflow 兜底：附件-only 时 instruction 用与气泡一致的占位文本；
+    // 首轮保持空串——host 侧 `instruction || wfBody` 落默认摘要指令，比占位文本更有用
+    const instruction = text || (atts.length ? `（附件：${atts.map((a) => a.name).join('、')}）` : '')
     if (hasSession) {
       // 追问轮：agentId 由 SW 按会话归属决定，响应回带实际值——头部展示同步
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, instruction: text, followUp: true, skills, attachments: atts },
+        { t: 'summarize', agentId: effectiveAgent, instruction, followUp: true, skills, attachments: atts },
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             if (resp.agentId) setFollowAgent(resp.agentId)
@@ -312,7 +339,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             <span>面板重开：此前对话已清空——完整内容可在「总结历史」中查看；继续提问将接续原会话。</span>
           </div>
         )}
-        {messages.length === 0 && <Placeholder clis={usable.map((a) => a.id)} anyInstalled={agents.some((a) => a.available)} />}
+        {messages.length === 0 && <Placeholder clis={usable.map((a) => a.id)} anyInstalled={agents.some((a) => a.available)} pageUnsupported={pageUnsupported} />}
         {messages.map((m) =>
           m.role === 'user' ? (
             <div key={m.id} className="pd-chat-user">
@@ -450,6 +477,11 @@ function WorkflowDropdown({
   }
 }
 
+/** token 数短格式：1234 → 1.2k（气泡头一行放下） */
+function fmtK(n?: number): string {
+  return n == null ? '' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+}
+
 function AssistantMessage({
   msg, phase, running, agentId, onNewChat,
 }: {
@@ -463,6 +495,14 @@ function AssistantMessage({
     <div className="pd-chat-assistant">
       <div className="pd-chat-assistant-head">
         <span className="pd-chat-model pd-mono">{agentId}</span>
+        {/* r8-ux：订阅用量可见性——产品核心卖点是「复用你自己的 CLI 订阅」，每轮烧多少 token 应有出口 */}
+        {!running && (msg.usage || msg.durationMs) && (
+          <span className="pd-chat-usage pd-mono">
+            {msg.usage?.inputTokens != null && `${fmtK(msg.usage.inputTokens)}↑`}
+            {msg.usage?.outputTokens != null && ` ${fmtK(msg.usage.outputTokens)}↓`}
+            {msg.durationMs != null && ` · ${(msg.durationMs / 1000).toFixed(1)}s`}
+          </span>
+        )}
         {running && (
           <span className="pd-chat-thinking">
             <span className="pd-dot" aria-hidden="true" />
@@ -640,7 +680,7 @@ function ActionBar({
   /** 非空 = 输入自定义问题时提示所选模式将被替代（r5-ux） */
   workflowNotice?: string
   onInputChange: (v: string) => void
-  inputRef: React.RefObject<HTMLInputElement | null>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>
   running: boolean
   usableCount: number
   hasSession: boolean
@@ -680,19 +720,24 @@ function ActionBar({
         tabIndex={-1}
         aria-hidden="true"
       />
-      <input
+      <textarea
         ref={inputRef}
         value={input}
         onChange={(e) => onInputChange(e.target.value)}
         onKeyDown={(e) => {
+          // Enter 发送 / Shift+Enter 换行（r8-ux：多行输入是竞品基线体验）。
           // keyCode 229：部分 IME（韩文等）compositionend 先于 keydown，isComposing 已 false
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229 && !running && usableCount) onStart()
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229 && !running && usableCount) {
+            e.preventDefault()
+            onStart()
+          }
         }}
         // r7-ux：不再 disabled——运行中允许预输入下一问（Enter 已有 !running 守卫，
         // 发送按钮不受影响；锁死输入框只是防重发，守卫已覆盖）
-        placeholder={hasSession ? '继续追问…' : '想了解这个网页什么？'}
+        placeholder={hasSession ? '继续追问…（Shift+Enter 换行）' : '想了解这个网页什么？（Shift+Enter 换行）'}
         aria-label="自定义指令"
         className="pd-input"
+        rows={1}
       />
 
       <button
@@ -752,7 +797,7 @@ function PageTips({ meta }: { meta: PageMeta }) {
   )
 }
 
-function Placeholder({ clis, anyInstalled }: { clis: string[]; anyInstalled?: boolean }) {
+function Placeholder({ clis, anyInstalled, pageUnsupported }: { clis: string[]; anyInstalled?: boolean; pageUnsupported?: boolean }) {
   // 无可用 CLI：给出明确指引而非让用户对着灰按钮/无反应回车猜（F10）。
   // 区分「未安装」与「已装但全被停用」（r5-ux：文案曾把后者引向重装排查）
   if (!clis.length) {
@@ -778,6 +823,19 @@ function Placeholder({ clis, anyInstalled }: { clis: string[]; anyInstalled?: bo
     )
   }
   // 动态渲染实际检测到的 CLI（不再硬编码 opencode，避免未装者误以为可用，F14）
+  // r8-ux：chrome:// 等受限页无法提取正文——前置说明，别让用户输入后才发现发不出去
+  if (pageUnsupported) {
+    return (
+      <div className="pd-placeholder">
+        <p className="pd-placeholder-title">当前页面无法提取正文</p>
+        <p className="pd-placeholder-hint">
+          浏览器内置页（chrome:// 等）不允许扩展读取内容
+          <br />
+          切换到普通网页后即可使用
+        </p>
+      </div>
+    )
+  }
   return (
     <div className="pd-placeholder">
       <p className="pd-placeholder-title">想了解这个网页的什么？</p>

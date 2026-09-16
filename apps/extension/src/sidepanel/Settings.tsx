@@ -61,6 +61,14 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const [readTimeout, setReadTimeout] = useState<string | null>(null)
   /** 保存成功反馈（2s 自清）：正向操作此前零反馈，用户只能靠猜（r4-ux） */
   const [savedFlash, setSavedFlash] = useState(false)
+  // r8-ux：dirty 编辑中切换/新建 → 内联确认条（放弃并切换/继续编辑），
+  // 此前直接换 editor 静默丢掉未保存修改
+  const [pendingSwitch, setPendingSwitch] = useState<WorkflowItem | 'new' | null>(null)
+  // r8-ux：删除两步确认——side panel 里 window.confirm 恒返 false（无模态宿主），
+  // 「删除模式」按钮等于静默失效；3s 未二次点击自动还原
+  const [confirmDelWf, setConfirmDelWf] = useState(false)
+  const delWfTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(delWfTimer.current), [])
 
   // ── 模式（workflow） ──
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
@@ -88,6 +96,18 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
     window.dispatchEvent(new Event('pd-settings-changed'))
   }
 
+  // r8-review：App 的全局 Esc（window 冒泡阶段 setOverlay(null)）会直接卸载
+  // Settings——dirty 编辑的正文无确认即丢，绕过 pendingSwitch 确认条。dirty 时
+  // 捕获阶段拦截 Esc（离开设置请点「返回面板」，有意识动作）
+  useEffect(() => {
+    if (!editor?.dirty) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') e.stopPropagation()
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [editor?.dirty])
+
   useEffect(() => {
     // mount 即拉列表（host 回包经 SW 广播，App.tsx 同帧双收无害）
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-workflows' } }, () => void chrome.runtime.lastError)
@@ -101,9 +121,11 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
           setSkills(m.items)
           break
         case 'workflow-file': {
-          // 选中项的全文到达：解析进编辑表单（仅当还在编辑这个名字）
+          // 选中项的全文到达：解析进编辑表单（仅当还在编辑这个名字）。
+          // r8-review：读取窗口内用户已动手改（dirty）则不覆写——迟到帧整体替换
+          // 用户输入并清 dirty，与 pendingSwitch 保护切换的方向相悖
           const cur = editorRef.current
-          if (!cur || cur.name !== m.name) break
+          if (!cur || cur.name !== m.name || cur.dirty) break
           setReadTimeout(null) // 回包到达即撤销超时态
           const p = parseWorkflowMd(m.content)
           setEditor({
@@ -155,6 +177,15 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   }, [])
 
   function selectWorkflow(w: WorkflowItem) {
+    if (editorRef.current?.dirty) {
+      setPendingSwitch(w)
+      return
+    }
+    doSelectWorkflow(w)
+  }
+
+  function doSelectWorkflow(w: WorkflowItem) {
+    setConfirmDelWf(false)
     setEditor({
       originalName: w.name,
       name: w.name,
@@ -177,6 +208,15 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   }
 
   function newWorkflow() {
+    if (editorRef.current?.dirty) {
+      setPendingSwitch('new')
+      return
+    }
+    doNewWorkflow()
+  }
+
+  function doNewWorkflow() {
+    setConfirmDelWf(false)
     setEditor({
       originalName: null,
       name: '',
@@ -222,9 +262,16 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
 
   function deleteWorkflow() {
     if (!editor || !editor.name) return
-    // 用户模式 = 原创目录，rm -rf 一步即毁不可恢复——与历史删除同款 confirm 防线（F11）；
-    // 内置项是「恢复默认」（删用户副本），无破坏面不加确认
-    if (!editor.builtin && !confirm(`删除模式「${editor.name}」？该操作不可恢复。`)) return
+    // 用户模式 = 原创目录，rm -rf 一步即毁不可恢复——两步确认防线（原 confirm()
+    // 在 side panel 恒返 false）；内置项是「恢复默认」（删用户副本），无破坏面不加确认
+    if (!editor.builtin && !confirmDelWf) {
+      setConfirmDelWf(true)
+      clearTimeout(delWfTimer.current)
+      delWfTimer.current = setTimeout(() => setConfirmDelWf(false), 3000)
+      return
+    }
+    clearTimeout(delWfTimer.current)
+    setConfirmDelWf(false)
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-delete', name: editor.name } }, () => void chrome.runtime.lastError)
   }
 
@@ -305,6 +352,24 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                   </p>
                   <button className="pd-set-btn primary" onClick={newWorkflow}>＋ 新建模式</button>
                 </div>
+                {pendingSwitch && (
+                  <div className="pd-set-dirty-bar" role="alert">
+                    <span>
+                      有未保存的修改——{pendingSwitch === 'new' ? '新建模式' : `切换到「${pendingSwitch.name}」`}将丢弃这些修改
+                    </span>
+                    <button
+                      className="pd-set-btn danger"
+                      onClick={() => {
+                        if (pendingSwitch === 'new') doNewWorkflow()
+                        else doSelectWorkflow(pendingSwitch)
+                        setPendingSwitch(null)
+                      }}
+                    >
+                      放弃修改
+                    </button>
+                    <button className="pd-set-btn" onClick={() => setPendingSwitch(null)}>继续编辑</button>
+                  </div>
+                )}
                 {workflows.length ? (
                   <div className="pd-set-wf-list">
                     {workflows.map((w) => (
@@ -370,7 +435,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                   <div className="pd-set-actions">
                     <button className="pd-set-btn primary" onClick={saveWorkflow}>{savedFlash ? '已保存 ✓' : '保存'}</button>
                     <button className="pd-set-btn danger" onClick={deleteWorkflow} disabled={!editor.name}>
-                      {editor.builtin ? '恢复默认' : '删除'}
+                      {editor.builtin ? '恢复默认' : confirmDelWf ? '确认删除（不可恢复）' : '删除'}
                     </button>
                     <span className="spacer" />
                     <button className="pd-set-btn" onClick={() => revealWorkflow(editor.name)} disabled={!editor.name}>

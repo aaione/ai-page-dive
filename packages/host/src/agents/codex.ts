@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { AgentDef, AgentEvent } from '@ai-page-dive/shared'
 
 /**
@@ -55,17 +58,21 @@ export const codexDef: AgentDef = {
   bin: 'codex',
   versionArgs: ['--version'],
   streamFormat: 'codex-jsonl',
+  // 探测时读 config.toml 的 model 行（best-effort）
+  probeModel: () => {
+    try {
+      return (readFileSync(join(homedir(), '.codex/config.toml'), 'utf8').match(/^model\s*=\s*['"](.+?)['"]$/m))?.[1]
+    } catch {
+      return undefined
+    }
+  },
   // resume 轮（r7-impl，实测 codex 0.151）：exec resume <id>，prompt 省略参数即读
   // stdin。resume 子命令无 --sandbox flag——read-only 围栏用 -c config 覆盖等价
-  // 保持（sandbox_mode 的 value 按 TOML 解析，字符串需内层引号）
+  // 保持（sandbox_mode 的 value 按 TOML 解析，字符串需内层引号）。
+  // r8-review：删 -o lastMsgFile——最终文本取自 item.completed 流事件，该文件
+  // 写了清理了但全仓无读取点（每个任务白开一个临时文件的死机制）
   buildArgs: (opts) =>
     opts.resumeSessionId
       ? ['exec', 'resume', opts.resumeSessionId, '--json', '-c', 'sandbox_mode="read-only"', '--skip-git-repo-check']
-      : [
-          'exec',
-          '--json',
-          '--sandbox', 'read-only',
-          '--skip-git-repo-check',
-          ...(opts.lastMsgFile ? ['-o', opts.lastMsgFile] : []),
-        ],
+      : ['exec', '--json', '--sandbox', 'read-only', '--skip-git-repo-check'],
 }

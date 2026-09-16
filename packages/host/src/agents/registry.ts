@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -77,39 +77,6 @@ export interface ProbeResult {
   model?: string
 }
 
-/**
- * 探测时从 CLI 本地配置读默认模型（下拉免跑任务即有三行信息）。
- * 全部 best-effort：读不到就 undefined，等 task-meta 运行时补。
- */
-function probeModel(id: string): string | undefined {
-  const home = homedir()
-  const read = (p: string) => {
-    try {
-      return readFileSync(p, 'utf8')
-    } catch {
-      return undefined
-    }
-  }
-  try {
-    if (id === 'claude') {
-      // settings.json 的 model 字段（用户显式设定）
-      const s = JSON.parse(read(join(home, '.claude/settings.json')) ?? '{}')
-      return s.model || undefined
-    }
-    if (id === 'codex') {
-      const m = (read(join(home, '.codex/config.toml')) ?? '').match(/^model\s*=\s*['"](.+?)['"]$/m)
-      return m?.[1]
-    }
-    if (id === 'opencode') {
-      const j = JSON.parse(read(join(home, '.config/opencode/opencode.json')) ?? read(join(home, '.opencode.json')) ?? '{}')
-      return typeof j.model === 'string' ? j.model : undefined
-    }
-  } catch {
-    return undefined
-  }
-  return undefined
-}
-
 export async function probeAgents(): Promise<ProbeResult[]> {
   return Promise.all(
     AGENTS.map(async (def) => {
@@ -122,7 +89,9 @@ export async function probeAgents(): Promise<ProbeResult[]> {
       } catch {
         version = undefined
       }
-      return { id: def.id, available: true, version, model: probeModel(def.id) }
+      // 探测时读 CLI 本地配置的默认模型（下拉免跑任务即有三行信息）：
+      // 各家路径/格式知识在 AgentDef.probeModel（r8-review：id 特判曾下沉 registry）
+      return { id: def.id, available: true, version, model: def.probeModel?.() }
     }),
   )
 }

@@ -23,19 +23,18 @@ describe('buildArgs 快照', () => {
     ])
   })
 
-  it('codex：exec json read-only skip-git-repo-check -o', () => {
+  it('codex：exec json read-only skip-git-repo-check（r8 删 -o 死机制：最终文本取自流事件）', () => {
     expect(
-      codexDef.buildArgs({ contentFile: '/tmp/x.md', lastMsgFile: '/tmp/x.md.last' }),
+      codexDef.buildArgs({ contentFile: '/tmp/x.md' }),
     ).toEqual([
       'exec',
       '--json',
       '--sandbox', 'read-only',
       '--skip-git-repo-check',
-      '-o', '/tmp/x.md.last',
     ])
   })
 
-  it('codex：无 lastMsgFile 则省略 -o', () => {
+  it('codex：无 -o 参数（lastMsgFile 机制已删）', () => {
     const args = codexDef.buildArgs({ contentFile: '/tmp/x.md' })
     expect(args).not.toContain('-o')
   })
@@ -48,7 +47,5 @@ describe('buildArgs 快照', () => {
       '-c', 'sandbox_mode="read-only"',
       '--skip-git-repo-check',
     ])
-    // resume 轮无 -o（lastMsgFile 为空，上层 isResume 不落临时文件）
-    expect(codexDef.buildArgs({ contentFile: '', resumeSessionId: 'th-1' })).not.toContain('-o')
   })
 })

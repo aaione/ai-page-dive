@@ -16,10 +16,8 @@ export const REAP_GRACE_MS = 3000
 export interface SpawnOpts {
   bin: string
   args: string[]
-  /** prompt 经 stdin 递送，写完即 end；deferStdin 时由上层稍后调用 writeStdin */
+  /** prompt 经 stdin 递送，写完即 end */
   stdinData: string
-  /** true: spawn 时不写 stdin（上层拿到 cwd 后再写，opencode 用） */
-  deferStdin?: boolean
   onStdoutLine: (line: string) => void
   onStderr: (chunk: string) => void
   /** spawn 失败（ENOENT 等）—— 'error' 事件，exit 不会触发 */
@@ -30,8 +28,6 @@ export interface SpawnedProc {
   child: ChildProcess
   /** CLI 工作目录（tmpdir 下的空子目录，防读到用户项目配置） */
   cwd: string
-  /** deferStdin 模式下写 prompt 并结束 stdin */
-  writeStdin: (data: string) => void
   reap: () => void
 }
 
@@ -57,23 +53,27 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
         reject(err)
       })
       // stdin 异步 EPIPE（r5-impl：大 prompt 塞管道 + CLI 快速退出——未登录/
-      // resume 失效会话）：writeStdin 的同步 try/catch 捕不到异步 error 事件，
+      // resume 失效会话）：写 stdin 的同步 try/catch 捕不到异步 error 事件，
       // 无监听则 uncaughtException 崩掉整个 host（连带杀死同 host 在途任务）。
       // 空监听吞掉——CLI 死亡由 exit 路径收割
       child.stdin!.on('error', () => {})
-
-      const writeStdin = (data: string) => {
-        try {
-          child.stdin!.write(data)
-          child.stdin!.end()
-        } catch { /* child 已死，error 事件已处理 */ }
-      }
-      if (!opts.deferStdin) writeStdin(opts.stdinData)
+      // r8-host：删除 deferStdin/writeStdin 死代码（无调用方；opencode 的 cwd 需求
+      // 已由 makeAgentCwd + cwd 选项解决），spawn 后直接写 prompt
+      try {
+        child.stdin!.write(opts.stdinData)
+        child.stdin!.end()
+      } catch { /* child 已死，error 事件已处理 */ }
 
       let pending = ''
       child.stdout!.setEncoding('utf8')
       child.stdout!.on('data', (d: string) => {
         pending += d
+        // r8-host：病态单行超长输出上界——JSON 行正常 <1MB（claude result 行含全文
+        // 亦只数百 KB），超 8MB 判 CLI 已疯，丢缓冲防 host 峰值内存被拉爆
+        if (pending.length > 8 * 1024 * 1024) {
+          console.error('[ai-page-dive] stdout single line >8MB, dropping buffer')
+          pending = ''
+        }
         // 按行拆给解析器，半行留在缓冲
         for (;;) {
           const i = pending.indexOf('\n')
@@ -106,7 +106,7 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
         }, REAP_GRACE_MS)
       }
 
-      resolve({ child, cwd, writeStdin, reap })
+      resolve({ child, cwd, reap })
     })().catch(reject)
   })
 }

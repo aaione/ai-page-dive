@@ -75,12 +75,18 @@ let target: chrome.tabs.Tab | null = null
 
 // agents 列表缓存（合并最近模型后驻留 SW；SW 重启后首次 list-agents 仍走 host）
 let agentsCache: AgentStatus[] | null = null
+// r8-ext：缓存写入时刻——60s TTL。r6 的「有 CLI 可用即命中」在部分可用（只有
+// claude）时把缓存冻死整个浏览器会话（NM port 保活 SW 不回收），后装的第二个
+// CLI 永不出现，唯一恢复途径是重启浏览器
+let agentsCacheAt = 0
+const AGENTS_CACHE_TTL_MS = 60_000
 
 // 钉住（默认关）：openPanelOnActionClick 模式下 action.onClicked 不触发，
 // activeTab 授权链断裂（点总结 → executeScript 被拒 → no-permission，playwright 实证）。
 // 默认走 onClicked → sidePanel.open() 路径：点图标即开面板且手势刷新授权。
-let pinned = false
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch((e: unknown) => {
+// r8-ext：删除 set-pinned 消息 handler（无 UI 调用方的死路径）；openPanelOnActionClick
+// 恒 false（面板由 action 点击经 chrome.sidePanel.open 打开，见 action onClick）
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((e: unknown) => {
   console.warn('[pd] setPanelBehavior failed:', e)
 })
 
@@ -131,7 +137,8 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
   if (panelTabId === null || panelTabId === tabId) {
     if (panelTabId === tabId) {
       // 面板未开时无接收端是常态（用户收起了面板），静默即可——勿改成 warn 刷屏
-      chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta() }).catch(() => {})
+      // r8-review：附 pageUnsupported——切 tab 后 placeholder 与当前页事实一致
+      chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta(), pageUnsupported: !pageMeta() }).catch(() => {})
     }
     return
   }
@@ -140,12 +147,13 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 // ⚠️ 已知边界（设计内）：锚定 tab 内导航（tabId 不变）不触发 onActivated，
 // 面板保持可见——锚定语义是「页签」而非「URL」，与 Gemini 内置面板一致。
 // 目标 tab 内导航：activeTab 授权随导航失效（url 变不可见），保持 target 由
-// 注入兜底；url 仍可见（同源导航）则刷新 meta
+// 注入兜底；url 仍可见（同源导航）则刷新 meta。
+// r8-review：导航到 chrome:// 也推送（带 pageUnsupported）——此前只在 normal 时
+// 推送，反向场景提示缺失，用户输入后才吃到 unsupported-page 错误
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-  if (target?.id === tabId && info.status === 'complete' && isNormalPage(tab.url)) {
-    target = tab
-    // 同上：面板未开时无接收端是常态，静默
-    chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta() }).catch(() => {})
+  if (target?.id === tabId && info.status === 'complete' && tab.url) {
+    if (isNormalPage(tab.url)) target = tab
+    chrome.runtime.sendMessage({ t: 'page-meta', page: isNormalPage(tab.url) ? pageMeta() : null, pageUnsupported: !isNormalPage(tab.url) }).catch(() => {})
   }
 })
 // 面板 tab 被关闭：重置作用域（运行中任务交给既有 cancel 语义，不强杀）
@@ -198,6 +206,9 @@ async function handleMessage(msg: any): Promise<unknown> {
         ...(r.ok ? {} : { nmError: nmPort.lastError }),
         ...(outdated ? { outdated } : {}),
         page: pageMeta(),
+        // r8-ux：不可提取页（chrome:// 等）前置告知——placeholder 直接说明而非
+        // 等用户输入发送后才报「浏览器内置页面无法提取」（预期管理前移）
+        pageUnsupported: !!(target && !isNormalPage(target.url)),
         ...(lastSession ? { hasSession: true, sessionAgentId: lastSession.agentId } : {}),
         ...(currentTask ? { activeTask: { taskId: currentTask.taskId, startedAt: currentTask.startedAt } } : {}),
       }
@@ -240,15 +251,16 @@ async function handleMessage(msg: any): Promise<unknown> {
       lastSession = null
       persistSession()
       return { ok: true }
-    case 'set-pinned':
-      pinned = !!msg.value
-      chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: pinned }).catch((e: unknown) => {
-        console.warn('[pd] setPanelBehavior failed:', e)
-      })
-      return { ok: true }
     case 'nm':
       // panel → host 的通用转发（list-agents / list-workflows / history 等）
-      if ((msg.msg as any)?.t === 'list-agents' && agentsCache && agentsCache.some((a) => a.available)) {
+      // r8-ext：命中加 60s TTL（见 agentsCacheAt 注释）——探测要 spawn CLI --version
+      // 有秒级成本，60s 内的面板重开不重复探测；过期穿透让新装 CLI 一分钟内出现
+      if (
+        (msg.msg as any)?.t === 'list-agents' &&
+        agentsCache &&
+        agentsCache.some((a) => a.available) &&
+        Date.now() - agentsCacheAt < AGENTS_CACHE_TTL_MS
+      ) {
         // SW 内存缓存优先（含最近模型），直接回 panel；host 探测兜底。
         // r6-ux：仅在有 CLI 可用时缓存命中——零可用 = 用户可能刚装好 CLI，
         // 永远穿透重探测（否则面板永远空态且无自愈入口）
@@ -286,6 +298,7 @@ nmPort.onMessage((m) => {
     agentsCache = (msg.agents as AgentStatus[]).map((a) =>
       lastModels.has(a.id) ? { ...a, model: lastModels.get(a.id) } : a,
     )
+    agentsCacheAt = Date.now()
     chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
     return
   }
@@ -376,8 +389,12 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
   })
   if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
   currentTask = { taskId, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
-  // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）
-  nmPort.send({ t: 'task-content', taskId, seq: 0, text: '', done: true })
+  // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）。
+  // r8-review：失败同样终止——重连拉起的新 host 没收过 task-start，追问会静默丢失
+  if (!nmPort.send({ t: 'task-content', taskId, seq: 0, text: '', done: true })) {
+    currentTask = null
+    return { error: 'host-not-found', lastError: nmPort.lastError }
+  }
   return { ok: true, taskId }
 }
 
@@ -506,7 +523,10 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     }
     const done = end >= contentMarkdown.length
     total += end - i
-    nmPort.send({
+    // r8-review：send 失败必须终止——nmPort.send 失败后下一次调用会 connectNative
+    // 重拉一个全新 host，后续分片全发给从未收到 task-start 的孤儿进程（它回的
+    // no-task 错误帧两侧都不消费）：任务变僵尸挂到 120s 看门狗，还驻留一个零任务 host
+    const sent = nmPort.send({
       t: 'task-content',
       taskId,
       seq,
@@ -514,6 +534,10 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
       done,
       ...(done ? { total } : {}),
     })
+    if (!sent) {
+      currentTask = null
+      return { error: 'host-not-found', lastError: nmPort.lastError }
+    }
     i = end
     seq++
   }

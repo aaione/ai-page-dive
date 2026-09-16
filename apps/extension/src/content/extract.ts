@@ -26,17 +26,13 @@ function collectShadowText(root: Element, depth = 0): string {
   return out.trim()
 }
 
-// SW 经 chrome.tabs.sendMessage 调用（content script 由 SW 动态 files 注入）
-// guard：多次注入只挂一个监听器；同时挂到 globalThis 供 SW 的 executeScript(func)
-// 直接调用（iframe 聚合提取路径，绕开 tabs.sendMessage 只达 top frame 的限制）
+// SW 经 executeScript(func) 直调 globalThis.__pagediveExtract（绕开 tabs.sendMessage
+// 只达 top frame 的限制，iframe 聚合提取需要进每个 frame）。guard：动态注入会执行
+// 多次（SW 30s 回收后重新注入），只挂一次。r8：原 chrome.runtime.onMessage 的
+// 'extract' 监听已无调用方（SW 无 tabs.sendMessage({t:'extract'}) 路径），删除
 if (!(globalThis as any).__pagediveInjected) {
   ;(globalThis as any).__pagediveInjected = true
   ;(globalThis as any).__pagediveExtract = extractPage
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg?.t === 'extract') {
-      sendResponse(extractPage())
-    }
-  })
 }
 
 /** HTML table → GFM markdown（turndown 核心不带表格规则） */
@@ -53,8 +49,11 @@ function turndownTable(table: HTMLTableElement): string {
   const line = (cs: string[]) => `| ${cs.join(' | ')} |`
   const [head, ...body] = cells
   if (!head?.length) return ''
-  // 列数对齐到 max（colspan/列数不齐的表直接渲染会破 GFM 结构）
-  const width = Math.max(...cells.map((r) => r.length))
+  // 列数对齐到 max（colspan/列数不齐的表直接渲染会破 GFM 结构）。
+  // r8-review：循环求 max 不用 spread——12 万+ 行的病态长表会爆 V8 参数栈
+  // （~125k 上限），RangeError 被外层 catch 吞掉后整页提取失败连 innerText 兜底都没了
+  let width = 0
+  for (const r of cells) if (r.length > width) width = r.length
   const pad = (cs: string[]) => { while (cs.length < width) cs.push(''); return cs }
   const out = [line(pad([...head])), `| ${head.map(() => '---').join(' | ')} |`]
   for (const r of body) out.push(line(pad([...r])))

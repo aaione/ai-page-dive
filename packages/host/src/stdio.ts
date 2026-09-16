@@ -32,12 +32,30 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         break
       case 'task-start': {
         const { task } = msg
+        // r8-host：同 taskId 重复注册先收割旧任务——静默覆盖会让旧任务终局回调误删
+        // 新任务条目。r8-review 补：置 superseded——旧实例收割窗口内的终局/迟到帧会
+        // 以新任务 taskId 发出，panel 无法区分实例，把新任务误判为已失败
+        const prev = tasks.get(task.taskId)
+        if (prev) {
+          prev.superseded = true
+          prev.cancel()
+        }
         const t = new Task(task.taskId, {
-          onStatus: (phase) => send({ t: 'task-status', taskId: task.taskId, phase }),
-          onMeta: (info) => send({ t: 'task-meta', taskId: task.taskId, agentId: task.agentId, ...info }),
-          onChunk: (text, seq) => send({ t: 'task-chunk', taskId: task.taskId, seq, text }),
+          onStatus: (phase) => {
+            if (t.superseded) return
+            send({ t: 'task-status', taskId: task.taskId, phase })
+          },
+          onMeta: (info) => {
+            if (t.superseded) return
+            send({ t: 'task-meta', taskId: task.taskId, agentId: task.agentId, ...info })
+          },
+          onChunk: (text, seq) => {
+            if (t.superseded) return
+            send({ t: 'task-chunk', taskId: task.taskId, seq, text })
+          },
           onDone: (info) => {
-            tasks.delete(task.taskId)
+            if (tasks.get(task.taskId) === t) tasks.delete(task.taskId)
+            if (t.superseded) return
             send({
               t: 'task-done',
               taskId: task.taskId,
@@ -52,7 +70,8 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
             })
           },
           onError: (code, message) => {
-            tasks.delete(task.taskId)
+            if (tasks.get(task.taskId) === t) tasks.delete(task.taskId)
+            if (t.superseded) return
             send({ t: 'task-error', taskId: task.taskId, code, message })
           },
         })
@@ -80,8 +99,7 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         break
       }
       case 'history-list':
-        // 无 .catch：任意年/月/日目录 EACCES → readdir reject → unhandledRejection
-        // → Node ≥18 默认策略进程退出 → NM 断连。与 history-read/delete 同构兜底
+        // 无 .catch 时 EACCES → unhandledRejection → Node ≥18 退出进程 → NM 断连
         listHistory(msg.query, msg.limit)
           .then((items) => send({ t: 'history-list', items }))
           .catch((e) => send({ t: 'error', code: 'list-fail', message: String(e?.message ?? e) }))
@@ -89,15 +107,20 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
       case 'history-read':
         readHistory(msg.path)
           .then((content) => {
-            // NM 单帧 ≤1MB（字节维度）：CJK 3 字节/字符，按字符 slice 截不断——
-            // 按字节收缩 + 尾部回退到完整 UTF-8 边界（防切出替换字符）
+            // NM 单帧 ≤1MB：按字节收缩 + 回退 UTF-8 边界（CJK 截不断）；阈值按 JSON
+            // 编码后字节校验（转义膨胀可让 900KB 原文击穿 1MB → 面板静默收不到帧），
+            // NM_MAX-1024 给 path/键名等帧信封留余量（r8-review）
             if (Buffer.byteLength(content, 'utf8') > HISTORY_MAX_BYTES) {
               const buf = Buffer.from(content, 'utf8')
               let end = HISTORY_MAX_BYTES
-              while (end > 0 && (buf[end] & 0xc0) === 0x80) end-- // 多字节序列中间：回退
-              content =
-                buf.subarray(0, end).toString('utf8') +
-                `\n\n[... 已截断，全文见本地文件 ${msg.path}]`
+              let text = ''
+              do {
+                let e = end
+                while (e > 0 && (buf[e] & 0xc0) === 0x80) e-- // 多字节序列中间：回退
+                text = buf.subarray(0, e).toString('utf8') + `\n\n[... 已截断，全文见本地文件 ${msg.path}]`
+                end -= 65536 // 编码后仍超（转义密度极罕见的极端）：整档再退
+              } while (Buffer.byteLength(JSON.stringify(text), 'utf8') > NM_MAX - 1024 && end > 0)
+              content = text
             }
             send({ t: 'history-file', path: msg.path, content })
           })

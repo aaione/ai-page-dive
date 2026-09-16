@@ -1,21 +1,35 @@
 /** 正文临时文件：写全量 markdown，prompt 只递送路径 */
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const DIR = join(tmpdir(), 'pagedive')
 
-/** 启动清扫（r4-sec）：scheduleCleanup 的 11min timer 是 unref 的，而 host 常规
- * 退出路径（任务完 → SW 30s 回收 → shutdown exit）远早于它——正文/附件 md 在
- * /tmp/pagedive 无限累积，仅靠 macOS 3 天周期清理兜底。首次写文件时清一遍
- * >1h 的旧文件（运行中任务文件 11min 生命周期，1h 阈值不会误删）；失败静默 */
+/** 目录级可信判定（r8-sec）：/tmp 1777 下固定名目录可被预置 symlink 劫持（mkdir
+ * 静默跟随，文件级防御只覆盖 DIR 内文件名不覆盖 DIR 本身）——真实目录且属主为
+ * 当前 uid 才用固定名，否则 mkdtemp 随机目录兜底 */
+let trustedDir: string | null = null
+async function ensureDir(): Promise<string> {
+  if (trustedDir) return trustedDir
+  const owned = (p: string) =>
+    lstat(p).then((st) => st.isDirectory() && !st.isSymbolicLink() && st.uid === process.getuid?.()).catch(() => false)
+  if (!(await owned(DIR))) {
+    await mkdir(DIR, { recursive: true, mode: 0o700 }).catch(() => {})
+    if (!(await owned(DIR))) return (trustedDir = await mkdtemp(join(tmpdir(), 'pagedive-')))
+  }
+  return (trustedDir = DIR)
+}
+
+/** 启动清扫（r4-sec）：host 常规退出远早于 11min unref timer——正文/附件 md 在
+ * /tmp/pagedive 无限累积。首次写文件时清一遍 >1h 的旧文件（运行中文件 11min
+ * 生命周期，1h 阈值不会误删）；失败静默 */
 let swept = false
-async function sweep(): Promise<void> {
+async function sweep(dir: string): Promise<void> {
   swept = true
   try {
-    for (const f of await readdir(DIR)) {
-      const p = join(DIR, f)
+    for (const f of await readdir(dir)) {
+      const p = join(dir, f)
       const st = await stat(p).catch(() => null)
       if (st?.isFile() && Date.now() - st.mtimeMs > 3_600_000) unlink(p).catch(() => {})
     }
@@ -32,9 +46,9 @@ export async function writeContentFile(name: string, markdown: string): Promise<
   // 0o700 目录 + 文件名追加 randomUUID：taskId 熵仅毫秒时间戳 + 4 位随机（36^4≈1.7M），
   // 同 uid 恶意进程可预测文件名预置 symlink，让页面正文覆盖任意用户可写文件。
   // UUID 后缀 + 排他写关死该面（wx 拒绝跟随已存在的 symlink）
-  await mkdir(DIR, { recursive: true, mode: 0o700 })
-  if (!swept) await sweep()
-  const p = join(DIR, `${name}-${randomUUID()}.md`)
+  const dir = await ensureDir()
+  if (!swept) await sweep(dir)
+  const p = join(dir, `${name}-${randomUUID()}.md`)
   await writeFile(p, markdown, { mode: 0o600, flag: 'wx' })
   return p
 }

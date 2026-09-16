@@ -20,19 +20,17 @@ import { getWorkflow } from './workflows.js'
 const TASK_TIMEOUT_MS = 10 * 60_000
 
 /**
- * CLI 会话 id → 首轮 spawn cwd 的映射（追问用，内存加速）。
- * 现状澄清（r7-review）：当前三适配器下 value 恒为 stableCwd——唯一走 mkdtemp
- * 独立 cwd 的 opencode 解析器不产 meta 事件，claude/codex 恒用固定工作区。
- * 此机制为「未来引入按会话隔离 cwd 的引擎」预留：届时 meta.sessionId 进映射、
- * resume 轮取回同 cwd、cleanupCwd 的保留判断才真正承重。
+ * CLI 会话 id → 首轮 spawn cwd 的映射（追问用）。r7-review 现状澄清：当前三适配器
+ * 下 value 恒为 stableCwd（唯一走 mkdtemp 的 opencode 不产 meta 事件）——此机制为
+ * 「未来按会话隔离 cwd 的引擎」预留，届时 resume 轮取回同 cwd 才真正承重。
  */
 const sessionCwds = new Map<string, string>()
 
-/** 固定 CLI 工作区（幂等创建）：claude 会话跨 host 重启可 resume 的关键 */
+/** 固定 CLI 工作区（幂等创建）：claude 会话跨 host 重启可 resume 的关键。
+ * 每次 mkdir：目录被误删后缓存短路会让后续 spawn 落在不存在 cwd 上 */
 let stableCwd: string | null = null
 async function getStableAgentCwd(): Promise<string> {
   const dir = join(homedir(), '.ai-page-dive', 'agent-workspace')
-  // 每次 mkdir（幂等）：目录被误删后缓存短路会让后续所有 spawn 落在不存在 cwd 上
   await mkdir(dir, { recursive: true })
   return (stableCwd = dir)
 }
@@ -80,6 +78,10 @@ export class Task {
   private persistOk = false
   private historyPath = ''
   private timeoutTimer?: ReturnType<typeof setTimeout>
+  /** r8-perf：text-delta 攒批——逐 delta 直发 NM 帧且 panel 每 chunk 全树 reconcile，
+   * 数千 delta 的长回答累计秒级主线程开销；≥8KB 或 50ms 合并（seq 仍连续） */
+  private pendingDelta = ''
+  private deltaTimer?: ReturnType<typeof setTimeout>
 
   constructor(taskId: string, private cb: TaskCallbacks) {
     this.taskId = taskId
@@ -122,9 +124,20 @@ export class Task {
     return out
   }
 
+  /** 被同 id 新任务顶掉（stdio 重入防御，r8-review）：置位后回调层静默全部帧 */
+  superseded = false
+
   cancel(): void {
+    if (this.finished) return
     this.cancelled = true
     this.proc?.reap()
+    // r8-review：未起跑的任务（正文传输期点停止）没有 exit 事件会来——不主动终局
+    // 就永留 tasks Map，心跳门禁(tasks.size>0)使 host 永生。置 ran 挡住迟到 done 片
+    if (!this.ran) {
+      this.ran = true
+      this.finished = true
+      this.cb.onError('cancelled', 'task cancelled')
+    }
   }
 
   /** 正文齐了且 agent 可用 → 组装 prompt 并 spawn（幂等：重复 done:true 只跑一次） */
@@ -141,16 +154,20 @@ export class Task {
       this.cb.onError('no-agent', `unknown agent: ${this.input.agentId}`)
       return
     }
+    // r8-review：sessionId 实际来源是历史文件 frontmatter（第三方可控——「目录即
+    // 备份拖走即导出」），与 workflow 名同一信任边界：不让未校验字符串直拼 argv
+    if (this.input.resumeSessionId && !/^[A-Za-z0-9_-]{8,128}$/.test(this.input.resumeSessionId)) {
+      this.cb.onError('parse', 'invalid session id')
+      return
+    }
     const page = this.input.page
     // 追问轮：上下文在 CLI 会话里，无正文/临时文件，prompt 只剩 instruction
     const isResume = !!this.input.resumeSessionId
     const contentFile = isResume ? '' : await writeContentFile(this.taskId, this.contentParts.join(''))
-    const lastMsgFile = isResume ? '' : `${contentFile}.last`
     // 统一在此调度清理：isError/spawn-fail/cancel/正常路径全覆盖
     if (!isResume) {
       // 11min > 10min 任务超时：运行期文件必须存在，终局后再留 1min 缓冲给迟到的读取
       scheduleCleanup(contentFile, 11 * 60_000)
-      scheduleCleanup(lastMsgFile, 11 * 60_000)
     }
 
     // workflow 正文即任务段：用户目录 shadow 内置，未命中走 DEFAULT_TASKS
@@ -167,10 +184,9 @@ export class Task {
       : def.streamFormat === 'opencode-jsonl' ? createOpencodeParser()
       : createCodexParser()
 
-    // opencode 需先知道 cwd 才能组 argv（--dir 钉死工作区）+ 软链正文 + 相对路径 prompt。
-    // claude 会话按 cwd 分区存储（~/.claude/projects/<cwd 编码>/）：cwd 必须跨 host 重启
-    // 可复现，否则 --resume 报 No conversation found——统一用固定工作区
-    // ~/.ai-page-dive/agent-workspace/，sessionCwds 仅作内存加速
+    // cwd 语义：opencode --dir 钉死工作区 + 相对路径 prompt；claude 会话按 cwd 分区
+    // 存储（~/.claude/projects/<编码>/），跨 host 重启必须可复现否则 --resume 报
+    // No conversation found——统一固定工作区 ~/.ai-page-dive/agent-workspace/
     let agentCwd = def.filePathInPrompt && !isResume ? await makeAgentCwd() : undefined
     if (isResume) {
       const remembered = sessionCwds.get(this.input.resumeSessionId!)
@@ -179,8 +195,7 @@ export class Task {
       agentCwd = await getStableAgentCwd()
     }
     let fileForPrompt = contentFile
-    // resume 轮 contentFile 为 ''：symlink('') 必抛被 catch 吞、fileForPrompt 死计算
-    // （prompt 走 resume 分支不用它）——直接跳过（r7-review）
+    // resume 轮 contentFile 为 ''：symlink('') 必抛被 catch 吞——直接跳过（r7-review）
     if (def.filePathInPrompt && agentCwd && !isResume) {
       await linkIntoCwd(contentFile, agentCwd)
       fileForPrompt = def.filePathInPrompt({ contentFile, contentRelPath: basename(contentFile), agentCwd })
@@ -203,7 +218,7 @@ export class Task {
     try {
       this.proc = await spawnCli({
         bin: def.bin,
-        args: def.buildArgs({ contentFile, lastMsgFile, agentCwd, resumeSessionId: this.input.resumeSessionId }),
+        args: def.buildArgs({ contentFile, agentCwd, resumeSessionId: this.input.resumeSessionId }),
         cwd: agentCwd,
         stdinData: prompt,
         onStdoutLine: (line) => {
@@ -221,9 +236,8 @@ export class Task {
       return
     }
 
-    // spawn 成功后又已取消（cancel 落在 await 窗口内）：立即收割，勿让进程跑满超时。
-    // 必发 onError('cancelled')——否则 stdio 侧 tasks Map 不 delete（任务泄漏 + 心跳
-    // 永续，SW 不回收），panel 收不到终局帧 running 永真、输入锁死（唯一出路「新对话」）
+    // spawn 成功后又已取消（cancel 落在 await 窗口内）：立即收割。必发 onError——
+    // 否则 tasks Map 不 delete（心跳永续 SW 不回收）、panel running 永真输入锁死
     if (this.cancelled) {
       this.proc.reap()
       this.cleanupCwd()
@@ -236,9 +250,9 @@ export class Task {
       // 终局标记前置：reap 触发的 exit 事件不得再走 finish() 二次发终局
       this.finished = true
       this.timeoutSent = true
+      this.flushDelta() // timeout 不经 finish()：终局前发完缓冲尾巴
       this.cb.onError('timeout', `task exceeded ${TASK_TIMEOUT_MS / 60_000}min`)
-      // 部分输出落盘（对称于 cancel 路径）：用户盯了 10 分钟，半截结果不能蒸发。
-      // 不 await——cancel() 的 reap 链路同步推进，persist 在事件循环里自然完成
+      // 部分输出落盘（对称于 cancel 路径）；不 await——persist 在事件循环里自然完成
       if (!this.input.resumeSessionId) {
         this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
       }
@@ -272,8 +286,7 @@ export class Task {
         if (!this.cancelled) this.cb.onStatus(ev.phase)
         break
       case 'meta':
-        // 取消后 parser 的迟到 meta 不发（r5：曾把取消任务 A 的 model 写上新任务 B
-        // 的气泡 + 虚刷 B 的看门狗）——与 status/text-delta 的 !cancelled 守卫对齐
+        // 取消后迟到 meta 不发（r5：曾把取消任务 A 的 model 写上新任务 B 的气泡）
         if (this.cancelled) break
         this.meta = {
           model: ev.model ?? this.meta?.model,
@@ -287,7 +300,7 @@ export class Task {
         break
       case 'text-delta':
         this.accText += ev.text
-        if (!this.cancelled) this.sendChunk(ev.text)
+        if (!this.cancelled) this.bufferDelta(ev.text)
         break
       case 'usage':
         this.usage = ev
@@ -303,6 +316,7 @@ export class Task {
           if (!this.input.resumeSessionId) this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
           // 落盘完成再发终局：host 若在 persist 期间断连退出，错误轮历史不再丢失
           await this.persist('error')
+          this.flushDelta() // isError 不经 finish()：终局前发完缓冲尾巴
           this.cb.onDone({
             historyPath: this.effectiveHistoryPath,
             isError: true,
@@ -324,6 +338,21 @@ export class Task {
         // 正常路径不设 finished：等 exit 事件统一走 finish()（onDone + 落盘）
         break
     }
+  }
+
+  /** ≥8KB 立刻发，否则 50ms 定时发（终局前 flushDelta 兜底） */
+  private bufferDelta(text: string): void {
+    this.pendingDelta += text
+    if (Buffer.byteLength(this.pendingDelta, 'utf8') >= 8192) this.flushDelta()
+    else if (!this.deltaTimer) this.deltaTimer = setTimeout(() => this.flushDelta(), 50)
+  }
+
+  private flushDelta(): void {
+    clearTimeout(this.deltaTimer)
+    this.deltaTimer = undefined
+    const text = this.pendingDelta
+    this.pendingDelta = ''
+    if (text && !this.cancelled && !this.superseded) this.sendChunk(text)
   }
 
   private sendChunk(text: string): void {
@@ -354,6 +383,7 @@ export class Task {
   }
 
   private async finish(code: number | null, signal: string | null, stderrTail: string, contentFile: string): Promise<void> {
+    this.flushDelta() // 攒批兜底：终局前把缓冲里的尾部正文发完
     clearTimeout(this.timeoutTimer)
     this.cleanupCwd()
     const durationMs = Date.now() - this.startedAt
@@ -361,17 +391,21 @@ export class Task {
     if (!this.input.resumeSessionId) {
       this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
     }
-    if (this.cancelled || signal === 'SIGTERM' || signal === 'SIGKILL') {
+    // r8-host：只有 cancelled/SIGTERM（reap 专属）算「已取消」；SIGKILL 可能来自 OOM
+    // killer/手杀，按被杀上报以免误导排障
+    if (this.cancelled || signal === 'SIGTERM') {
       await this.persist('interrupted')
       this.cb.onError('cancelled', 'task cancelled')
       return
     }
-    // 终局判定（r7-blocker：条件曾写反——!gotResultOk 反而进了成功分支）。
-    // delivered = 成功 result 已交付（gotResultOk 置位路径保证 accText 非空，&& 为
-    // 防御性冗余）：① CLI 崩溃（exit≠0 无 result）→ onError('parse')，截断文本
-    // 不得标成功；② result 完整交付后 exit≠0 → 按成功终局（硬约束 #4 的精神：
-    // claude 的失败语义在 is_error，不在退出码）。落盘口径与终局帧同式（曾
-    // persist 'error' + onDone 成功自相矛盾）
+    if (signal === 'SIGKILL') {
+      await this.persist('interrupted')
+      this.cb.onError('parse', `killed by SIGKILL${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}（可能被系统或用户终止）`)
+      return
+    }
+    // 终局判定（r7-blocker：条件曾写反）：delivered=成功 result 已交付。① exit≠0
+    // 无 result → parse 错误（截断文本不得标成功）；② result 交付后 exit≠0 → 仍按
+    // 成功（硬约束 #4：失败语义在 is_error 不在退出码）；落盘口径与终局帧同式
     const delivered = this.gotResultOk && !!this.accText
     const isError = code !== 0 ? !delivered : !this.accText
     await this.persist(isError ? 'error' : 'done')
@@ -391,10 +425,8 @@ export class Task {
     }
   }
 
-  /** 终局回传的历史路径：resume 轮用 input 带来的首轮路径（this.historyPath 为空——
-   * SW 侧 `'' ?? fallback` 不生效会把 lastSession 覆盖成空串，第 2 次追问起不再落盘）。
-   * 首轮 saveHistory 失败（磁盘满/EACCES）时回传空串：虚构路径会让 SW 记进
-   * lastSession，追问轮 appendHistoryTurn 在该路径凭空创建文件（r7-review） */
+  /** 终局回传历史路径：resume 轮用 input 首轮路径；首轮 saveHistory 失败回传空串——
+   * 虚构路径会进 lastSession，追问轮凭空创建孤儿文件（r7-review） */
   private get effectiveHistoryPath(): string {
     return this.input.historyPath || (this.persistOk ? this.historyPath : '')
   }
@@ -407,7 +439,12 @@ export class Task {
     if (this.input.resumeSessionId) {
       if (this.input.historyPath && this.accText) {
         await appendHistoryTurn(this.input.historyPath, {
-          user: this.input.instruction ?? '',
+          // r8-ux：纯附件追问轮兜底——空 user 段落盘后恢复会话时该轮凭空消失
+          user:
+            this.input.instruction ||
+            (this.input.attachments?.length
+              ? `（附件：${this.input.attachments.map((a) => a.name).join('、')}）`
+              : ''),
           assistant: this.accText,
         }).catch(logFail)
       }

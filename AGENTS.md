@@ -31,7 +31,7 @@ pnpm monorepo：
 3. **零凭证接触**：只子进程调起用户自己登录的未修改官方 CLI 二进制；不碰 token/OAuth、不代理流量、永不对 CLI 用量收费
 4. claude 的运行内失败打在 stdout（`is_error`），不能只看退出码
 5. host 是薄壳（目标 <2k 行 Node）：per-connection spawn、幂等、pgid 收割进程树、流归一化、≤1MB chunk 分片
-6. v1 = macOS + Chrome；claude + codex 双适配器（AgentDef 接口按六家字段并集设计）
+6. v1 = macOS + Chrome；claude + codex 双适配器 + opencode 实验档（2026-09-16 修订，见 DECISIONS.md D5——opencode 无进程级工具围栏，UI 标注实验）
 7. 历史落盘 `~/.ai-page-dive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）；workflow 在 `~/.ai-page-dive/workflows/`、技能在 `~/.ai-page-dive/skills/`
 
 ## v1 Priority

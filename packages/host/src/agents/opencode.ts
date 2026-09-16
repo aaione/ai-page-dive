@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { AgentDef, AgentEvent } from '@ai-page-dive/shared'
 
 /**
@@ -53,6 +56,17 @@ export const opencodeDef: AgentDef = {
   bin: 'opencode',
   versionArgs: ['--version'],
   streamFormat: 'opencode-jsonl',
+  // 探测时读 opencode.json 的 model 字段（best-effort，两个候选路径）
+  probeModel: () => {
+    const home = homedir()
+    for (const p of [join(home, '.config/opencode/opencode.json'), join(home, '.opencode.json')]) {
+      try {
+        const j = JSON.parse(readFileSync(p, 'utf8'))
+        if (typeof j.model === 'string') return j.model
+      } catch { /* 下一候选 */ }
+    }
+    return undefined
+  },
   buildArgs: (opts) => [
     'run',
     '--format', 'json',

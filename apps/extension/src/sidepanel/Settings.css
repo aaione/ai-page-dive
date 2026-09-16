@@ -53,6 +53,24 @@
   font-size: 12px;
   line-height: 1.5;
 }
+/* r8-ux：dirty 编辑切换/新建的确认条 */
+.pd-set-dirty-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(250, 204, 21, .4);
+  background: rgba(250, 204, 21, .10);
+  color: var(--color-pd-ink);
+  font-family: var(--font-sans-ui);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pd-set-dirty-bar span {
+  flex: 1;
+}
 .pd-set-tabs {
   display: flex;
   gap: 4px;

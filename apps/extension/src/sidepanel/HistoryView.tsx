@@ -33,6 +33,24 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
   // 条目读取失败提示（文件被外部删除/权限变化——r3-ux R3-m2：零反馈会让用户
   // 以为「按钮坏了」）：4s 自清
   const [readError, setReadError] = useState(false)
+  // r8-ux：两步删除确认。side panel 的 WebContents 不挂模态对话框宿主，
+  // window.confirm 恒返 false 且零反馈——删除按钮等于静默失效。改为面板内
+  // 两步：第一次点变「确认删除」，3s 未确认自动还原
+  const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  const confirmDelTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(confirmDelTimer.current), [])
+  const askDelete = (path: string) => {
+    if (confirmDel !== path) {
+      setConfirmDel(path)
+      clearTimeout(confirmDelTimer.current)
+      confirmDelTimer.current = setTimeout(() => setConfirmDel(null), 3000)
+      return
+    }
+    clearTimeout(confirmDelTimer.current)
+    setConfirmDel(null)
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-delete', path } })
+    setItems((xs) => xs.filter((x) => x.path !== path))
+  }
   useEffect(() => {
     const t = setTimeout(() => setWaited(true), 3000)
     return () => clearTimeout(t)
@@ -186,18 +204,17 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
               </svg>
             </button>
             <button
-              onClick={() => {
-                if (confirm('删除这条历史？')) {
-                  chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-delete', path: it.path } })
-                  setItems((xs) => xs.filter((x) => x.path !== it.path))
-                }
-              }}
-              className="pd-history-item-action danger"
-              title="删除"
+              onClick={() => askDelete(it.path)}
+              className={`pd-history-item-action danger${confirmDel === it.path ? ' confirming' : ''}`}
+              title={confirmDel === it.path ? '再次点击确认删除' : '删除'}
             >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2.5 4.5h11M6.5 2.5h3M4 4.5l.7 8.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8l.7-8.2M6.7 7v4M9.3 7v4" />
-              </svg>
+              {confirmDel === it.path ? (
+                '确认删除'
+              ) : (
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2.5 4.5h11M6.5 2.5h3M4 4.5l.7 8.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8l.7-8.2M6.7 7v4M9.3 7v4" />
+                </svg>
+              )}
             </button>
           </li>
         ))}
@@ -212,6 +229,10 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
           : <p className="pd-history-empty">加载中…</p>
         )}
       </ul>
+      {/* r8-ux：host 列表只回前 100 条——满额时明示，别让更早的历史像「丢了」 */}
+      {items.length >= 100 && (
+        <p className="pd-history-truncated">已显示最近 100 条——更早的记录可搜索标题/网址，或在设置中打开历史目录</p>
+      )}
     </div>
   )
 }
