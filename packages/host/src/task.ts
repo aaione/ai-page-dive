@@ -295,7 +295,12 @@ export class Task {
         }
         // 记录会话 → cwd（追问轮 resume 需要同 cwd 才能找到会话）
         if (this.meta.sessionId && this.proc?.cwd) {
-          if (sessionCwds.size > 256) sessionCwds.delete(sessionCwds.keys().next().value) // FIFO 上限：长寿进程不泄漏
+          // FIFO 上限：长寿进程不泄漏。size>0 时 next().value 必有值，
+          // 但迭代器类型是 string | undefined——显式收窄（tsc 严格态）
+          if (sessionCwds.size > 256) {
+            const oldest = sessionCwds.keys().next().value
+            if (oldest !== undefined) sessionCwds.delete(oldest)
+          }
           sessionCwds.set(this.meta.sessionId, this.proc.cwd)
         }
         this.cb.onMeta(this.meta)
