@@ -262,7 +262,17 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 /* ── 顶栏：[新对话] [CLI 下拉] [模式下拉]（右上角浮动工具条让出空间）──
    真磨砂（blur + 渐变 alpha 罩，iOS 导航栏范式）：滚动内容穿过时先被磨再被罩压暗 */
 .pd-topbar {
-  position: relative; /* ::before 颗粒层的定位上下文 */
+  /* absolute 悬浮（r13-review 机理修正）：原流内 flex 行下方是 .pd-main/.pd-content，
+     滚动内容永远不会滚到 topbar 底下——backdrop-filter 无物可磨，纯付每帧 GPU
+     成本。悬浮后内容从底下穿过（与 action-bar 同法），磨砂才真正有取样物。
+     z-index 6：高于 action-bar(5)——backdrop-filter 会新建层叠上下文，若不整体
+     抬升，topbar 内 z-index:100 的 dropdown 菜单被困在 z=0 层级，长菜单在矮
+     视口会被 action-bar 磨砂层吃掉底部；仍低于 float-tools(10)/overlay(20) */
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -357,6 +367,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 
 /* ── View ── */
 .pd-view {
+  position: relative; /* topbar absolute 悬浮的定位上下文（r13-review） */
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -380,9 +391,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 16px;
-  /* 底部留悬浮 action-bar 的余量（bar 全高约 147px）：末条消息可完整滚出磨砂区 */
-  padding-bottom: 170px;
+  /* 顶部留悬浮 topbar 的余量（topbar 实高约 42px + 呼吸 2px，r13-review）；
+     底部留悬浮 action-bar 的余量（bar 全高约 147px）：末条消息可完整滚出磨砂区 */
+  padding: 44px 16px 170px;
 }
 
 /* ── Error / Warn：左直角贴文字（区别于普通卡的整圆角）── */

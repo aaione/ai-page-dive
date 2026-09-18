@@ -67,7 +67,7 @@ function persistSession() {
 void restoreSession()
 async function restoreSession() {
   try {
-    const s = (await chrome.storage?.session?.get?.(['sessions', 'currentAgentId', 'lastModels', 'panelTabId', 'panelWindowId'])) as Record<string, any> | undefined
+    const s = (await chrome.storage?.session?.get?.(['sessions', 'currentAgentId', 'lastModels', 'panelTabId', 'panelWindowId', 'disabledTabs'])) as Record<string, any> | undefined
     // 已被显式动作触碰（含 new-session 清空）则不恢复会话/agent——旧持久化态不得复活。
     // lastModels 是纯展示缓存，逐 key 补全无害，不受 touched 约束
     if (!sessionTouched) {
@@ -211,8 +211,11 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
   }
 })
 // 锚定存续期新建的 tab 预 disable（r13）：Ctrl+T 新建即切过去，onActivated 时
-// setOptions 已落定，首次即收起。同窗口过滤——他窗口新 tab 不拆台（r9-backlog）
-chrome.tabs.onCreated.addListener((tab) => {
+// setOptions 已落定，首次即收起。同窗口过滤——他窗口新 tab 不拆台（r9-backlog）。
+// await restoreSession（r13-review）：SW 被 onCreated 冷唤醒的窗口内 panelTabId
+// 尚为 null（与 onActivated 的 r12 竞态同源，曾漏防——新 tab 首显面板一次）
+chrome.tabs.onCreated.addListener(async (tab) => {
+  await restoreSession()
   if (panelTabId !== null && tab.id != null && tab.id !== panelTabId && tab.windowId === panelWindowId) {
     unanchorPanel(tab.id)
   }
@@ -235,6 +238,14 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   sessions.delete(tabId) // r12：页签没了，其会话归档一并清理
   disabledTabs.delete(tabId) // r13：账随 tab 消亡，防 Set 无界增长
   if (panelTabId === tabId) {
+    // 反向清扫（r13-review）：锚已失，per-tab disable 失去语义——残余 disabled
+    // tab 经 Chrome 原生侧边栏 UI 打不开面板且无自愈路径（仅图标点击才 anchor
+    // 单个 tab）。恢复「无锚状态 = 无 per-tab 痕迹」：记账正好是完整残留清单。
+    // 与 onClicked 换锚互斥（本分支执行时 panelTabId 仍是旧锚）
+    for (const id of [...disabledTabs]) {
+      chrome.sidePanel.setOptions({ tabId: id, path: 'sidepanel.html', enabled: true }).catch(() => {})
+    }
+    disabledTabs.clear()
     panelTabId = null
     panelWindowId = null
     target = null

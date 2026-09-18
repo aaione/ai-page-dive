@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AgentStatus, WorkflowItem } from '@ai-page-dive/shared'
 import type { ChatMessage, PageMeta, TaskStreamState } from './App.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
@@ -146,11 +146,16 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
 
   // 流式跟随滚动（聊天产品基线）：用户在底部（距底 <48px）时每个 chunk 自动
   // 跟滚；一旦上滚回看即停跟随——不打断阅读，也不强迫用户每帧手动拖。
-  // 初始 stick=true：新会话/新消息发出时永远从底部开始
+  // useLayoutEffect（r13-review）：paint 前同步写 scrollTop，消除 useEffect
+  // 「先长后跳」的一帧闪跳；末条为 user 气泡（=新轮刚发出）时恢复跟随——
+  // 兑现「新消息发出时永远从底部开始」（曾漏重置：上轮回看后发追问不跳底，
+  // 新回答流在视口外生长，用户以为没反应）
   const contentRef = useRef<HTMLDivElement>(null)
   const stickRef = useRef(true)
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = contentRef.current
+    const last = messages[messages.length - 1]
+    if (last?.role === 'user') stickRef.current = true
     if (el && stickRef.current) el.scrollTop = el.scrollHeight
   }, [messages])
   const onContentScroll = useCallback(() => {
@@ -304,15 +309,17 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     chrome.runtime.sendMessage({ t: 'cancel' })
   }
 
-  /** 新对话：清 UI + 通知 SW（SW 侧对进行中任务执行取消） */
-  function newChat() {
+  /** 新对话：清 UI + 通知 SW（SW 侧对进行中任务执行取消）。
+   * useCallback：AssistantMessage memo 化后 onNewChat 引用须稳定，否则每轮
+   * 渲染新函数引用击穿全部 memo（r13-review） */
+  const newChat = useCallback(() => {
     beginSession()
     setInput('')
     // followAgent 不重置会让新会话头部/下拉显示上一会话遗留的 CLI（claude 追问过后
     // 切 codex 首轮，头部仍显示 claude——显示与真实执行不符）
     setFollowAgent(null)
     chrome.runtime.sendMessage({ t: 'new-session' }).catch(() => {})
-  }
+  }, [beginSession])
 
   return (
     <div className="pd-view">
@@ -562,7 +569,10 @@ function fmtK(n?: number): string {
   return n == null ? '' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 }
 
-function AssistantMessage({
+// memo（r13-review）：流式期间每 chunk 重渲染整棵消息树——历史气泡 props 全程
+// 不变（msg 引用稳定、running=自己 streaming、onNewChat 已 useCallback），
+// memo 后旧气泡零重渲，只重绘正在流的那条
+const AssistantMessage = memo(function AssistantMessage({
   msg, phase, running, agentId, onNewChat,
 }: {
   msg: ChatMessage
@@ -627,7 +637,7 @@ function AssistantMessage({
       )}
     </div>
   )
-}
+})
 
 function MessageActions({ text, onNewChat }: { text: string; onNewChat: () => void }) {
   const [copied, setCopied] = useState(false)
