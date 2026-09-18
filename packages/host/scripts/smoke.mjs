@@ -3,12 +3,13 @@
  * M3 冒烟 harness：直接驱动 host 的 stdio 主循环（不经 Chrome），
  * 验证 task-start → 流式 chunk → done → 历史落盘 → cancel 收割。
  *
- * 用法：node packages/host/scripts/smoke.mjs claude|codex [cancel]
+ * 用法：node packages/host/scripts/smoke.mjs claude|codex [cancel] [workflow]
+ * workflow 缺省 quick；如 humanize（r9-review：内置 workflow 需真实 CLI 实跑验证）
  */
 import { spawn } from 'node:child_process'
 import { unlink } from 'node:fs/promises'
 
-const [agent = 'claude', mode] = process.argv.slice(2)
+const [agent = 'claude', mode, workflow = 'quick'] = process.argv.slice(2)
 const hostEntry = new URL('../dist/index.js', import.meta.url).pathname
 
 const host = spawn('node', [hostEntry, '--stdio'], { stdio: ['pipe', 'pipe', 'inherit'] })
@@ -71,7 +72,7 @@ function exit(code) {
 }
 
 const taskId = `smoke-${Date.now()}`
-host.stdin.write(frame({ t: 'task-start', task: { taskId, agentId: agent, workflow: 'quick', page: PAGE } }))
+host.stdin.write(frame({ t: 'task-start', task: { taskId, agentId: agent, workflow, page: PAGE } }))
 host.stdin.write(frame({ t: 'task-content', taskId, seq: 0, text: BODY.slice(0, 10), done: false }))
 host.stdin.write(frame({ t: 'task-content', taskId, seq: 1, text: BODY.slice(10), done: true }))
 

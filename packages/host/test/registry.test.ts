@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cliEnv, cliPath } from '../src/agents/registry.js'
@@ -49,5 +49,27 @@ describe('极简 PATH 兼容（Chrome Dock 启动场景）', () => {
     // 的返回形状不稳（r8-ci 实测 resolve 成空数组），不值得赌
     const out = execFileSync('which', ['claude'], { env: cliEnv(), encoding: 'utf8' })
     expect(out).toContain(nvmBin())
+  })
+
+  it('HOME 残缺时 passwd 兜底，HOME 下用户路径不丢（r11）', () => {
+    // 清理型 spawn 环境（实测 E2E 复现）：HOME 空串/缺失曾让 nvm/homebrew/.local
+    // 全丢 → 所有 CLI 误报 unavailable。finally 恢复原值（进程级污染防蔓延）
+    const orig = process.env.HOME
+    try {
+      process.env.HOME = ''
+      const saved = process.env.HOME
+      delete process.env.HOME
+      const passwdHome = homedir()
+      if (saved !== undefined) process.env.HOME = saved
+      const p = cliPath()
+      expect(p).toContain(join(passwdHome, '.local/bin'))
+      expect(p).toContain(join(passwdHome, '.volta/bin'))
+      // 空 home 的 join 污染痕迹（相对段混入 PATH）不允许出现
+      expect(p).not.toMatch(/(^|:)\.local\/bin/)
+      // cliEnv 同步兜底：CLI 子进程拿到的 HOME 不为空
+      expect(cliEnv().HOME).toBeTruthy()
+    } finally {
+      process.env.HOME = orig
+    }
   })
 })

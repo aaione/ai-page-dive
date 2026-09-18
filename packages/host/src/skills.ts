@@ -63,7 +63,7 @@ export async function getSkillBodies(names: string[]): Promise<{ name: string; b
 /** Finder 打开：name 缺省/不存在时开 DIR 本身（首次使用顺手建目录） */
 export async function revealSkill(name?: string): Promise<void> {
   // 先建根目录：DIR 不存在时 `open` 静默失败（症状＝「打开目录」按钮无反应）
-  await mkdir(DIR, { recursive: true })
+  await mkdir(DIR, { recursive: true, mode: 0o700 })
   let target = DIR
   if (name) {
     assertValidWorkflowName(name)

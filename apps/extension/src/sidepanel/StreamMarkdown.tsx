@@ -8,7 +8,15 @@ const HEAVY = 128 * 1024
 /** 完成段落的 memo 化渲染：props（段落文本）不变即跳过 remark parse。
  * 流式更新只重 parse 尾部活跃段，前文 N 段零开销——长输出的全量重 parse 卡顿消除 */
 const Block = memo(function Block({ block }: { block: string }) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{block}</ReactMarkdown>
+  // 链接新标签页打开（对齐 HistoryView）：面板内导航会顶掉 sidepanel 页丢全部会话态
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{ a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" /> }}
+    >
+      {block}
+    </ReactMarkdown>
+  )
 })
 
 /**

@@ -291,8 +291,8 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
     writeStrList('pd-enabled-skills', next)
   }
 
-  function revealSkill(name: string) {
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'skill-reveal', name } }, () => void chrome.runtime.lastError)
+  function revealSkill(name?: string) {
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'skill-reveal', ...(name ? { name } : {}) } }, () => void chrome.runtime.lastError)
   }
 
   /** 打开历史根目录（Finder）：目录即备份，拖走即导出 */
@@ -521,6 +521,9 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                 总结时启用中的技能会注入 prompt。在 <code>~/.ai-page-dive/skills/&lt;名称&gt;/SKILL.md</code> 创建技能：
                 frontmatter 写 <code>name</code>/<code>description</code>，正文即技能指令。
               </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <button className="pd-set-btn" onClick={() => revealSkill()}>打开技能根目录</button>
+              </div>
               {skills.length ? (
                 <div className="pd-set-rows">
                   {skills.map((s) => {
@@ -548,8 +551,8 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                 </div>
               ) : (
                 <p className="pd-set-empty">
-                  还没有技能。在 <code>~/.ai-page-dive/skills/&lt;名称&gt;/SKILL.md</code> 创建你的第一个技能——
-                  frontmatter 写 name / description，正文即技能指令，总结时启用中的技能会注入 prompt。
+                  还没有技能。三步创建：① 点上方「打开技能根目录」② 新建 <code>&lt;名称&gt;/SKILL.md</code>
+                  ③ frontmatter 写 <code>name</code>/<code>description</code>、正文写技能指令——保存即出现在此列表。
                 </p>
               )}
             </div>
@@ -576,10 +579,16 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               <p>
                 历史记录保存在 <code>~/.ai-page-dive/history/</code>。
               </p>
-              <div className="pd-set-actions" style={{ marginTop: 14 }}>
+              <div className="pd-set-actions" style={{ marginTop: 14, flexWrap: 'wrap' }}>
                 <button className="pd-set-btn" onClick={revealHistoryDir}>打开历史目录</button>
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })}>
                   自定义快捷键
+                </button>
+                <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'https://github.com/aaione/ai-page-dive' })}>
+                  点赞 👍
+                </button>
+                <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'https://github.com/aaione/ai-page-dive/issues' })}>
+                  吐槽 💬
                 </button>
               </div>
             </div>

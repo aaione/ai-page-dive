@@ -86,9 +86,8 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         if (t.contentReady()) {
           // 完整性回执：SW 对账不一致时会取消本任务（半截正文总结比失败更糟）
           send({ t: 'content-received', taskId: msg.taskId, chars: t.receivedChars() })
-          // run 早期失败也带 taskId 走 task-error：SW/panel 按任务终局清理，不再挂空
-          t.run().catch((e) => {
-            tasks.delete(msg.taskId)
+          t.run().catch((e) => { // run 早期失败也带 taskId 走 task-error：SW/panel 按任务终局清理，不再挂空
+            if (tasks.get(msg.taskId) === t) tasks.delete(msg.taskId) // r11：重入后删错新实例会清空心跳门禁
             send({ t: 'task-error', taskId: msg.taskId, code: 'spawn-fail', message: String(e?.message ?? e) })
           })
         }
@@ -173,11 +172,9 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         listSkills().then((items) => send({ t: 'skills', items }))
         break
       case 'skill-reveal':
-        try {
-          revealSkill(msg.name)
-        } catch (e: any) {
-          send({ t: 'error', code: 'reveal-fail', message: String(e?.message ?? e) })
-        }
+        revealSkill(msg.name).catch((e) =>
+          send({ t: 'error', code: 'reveal-fail', message: String(e?.message ?? e) }),
+        )
         break
     }
   }

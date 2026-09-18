@@ -12,6 +12,17 @@ const execFileP = promisify(execFile)
 
 export const AGENTS: AgentDef[] = [claudeDef, codexDef, opencodeDef]
 
+/** r11：HOME 残缺（空串/缺失）时从 passwd 推导——homedir() 仅 HOME 完全缺失才走
+ *  passwd、空串原样返回空（实测），故先删再取；取完还原不动全局状态 */
+function userHome(): string {
+  if (process.env.HOME) return process.env.HOME
+  const had = 'HOME' in process.env
+  delete process.env.HOME
+  const h = homedir()
+  if (had) process.env.HOME = ''
+  return h
+}
+
 /**
  * Chrome 从 Dock 启动时 PATH 极简（/usr/bin:/bin:...），nvm/homebrew 装的 CLI
  * 全部不可见。补上 macOS 常见安装目录 + 扫描 nvm 各版本 bin + 常见自定义 Homebrew 路径；
@@ -19,8 +30,7 @@ export const AGENTS: AgentDef[] = [claudeDef, codexDef, opencodeDef]
  */
 export function cliPath(): string {
   const extra = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/local/sbin']
-  // 常见自定义 Homebrew 安装路径（用户自定义前缀的情况）
-  const home = process.env.HOME ?? ''
+  const home = userHome() // r11：HOME 残缺时 passwd 兜底，防 CLI 全量误报 unavailable
   if (home) {
     extra.push(join(home, 'homebrew/bin'))
     extra.push(join(home, '.homebrew/bin'))
@@ -50,7 +60,7 @@ export function cliPath(): string {
 }
 
 export function cliEnv(): Record<string, string> {
-  return { ...process.env, PATH: cliPath() }
+  return { ...process.env, HOME: process.env.HOME || userHome(), PATH: cliPath() } // r11：空 HOME 会让 CLI 把 ~/.claude 解析到根目录
 }
 
 export function getAgent(id: string): AgentDef | undefined {

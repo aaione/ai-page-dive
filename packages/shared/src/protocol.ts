@@ -105,7 +105,8 @@ export interface ListSkillsMsg {
 
 export interface SkillRevealMsg {
   t: 'skill-reveal'
-  name: string
+  /** 缺省 = 打开技能根目录（host 侧 revealSkill() 语义） */
+  name?: string
 }
 
 export type ExtToHost =

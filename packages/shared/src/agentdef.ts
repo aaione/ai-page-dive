@@ -60,7 +60,9 @@ export interface TaskInput {
   skills?: string[]
   /** 总结输出语言（如 'zh'/'en'；缺省跟语言自动判断） */
   lang?: string
-  /** 附件（panel 读的文本，host 落临时文件后 prompt 给路径；追问轮同样生效） */
-  attachments?: { name: string; text: string }[]
+  /** 附件（r12：文本走 text、图片走 b64/mime——host 持久化到
+   *  ~/.ai-page-dive/attachments 后 prompt 以 [Image #N]/[File #N] 给路径，
+   *  历史恢复可追溯；追问轮同样生效） */
+  attachments?: { name: string; text?: string; b64?: string; mime?: string; kind?: 'text' | 'image' }[]
   page: Omit<PageContent, 'contentMarkdown'>
 }

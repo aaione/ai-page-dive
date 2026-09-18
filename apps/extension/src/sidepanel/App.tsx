@@ -11,6 +11,8 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   text: string
+  /** 本轮用户消息携带的附件（r12：气泡上方 chip 展示——显示与执行一致，附件不再「看不见」） */
+  attachments?: { name: string; kind?: 'text' | 'image' }[]
   streaming?: boolean
   model?: string
   usage?: { inputTokens?: number; outputTokens?: number }
@@ -64,6 +66,8 @@ export interface PageMeta {
   favIconUrl?: string
   /** 提取质量提示（截断/低置信），PageTips 条展示；无则不渲染 */
   notice?: string
+  /** 正文体量估算（用量透明化）；0/缺省不渲染 */
+  approxTokens?: number
 }
 
 export function App() {
@@ -117,8 +121,9 @@ export function App() {
       }
       // 判死即取消（r7-ux，对齐 sw.ts「不白烧订阅额度」收敛原则）：SW 活/host 卡死
       // 场景收割在跑任务；SW 已死场景消息会唤醒 SW（currentTask 内存已空，无操作）
-      // 但 host 早随 port 消亡被 Chrome 收割，无害
-      chrome.runtime.sendMessage({ t: 'cancel' }).catch(() => {})
+      // 但 host 早随 port 消亡被 Chrome 收割，无害。带 taskId：双窗口场景 SW 只对
+      // 号收割本面板绑定的任务，绝不错杀另一窗口面板正在跑的新任务
+      chrome.runtime.sendMessage({ t: 'cancel', taskId: streamRef.current.taskId ?? undefined }).catch(() => {})
       setStream((s) => {
         if (s.activeId === null && !s.pending) return s
         // r8-ux：把本轮问题放回输入框（发送时已清空）——重发不必对着气泡手抄
@@ -186,7 +191,10 @@ export function App() {
               ...s,
               taskId: at.taskId,
               activeId: id,
-              messages: [...s.messages, { id, role: 'assistant' as const, text: '', streaming: true }],
+              // incomplete 预置（r9-backlog）：面板关闭期间 chunk 无接收端全部丢弃，
+              // 重开只续尾巴且 gap 检测（依赖本会话 lastChunkSeq）必不触发——预置
+              // 标记让终局后弱提示「完整版见历史」
+              messages: [...s.messages, { id, role: 'assistant' as const, text: '', streaming: true, incomplete: true }],
               aliveAt: Date.now(),
               phase: `处理中（已 ${Math.max(1, Math.round((Date.now() - at.startedAt) / 1000))}s）…`,
             }
@@ -408,13 +416,28 @@ export function App() {
   }
 
   function onStartResult(resp: { error?: string; [k: string]: unknown }) {
-    if (resp?.error === 'host-not-found') setHostOk(false)
-    else if (resp?.error) {
+    // r11：send 回调只对本轮生效（无迟到帧问题）——对齐实际执行 CLI，
+    // 防跨 CLI 换会话后下拉错标（beginSession 已清，这里回填正确值）
+    if (typeof (resp as any).agentId === 'string') setSessionAgent((resp as any).agentId)
+    if (resp?.error === 'host-not-found') {
+      // r10-review：'host-not-found' 几乎只对应 NM 瞬断（host 刚死、onDisconnect
+      // 未达，nmport catch 清 port 后下次调用即重 spawn 自愈）——立即切 Onboarding
+      // 会让已装用户看到假安装引导，且 probe 成功后 location.reload() 丢整段对话
+      // 态（与 __host-disconnected 分支「不闪跳」的 r4-ux 决策矛盾）。先走错误
+      // 气泡，异步 probe 复核：真连不上才落安装引导
+      chrome.runtime
+        .sendMessage({ t: 'panel-ready' })
+        .then((r: unknown) => { if (!(r as { ok?: boolean } | null)?.ok) setHostOk(false) })
+        .catch(() => setHostOk(false))
+      resp = { ...resp, error: 'host-not-found-retry' }
+    }
+    if (resp?.error) {
       const msg =
-        resp.error === 'no-tab' ? '没有可总结的页面（先在普通网页上点扩展图标）'
+        resp.error === 'host-not-found-retry' ? '本机组件连接闪断——通常已自动恢复，请重试'
+        : resp.error === 'no-tab' ? '没有可总结的页面（先在普通网页上点扩展图标）'
         : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
         : resp.error === 'no-permission' ? '无提取权限：浏览器要求换页后重新授权——点击工具栏上的 AI PageDive 图标后重试'
-        : resp.error === 'empty-content' ? '页面没有可提取的正文'
+        : resp.error === 'empty-content' ? '页面没有可提取的正文——等页面加载完成（或滚动到底部触发懒加载）后重试；也可粘贴正文作为附件直接追问'
         : resp.error === 'cancelled' ? '已取消'
         : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——直接重新发送即可（将开始全新总结）'
         : String(resp.error)
@@ -453,7 +476,7 @@ export function App() {
    * pending=true：send 后到首个任务帧前的窗口里 running 判定靠它兜住（防双发）。
    * resumable 是会话级字段：追问轮间保留（F1——曾随 BLANK 清零，失败窗口后
    * 下一句追问静默降级全新总结 + 下拉解锁闪变） */
-  const beginTurn = useCallback((text: string) => {
+  const beginTurn = useCallback((text: string, attachments?: { name: string; kind?: 'text' | 'image' }[]) => {
     setStream((s) => ({
       ...BLANK,
       pending: true,
@@ -462,7 +485,7 @@ export function App() {
       // 迟到 cancelled 回调无从对账而击穿 pending 态；台账只拒同 taskId，新 id 不撞
       finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
       aliveAt: Date.now(), // 看门狗起点：发送即计时，首个 host 帧/心跳到达前靠它兜住
-      messages: [...s.messages, { id: `u${Date.now()}`, role: 'user', text }],
+      messages: [...s.messages, { id: `u${Date.now()}`, role: 'user', text, ...(attachments?.length ? { attachments } : {}) }],
     }))
   }, [])
 
@@ -470,7 +493,10 @@ export function App() {
    * 在跑任务（被 newChat 取消）的尾巴 chunk 不得落入空会话——把在跑 taskId
    * 记入 finished（F9：在跑任务从未终局、不在台账，仅保留旧台账无效） */
   const beginSession = useCallback(
-    () => setStream((s) => ({ ...BLANK, finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished })),
+    () => {
+      setSessionAgent('') // r11：新会话清陈旧值——否则 codex 会话后开 claude 首轮，下拉错标 codex 到首个追问帧到达
+      setStream((s) => ({ ...BLANK, finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished }))
+    },
     [],
   )
 
@@ -631,7 +657,7 @@ const PHASE_LABEL: Record<string, string> = {
   thinking: '思考中…',
 }
 const ERROR_LABEL: Record<string, string> = {
-  'spawn-fail': 'CLI 启动失败（未安装或不在 PATH）',
+  'spawn-fail': 'CLI 启动失败——终端跑一次 which claude / which codex 确认已安装，或用官方安装器重装后重试',
   timeout: '任务超时',
   cancelled: '已取消',
   parse: 'CLI 输出异常',

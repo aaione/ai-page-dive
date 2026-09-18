@@ -38,11 +38,9 @@ export function createClaudeParser() {
       const blocks: any[] = d.message?.content ?? []
       let text = ''
       for (const b of blocks) if (b.type === 'text') text += b.text
-      // partial 增量已发过时这里是镜像（diff 出空增量，自然跳过）；
-      // 旧版 CLI 无 partial 时这里是累积全量，diff 正好取增量——统一走 startsWith diff。
-      // 工具流多消息（r5-impl）：prevText 跨消息累积含前序消息前缀，本条消息的
-      // 全文是它的后缀——startsWith 必然失配曾把终答整段重推。endsWith = 本条
-      // 已全部经增量推出（镜像），跳过
+      // partial 增量已发过时这里是镜像（diff 出空增量，自然跳过）；旧版 CLI 无 partial 时这里是累积全量，
+      // diff 正好取增量——统一走 startsWith diff。工具流多消息（r5-impl）：prevText 跨消息累积含前序消息前缀，
+      // 本条消息的全文是它的后缀——startsWith 必然失配曾把终答整段重推。endsWith = 本条已全部经增量推出（镜像），跳过
       if (text.startsWith(prevText)) {
         const delta = text.slice(prevText.length)
         if (delta) out.push({ type: 'text-delta', text: delta })
@@ -96,11 +94,9 @@ export const claudeDef: AgentDef = {
     '--output-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
-    // 进程级工具围栏（r6-sec，与 codex --sandbox read-only 对称）：任务语义只需读
-    // 临时正文/附件文件——白名单外工具（Bash/Write/网络等）在 CLI 层一律拒绝，
-    // prompt 注入的越权指令到此被拦。等号形式：--allowedTools 是 variadic 参数，
-    // 空格形式会吞掉后续 argv（本产品 prompt 走 stdin 不受影响，等号防御参数序
-    // 变动）。实测（claude 2.x）：Read 围栏下读文件+总结链路 exit 0 / is_error false
+    // 进程级工具围栏（r6-sec，与 codex --sandbox read-only 对称）：任务语义只需读临时正文/附件文件——白名单外
+    // 工具（Bash/Write/网络等）在 CLI 层一律拒绝，prompt 注入的越权指令到此被拦。等号形式：--allowedTools 是
+    // variadic 参数，空格形式会吞掉后续 argv。实测（claude 2.x）：Read 围栏下读文件+总结链路 exit 0 / is_error false
     '--allowedTools=Read',
     ...(opts.resumeSessionId ? ['--resume', opts.resumeSessionId] : []),
   ],

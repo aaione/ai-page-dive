@@ -123,8 +123,8 @@ export async function saveWorkflow(input: {
     throw new Error(`已存在同名用户模式「${input.name}」，未保存——请换一个名称`)
   }
   const dir = join(USER_DIR, input.name)
-  await mkdir(dir, { recursive: true })
-  await writeFile(join(dir, 'WORKFLOW.md'), buildWorkflowMd(input), 'utf8')
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  await writeFile(join(dir, 'WORKFLOW.md'), buildWorkflowMd(input), { encoding: 'utf8', mode: 0o600 })
   // 删旧目录放在写新成功之后（r3-sec m2）：先 rm 再写曾在写失败时把用户原创模式
   // 直接丢掉——非原子操作里，可重建的（新目录）先做，不可恢复的（删旧）最后做
   if (input.originalName && input.originalName !== input.name) {
@@ -147,8 +147,7 @@ export async function revealWorkflow(name: string): Promise<void> {
   assertValidWorkflowName(name)
   const dir = join(USER_DIR, name)
   const builtinDir = join(BUILTIN_DIR, name)
-  // 用户副本优先；没有则校验内置存在（保证 name 有效），开内置目录
-  const target =
+  const target = // 用户副本优先；没有则校验内置存在（保证 name 有效），开内置目录
     (await readFile(join(dir, 'WORKFLOW.md')).then(() => true).catch(() => false)) ? dir
     : (await readFile(join(builtinDir, 'WORKFLOW.md')).then(() => true).catch(() => false)) ? builtinDir
     : undefined

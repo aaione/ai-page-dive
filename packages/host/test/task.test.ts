@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -151,6 +151,8 @@ describe('Task 状态机', () => {
   it('is_error 路径：onDone(isError=true) 只发一次，errorText 传导', async () => {
     const { AGENTS } = await import('../src/agents/registry.js')
     const script = await FAKE_CLI('is_error')
+    // 自足化（r10-review）：此前依赖「正常路径」用例泄漏的 bin='node'——顺序一变即级联挂
+    AGENTS[0].bin = 'node'
     AGENTS[0].buildArgs = () => [script]
     const { task: mk, cbs } = makeCbs(); const task = mk()
     task.start({ taskId: 't2', agentId: 'claude', workflow: 'quick', page: PAGE as any })
@@ -382,7 +384,7 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))
     const orig = AGENTS[0].buildArgs
     AGENTS[0].bin = 'node'
     AGENTS[0].buildArgs = () => [echo]
-    const { task: mk } = makeCbs(); const task = mk('t-ins')
+    const { task: mk, cbs } = makeCbs(); const task = mk('t-ins')
     task.start({ taskId: 't-ins', agentId: 'claude', workflow: 'default', instruction: '列出正文中的公司名', page: PAGE as any })
     task.appendContent(BODY, true)
     await task.run().catch(() => {})
@@ -390,6 +392,7 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))
     const prompt = await readFile(capFile, 'utf8')
     expect(prompt).toContain('列出正文中的公司名')
     expect(prompt).not.toContain('5-8 条要点')
+    if (cbs.done?.historyPath) await rm(cbs.done.historyPath, { force: true }).catch(() => {}) // r10-review：此前每次跑必残留
     await rm(dir, { recursive: true, force: true })
   }, 30_000)
 
@@ -416,7 +419,7 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))
     AGENTS[0].bin = 'node'
     AGENTS[0].buildArgs = () => [echo]
     // 追问轮：instruction 前拼附件段
-    const { task: mk } = makeCbs(); const task = mk('t-att')
+    const { task: mk, cbs } = makeCbs(); const task = mk('t-att')
     task.start({
       taskId: 't-att', agentId: 'claude', resumeSessionId: 'sess-1234', instruction: '结合附件回答',
       attachments: [{ name: '数据.md', text: '销售额：100 万' }],
@@ -432,6 +435,81 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))
     // 纯函数：空附件返回空串
     expect(attachSection([])).toBe('')
     expect(attachSection(undefined)).toBe('')
+    if (cbs.done?.historyPath) await rm(cbs.done.historyPath, { force: true }).catch(() => {}) // r10-review：此前每次跑必残留
+    await rm(dir, { recursive: true, force: true })
+  }, 30_000)
+
+  it('正文传输期取消（未 run）：主动终局 onError(cancelled)（r8 修复回归）', async () => {
+    // 未 run 的任务没有 exit 事件会来——不主动终局就永留 tasks Map + 心跳门禁使
+    // host 永生。纯同步路径：start → append → cancel（不 run）
+    const { task: mk, cbs } = makeCbs(); const task = mk('t-never-run')
+    task.start({ taskId: 't-never-run', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+    task.appendContent(BODY, false)
+    task.cancel()
+    expect(cbs.errors).toEqual([['cancelled', 'task cancelled']])
+    expect(cbs.done).toBeNull()
+    // 取消后再 run 不得 spawn（ran 已置）
+    await task.run()
+    expect(cbs.chunks).toEqual([])
+  }, 10_000)
+
+  it('timeout 收割：onError(timeout) 恰一次（r9 泄漏修复回归，fake timers）', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true }) // 真 spawn 的进程事件照走，显式 timer 归假钟
+    try {
+      const { AGENTS } = await import('../src/agents/registry.js')
+      const script = await FAKE_CLI('slow') // 60s 真实不终局，只有假钟 10min 触发收割
+      AGENTS[0].bin = 'node'
+      const orig = AGENTS[0].buildArgs
+      AGENTS[0].buildArgs = () => [script]
+      const { task: mk, cbs } = makeCbs(); const task = mk('t-timeout')
+      task.start({ taskId: 't-timeout', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+      task.appendContent(BODY, true)
+      const p = task.run()
+      // 假钟推进不能一次定死 10min+100：spawn 的真实耗时（node 冷启 >100ms）经
+      // shouldAdvanceTime 同步推走假钟，timer 注册时到期点可能已越过该刻——分片
+      // 推进直到终局出现。setImmediate 轮转真事件循环：SIGTERM→exit 得以下达
+      const tick = async () => {
+        await vi.advanceTimersByTimeAsync(30_000)
+        for (let i = 0; i < 20; i++) await new Promise(r => setImmediate(r))
+      }
+      let fired = false
+      for (let i = 0; i < 30 && !fired; i++) {
+        await tick()
+        fired = cbs.errors.some(([c]) => c === 'timeout')
+      }
+      if (!fired) throw new Error('timeout 终局未出现：假钟推进 15min 仍无 onError(timeout)')
+      await p
+      await tick(); await tick() // 二次推进不再补发（timeoutSent 前置）
+      expect(cbs.errors.filter(([c]) => c === 'timeout')).toHaveLength(1)
+      expect(cbs.done).toBeNull()
+      AGENTS[0].buildArgs = orig
+      await rm(join(script, '..'), { recursive: true, force: true })
+    } finally {
+      vi.useRealTimers()
+    }
+  }, 30_000)
+
+  it('取消后 CLI 吐 is_error result：终局仍为 cancelled，不被迟到帧改写（r10-review F3）', async () => {
+    // CLI 装 SIGTERM handler 在退出前吐最终 is_error result——result 分支无
+    // cancelled 守卫时会把「已取消」改写成 onDone(isError) + 落盘 status:error
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const dir = await mkdtemp(join(tmpdir(), 'pd-sigterm-'))
+    const script = join(dir, 'cli.mjs')
+    await writeFile(script, `process.on('SIGTERM',()=>{console.log(JSON.stringify({type:'result',is_error:true,result:'中断'}));process.exit(0)})\nsetTimeout(()=>{},60000)`, 'utf8')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const { task: mk, cbs } = makeCbs(); const task = mk('t-cancel-result')
+    task.start({ taskId: 't-cancel-result', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+    task.appendContent(BODY, true)
+    const p = task.run()
+    await new Promise(r => setTimeout(r, 400)) // CLI 起来并装好 SIGTERM handler
+    task.cancel()
+    await p
+    await new Promise(r => setTimeout(r, 300))
+    expect(cbs.errors).toEqual([['cancelled', 'task cancelled']])
+    expect(cbs.done).toBeNull()
+    AGENTS[0].buildArgs = orig
     await rm(dir, { recursive: true, force: true })
   }, 30_000)
 })

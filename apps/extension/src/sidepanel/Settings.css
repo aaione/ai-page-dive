@@ -1,5 +1,6 @@
 /* ══════════════════════════════════════════════
-   Settings（4 tab 改版）—— 玻璃磨砂 + serif
+   Settings（4 tab 改版）—— 中性近黑 + 单一琥珀锚点
+   与 index.css 同 token（:root --pd-*）：无 blur（t3 纯 alpha 层）
    ══════════════════════════════════════════════ */
 
 .pd-set {
@@ -9,7 +10,7 @@
   height: 100%;
   padding: 14px 18px 18px;
   overflow: hidden;
-  font-family: var(--font-serif-read);
+  font-family: var(--font-sans-ui);
   color: var(--color-pd-ink);
 }
 
@@ -41,19 +42,19 @@
   height: 13px;
 }
 
-/* ── tab 条：玻璃胶囊 ── */
+/* ── 错误条（danger 族，与 index.css pd-error 同语义） ── */
 .pd-set-error {
   margin-top: 10px;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 99, 71, .45);
-  background: rgba(255, 99, 71, .12);
-  color: #ff9c88;
+  border: 1px solid rgba(224, 108, 90, .40);
+  background: rgba(224, 108, 90, .09);
+  color: var(--pd-danger-text);
   font-family: var(--font-sans-ui);
   font-size: 12px;
   line-height: 1.5;
 }
-/* r8-ux：dirty 编辑切换/新建的确认条 */
+/* r8-ux：dirty 编辑切换/新建的确认条（warn 族） */
 .pd-set-dirty-bar {
   display: flex;
   align-items: center;
@@ -61,9 +62,9 @@
   margin-bottom: 6px;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(250, 204, 21, .4);
-  background: rgba(250, 204, 21, .10);
-  color: var(--color-pd-ink);
+  border: 1px solid rgba(216, 159, 74, .40);
+  background: rgba(216, 159, 74, .09);
+  color: var(--pd-warn-text);
   font-family: var(--font-sans-ui);
   font-size: 12px;
   line-height: 1.5;
@@ -71,6 +72,8 @@
 .pd-set-dirty-bar span {
   flex: 1;
 }
+
+/* ── tab 条：t3 纯 alpha 胶囊（无 blur） ── */
 .pd-set-tabs {
   display: flex;
   gap: 4px;
@@ -78,11 +81,9 @@
   margin-top: 10px;
   padding: 3px;
   border-radius: 9999px;
-  border: 1px solid var(--color-pd-line);
-  background: rgba(19,27,46,.55);
-  -webkit-backdrop-filter: blur(36px) saturate(180%);
-  backdrop-filter: blur(36px) saturate(180%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 -1px 0 rgba(0,0,0,.16), 0 14px 40px rgba(0,0,0,.44);
+  border: 1px solid rgba(255,255,255,.09);
+  background: rgba(255,255,255,.05);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), var(--pd-shadow-1);
 }
 .pd-set-tab {
   padding: 5px 14px;
@@ -99,9 +100,9 @@
   color: var(--color-pd-ink);
 }
 .pd-set-tab.active {
-  background: linear-gradient(135deg, rgba(167,139,250,.32), rgba(124,58,237,.28));
+  background: rgba(226,185,111,.20);
   color: var(--color-pd-ink);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 2px 10px rgba(124,58,237,.30);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
 }
 
 /* ── 内容区：整体滚动（pane 不限高——双重滚动曾是「模式」列表被截断的根因） ── */
@@ -122,14 +123,12 @@
   animation: pd-set-fade-in 200ms ease-out both;
 }
 
-/* ── 玻璃面板（列表/表单容器通用） ── */
+/* ── 面板（列表/表单容器通用，t3 纯 alpha） ── */
 .pd-set-panel {
   border-radius: 12px;
-  border: 1px solid var(--color-pd-line);
-  background: rgba(19,27,46,.50);
-  -webkit-backdrop-filter: blur(36px) saturate(180%);
-  backdrop-filter: blur(36px) saturate(180%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 -1px 0 rgba(0,0,0,.16), 0 16px 48px rgba(0,0,0,.48), 0 2px 8px rgba(0,0,0,.32);
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.045);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), var(--pd-shadow-1);
   padding: 12px;
 }
 .pd-set-panel + .pd-set-panel {
@@ -145,7 +144,7 @@
 .pd-set-hint code {
   font-family: var(--font-mono-ui);
   font-size: 10.5px;
-  background: rgba(0,0,0,.30);
+  background: rgba(255,255,255,.08);
   border-radius: 3px;
   padding: 0.1em 0.3em;
 }
@@ -157,7 +156,7 @@
   gap: 5px;
   padding: 5px 12px;
   border-radius: 8px;
-  border: 1px solid var(--color-pd-line);
+  border: 1px solid rgba(255,255,255,.10);
   background: rgba(255,255,255,.05);
   font-family: var(--font-sans-ui);
   font-size: 11.5px;
@@ -167,22 +166,22 @@
   white-space: nowrap;
 }
 .pd-set-btn:hover {
-  background: var(--color-pd-hover);
+  background: rgba(255,255,255,.09);
 }
 .pd-set-btn.primary {
-  border-color: rgba(167,139,250,.45);
-  background: rgba(124,58,237,.22);
+  border-color: rgba(226,185,111,.45);
+  background: rgba(226,185,111,.18);
 }
 .pd-set-btn.primary:hover {
-  background: rgba(124,58,237,.34);
+  background: rgba(226,185,111,.26);
 }
 .pd-set-btn.danger {
-  border-color: rgba(248,113,113,.35);
+  border-color: rgba(224,108,90,.35);
   color: var(--color-pd-danger-text);
   background: var(--color-pd-danger-bg);
 }
 .pd-set-btn.danger:hover {
-  background: rgba(248,113,113,.18);
+  background: rgba(224,108,90,.16);
 }
 .pd-set-btn:disabled {
   opacity: 0.45;
@@ -196,7 +195,7 @@
   height: 18px;
   flex-shrink: 0;
   border-radius: 9999px;
-  border: 1px solid var(--color-pd-line);
+  border: 1px solid rgba(255,255,255,.10);
   background: rgba(255,255,255,.06);
   box-shadow: inset 0 1px 2px rgba(0,0,0,.30);
   cursor: pointer;
@@ -215,12 +214,12 @@
   transition: transform 0.18s, background 0.18s;
 }
 .pd-set-switch.on {
-  border-color: rgba(167,139,250,.55);
-  background: rgba(124,58,237,.38);
+  border-color: rgba(226,185,111,.50);
+  background: rgba(226,185,111,.32);
 }
 .pd-set-switch.on::after {
   transform: translateX(14px);
-  background: #C4B5FD;
+  background: var(--pd-accent);
 }
 
 /* ── 行列表（CLI / 技能） ── */
@@ -268,7 +267,7 @@
 }
 .pd-set-dot.available { background: var(--color-pd-ok); }
 .pd-set-dot.unavailable { background: var(--color-pd-off); }
-/* 默认 CLI 星标 */
+/* 默认 CLI 星标（accent = 「默认」标记色） */
 .pd-set-star {
   display: flex;
   align-items: center;
@@ -286,13 +285,13 @@
 }
 .pd-set-star:hover:not(:disabled) {
   background: rgba(255,255,255,.08);
-  color: var(--color-pd-primary);
+  color: var(--pd-accent);
 }
 .pd-set-star.on {
-  color: #FBBF24;
+  color: var(--pd-accent);
 }
 .pd-set-star.on:hover {
-  color: #FCD34D;
+  color: var(--pd-accent-hover);
 }
 .pd-set-star:disabled {
   opacity: 0.3;
@@ -317,7 +316,7 @@
   gap: 4px;
   padding: 2px;
   border-radius: 8px;
-  border: 1px solid var(--color-pd-line);
+  border: 1px solid rgba(255,255,255,.09);
   background: rgba(0,0,0,.22);
 }
 .pd-set-lang-opt {
@@ -335,17 +334,17 @@
   color: var(--color-pd-ink);
 }
 .pd-set-lang-opt.active {
-  background: linear-gradient(135deg, rgba(167,139,250,.32), rgba(124,58,237,.28));
+  background: rgba(226,185,111,.20);
   color: var(--color-pd-ink);
 }
 .pd-set-badge {
   padding: 1px 6px;
   border-radius: 9999px;
-  border: 1px solid rgba(167,139,250,.35);
+  border: 1px solid rgba(226,185,111,.35);
   font-size: 9.5px;
   line-height: 1.5;
-  color: var(--color-pd-primary);
-  background: rgba(124,58,237,.12);
+  color: var(--pd-accent);
+  background: rgba(226,185,111,.10);
   flex-shrink: 0;
 }
 .pd-set-empty {
@@ -380,11 +379,11 @@
   transition: background 0.12s;
 }
 .pd-set-wf-item:hover {
-  background: var(--color-pd-hover);
+  background: rgba(255,255,255,.06);
 }
 .pd-set-wf-item.active {
-  background: rgba(124,58,237,.20);
-  box-shadow: inset 0 0 0 1px rgba(167,139,250,.40);
+  background: rgba(226,185,111,.14);
+  box-shadow: inset 0 0 0 1px rgba(226,185,111,.40);
 }
 .pd-set-wf-name {
   flex: 1;
@@ -421,16 +420,17 @@
 .pd-set-input {
   padding: 6px 10px;
   border-radius: 8px;
-  border: 1px solid var(--color-pd-line);
+  border: 1px solid rgba(255,255,255,.10);
   background: rgba(0,0,0,.25);
-  font-family: var(--font-serif-read);
+  font-family: var(--font-sans-ui);
   font-size: 12px;
   color: var(--color-pd-ink);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .pd-set-input:focus {
-  border-color: rgba(167,139,250,.55);
+  border-color: rgba(226,185,111,.50);
+  box-shadow: 0 0 0 3px rgba(226,185,111,.10);
 }
 .pd-set-input:read-only {
   opacity: 0.65;
@@ -445,17 +445,19 @@
   resize: none;
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid var(--color-pd-line);
+  border: 1px solid rgba(255,255,255,.10);
   background: rgba(0,0,0,.25);
+  /* WORKFLOW.md 正文编辑器：内容是给 AI 读的 markdown，归阅读层 serif */
   font-family: var(--font-serif-read);
   font-size: 12px;
   line-height: 1.8;
   color: var(--color-pd-ink);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .pd-set-textarea:focus {
-  border-color: rgba(167,139,250,.55);
+  border-color: rgba(226,185,111,.50);
+  box-shadow: 0 0 0 3px rgba(226,185,111,.10);
 }
 .pd-set-field-error {
   font-size: 10.5px;
@@ -483,8 +485,8 @@
   width: 44px;
   height: 44px;
   border-radius: 10px;
-  /* 原图无透明通道：抠出紫渐变方块外的白边视觉 */
-  box-shadow: 0 4px 16px rgba(124,58,237,.35), inset 0 0 0 1px rgba(255,255,255,.08);
+  /* 原图无透明通道：抠出深蓝渐变方块外的白边视觉——中性阴影，不发光 */
+  box-shadow: 0 4px 16px rgba(0,0,0,.40), inset 0 0 0 1px rgba(255,255,255,.08);
 }
 .pd-set-about-name {
   display: flex;
@@ -513,7 +515,7 @@
 .pd-set-about code {
   font-family: var(--font-mono-ui);
   font-size: 11px;
-  background: rgba(0,0,0,.30);
+  background: rgba(255,255,255,.08);
   border-radius: 3px;
   padding: 0.1em 0.3em;
 }

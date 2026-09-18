@@ -60,8 +60,10 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
     const listener = (m: HostToExt) => {
       if (m.t === 'history-list') { setItems((m as HistoryListResultMsg).items); setReplied(true) }
       if (m.t === 'history-file') {
-        // 只收在途那条的回帧（同 Settings workflow-file 守卫）：迟到旧帧丢掉
-        if (pendingPathRef.current && (m as HistoryFileMsg).path !== pendingPathRef.current) return
+        // 只收在途那条的回帧（同 Settings workflow-file 守卫）：迟到旧帧丢掉。
+        // 严格等值：pendingPath 为 null（已返回列表/切走）时同样拒收——否则迟到
+        // 帧会把用户「拽回」详情页（r9-review，原 && 短路使 null 分支放行）
+        if ((m as HistoryFileMsg).path !== pendingPathRef.current) return
         setViewing(m as HistoryFileMsg)
       }
       // 读取失败（文件被外部删除/权限变化）：清在途 path + 一次性提示，
@@ -101,7 +103,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
           </svg>
           返回列表
         </button>
-        {viewingItem?.url && (
+        {viewingItem?.url && /^https?:/i.test(viewingItem.url) && (
           <a
             href={viewingItem.url}
             target="_blank"

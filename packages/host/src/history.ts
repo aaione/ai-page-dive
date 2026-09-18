@@ -16,9 +16,8 @@ function rootDir(): string {
   const oldDir = join(home, '.pagedive')
   const newDir = join(home, '.ai-page-dive')
   if (existsSync(oldDir) && !existsSync(newDir)) {
-    try {
-      renameSync(oldDir, newDir)
-    } catch { /* 并发/权限失败：退回旧目录可用 */ }
+    try { renameSync(oldDir, newDir) } catch { /* 并发/权限失败 */ }
+    if (!existsSync(newDir)) return oldDir // 迁移失败指回旧目录，防旧历史搁浅（r9-review：原注释宣称回退却从未实现）
   }
   return newDir
 }
@@ -49,8 +48,7 @@ export function slugify(s: string): string {
   return (
     s
       .toLowerCase()
-      // CJK 与控制字符直接剔除，保留字母数字连字符
-      .replace(/[^a-z0-9一-鿿]+/g, '-')
+      .replace(/[^a-z0-9一-鿿]+/g, '-') // CJK 与控制字符直接剔除，保留字母数字连字符
       .replace(/^-+|-+$/g, '')
       .slice(0, 50) || 'page'
   )
@@ -82,9 +80,8 @@ export async function saveHistory(
   meta: HistoryMeta,
   body: string,
 ): Promise<string> {
-  await mkdir(join(path, '..'), { recursive: true })
-  // 同秒同 slug 并发任务互不覆盖：wx 排他创建，EEXIST 时追加序号重试
-  for (let n = 1; n < 100; n++) {
+  await mkdir(join(path, '..'), { recursive: true, mode: 0o700 }) // r10：目录含标题 slug，0700 防枚举
+  for (let n = 1; n < 100; n++) { // 同秒同 slug 并发任务互不覆盖：wx 排他创建，EEXIST 时追加序号重试
     const p = n === 1 ? path : path.replace(/\.md$/, `-${n}.md`)
     try {
       await writeNew(p, meta, body)
@@ -102,12 +99,12 @@ async function writeNew(path: string, meta: HistoryMeta, body: string): Promise<
     `title: ${escapeYaml(meta.title)}`,
     `url: ${escapeYaml(meta.url)}`,
     `agent: ${meta.agent}`,
-    meta.workflow ? `workflow: ${meta.workflow}` : null,
+    meta.workflow ? `workflow: ${escapeYaml(meta.workflow)}` : null,
     `status: ${meta.status}`,
     `ts: ${Math.floor(Date.now() / 1000)}`,
     meta.usage ? `usage: ${JSON.stringify(meta.usage)}` : null,
     meta.durationMs != null ? `duration_ms: ${meta.durationMs}` : null,
-    meta.sessionId ? `session_id: ${meta.sessionId}` : null,
+    meta.sessionId ? `session_id: ${escapeYaml(meta.sessionId)}` : null,
     '---',
     '',
   ]
@@ -171,8 +168,7 @@ export async function listHistory(query?: string, limit = 100): Promise<HistoryI
       .filter((i) => i.title.toLowerCase().includes(q) || i.url.toLowerCase().includes(q))
       .slice(0, limit)
   }
-  // 无过滤：倒序遍历凑够即收（近似时间倒序）；全量走完时最终按 ts 精确排序
-  const items: HistoryItem[] = []
+  const items: HistoryItem[] = [] // 无过滤：倒序遍历凑够即收（近似时间倒序）；全量走完时最终按 ts 精确排序
   for (const p of paths) {
     const it = await readOne(p)
     if (it) items.push(it)
@@ -182,8 +178,7 @@ export async function listHistory(query?: string, limit = 100): Promise<HistoryI
 }
 
 async function readFrontmatter(path: string): Promise<Omit<HistoryItem, 'path'> | undefined> {
-  // 只读头部 4KB：frontmatter 在文件头几十字节，正文可达数百 KB——列表页无需全量读
-  let raw: string
+  let raw: string // 只读头部 4KB：frontmatter 在文件头几十字节，正文可达数百 KB——列表页无需全量读
   const fh = await open(path, 'r')
   try {
     const head = Buffer.alloc(4096)

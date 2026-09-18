@@ -1,8 +1,5 @@
-/**
- * 任务编排：正文缓冲 → 临时文件 → prompt 组装（workflow 正文即任务段）
- * → spawn → 归一化事件 → ≤512KB chunk → 历史落盘。
- */
-import { mkdir, rm, symlink } from 'node:fs/promises'
+/** 任务编排：正文缓冲 → 临时文件 → prompt 组装（workflow 正文即任务段）→ spawn → 归一化事件 → ≤512KB chunk → 历史落盘。 */
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { AgentEvent, TaskInput } from '@ai-page-dive/shared'
@@ -19,11 +16,8 @@ import { getWorkflow } from './workflows.js'
 
 const TASK_TIMEOUT_MS = 10 * 60_000
 
-/**
- * CLI 会话 id → 首轮 spawn cwd 的映射（追问用）。r7-review 现状澄清：当前三适配器
- * 下 value 恒为 stableCwd（唯一走 mkdtemp 的 opencode 不产 meta 事件）——此机制为
- * 「未来按会话隔离 cwd 的引擎」预留，届时 resume 轮取回同 cwd 才真正承重。
- */
+/** CLI 会话 id → 首轮 spawn cwd 的映射（追问用）。r7-review 现状澄清：当前三适配器下 value 恒为 stableCwd
+ *  （唯一走 mkdtemp 的 opencode 不产 meta 事件）——「未来按会话隔离 cwd 的引擎」预留，届时 resume 取回同 cwd 才承重。 */
 const sessionCwds = new Map<string, string>()
 
 /** 固定 CLI 工作区（幂等创建）：claude 会话跨 host 重启可 resume 的关键。
@@ -82,6 +76,8 @@ export class Task {
    * 数千 delta 的长回答累计秒级主线程开销；≥8KB 或 50ms 合并（seq 仍连续） */
   private pendingDelta = ''
   private deltaTimer?: ReturnType<typeof setTimeout>
+  /** 已落盘附件（r12）：prompt 引用与历史 [Image #N] 标记共用同一编号源 */
+  private attachFiles: { name: string; path: string; kind: 'text' | 'image' }[] = []
 
   constructor(taskId: string, private cb: TaskCallbacks) {
     this.taskId = taskId
@@ -106,19 +102,25 @@ export class Task {
     return this.contentChars
   }
 
-  /** 附件落盘：每个附件写 tmp 文件（安全文件名），软链进 agent cwd 供沙箱 CLI 读。
-   * 返回 [{name, path}] 供 prompt 附件段；空附件/写失败（跳过该个）都返回 []。 */
-  private async materializeAttachments(): Promise<{ name: string; path: string }[]> {
+  /** 附件落盘（r12 持久化）：写 ~/.ai-page-dive/attachments/<yyyymm>/（0600，不清理——历史恢复可追溯），
+   *  软链进 agent cwd 供沙箱 CLI（opencode）读；图片写 b64 解码件。返回 [{name, path, kind}]。 */
+  private async materializeAttachments(agentCwd?: string): Promise<{ name: string; path: string; kind: 'text' | 'image' }[]> {
     const atts = this.input.attachments ?? []
     if (!atts.length) return []
-    const out: { name: string; path: string }[] = []
-    for (const a of atts.slice(0, 5)) {
+    const out: { name: string; path: string; kind: 'text' | 'image' }[] = []
+    let madeDir = false
+    for (const [i, a] of atts.slice(0, 5).entries()) {
+      const kind = a.kind === 'image' && a.b64 ? 'image' : 'text'
       // name 只保留安全字符做文件名（协议信任边界：NM 消息可能带任意字符串）
       const safe = a.name.replace(/[^A-Za-z0-9_.一-龥-]/g, '_').slice(0, 64) || 'attachment'
       try {
-        const p = await writeContentFile(`${this.taskId}-att-${safe}`, a.text)
-        scheduleCleanup(p, 11 * 60_000) // > TASK_TIMEOUT_MS：运行中被删 = CLI 读半截正文
-        out.push({ name: a.name, path: p })
+        const dir = join(homedir(), '.ai-page-dive', 'attachments', new Date().toISOString().slice(0, 7).replace('-', ''))
+        if (!madeDir) { await mkdir(dir, { recursive: true, mode: 0o700 }); madeDir = true }
+        // taskId 内联消毒：resume 轮可绕过上层校验，此处兜底防路径穿越（净零行）
+        const p = join(dir, `${this.taskId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 't'}-${i + 1}-${safe}`)
+        await writeFile(p, kind === 'image' ? Buffer.from(a.b64!, 'base64') : a.text ?? '', { mode: 0o600 })
+        if (agentCwd) await symlink(p, join(agentCwd, basename(p))).catch(() => {})
+        out.push({ name: a.name, path: p, kind })
       } catch { /* 单个失败跳过，不阻断任务 */ }
     }
     return out
@@ -184,9 +186,8 @@ export class Task {
       : def.streamFormat === 'opencode-jsonl' ? createOpencodeParser()
       : createCodexParser()
 
-    // cwd 语义：opencode --dir 钉死工作区 + 相对路径 prompt；claude 会话按 cwd 分区
-    // 存储（~/.claude/projects/<编码>/），跨 host 重启必须可复现否则 --resume 报
-    // No conversation found——统一固定工作区 ~/.ai-page-dive/agent-workspace/
+    // cwd 语义：opencode --dir 钉死工作区 + 相对路径 prompt；claude 会话按 cwd 分区存储
+    // （~/.claude/projects/<编码>/），跨 host 重启必须可复现否则 --resume 报错——统一固定工作区
     let agentCwd = def.filePathInPrompt && !isResume ? await makeAgentCwd() : undefined
     if (isResume) {
       const remembered = sessionCwds.get(this.input.resumeSessionId!)
@@ -206,11 +207,11 @@ export class Task {
       : wf?.body
     // 大纲从内存正文提取（resume 轮上下文在 CLI 会话里，不需要）
     const outline = !isResume ? buildOutline(this.contentParts.join('')) : undefined
-    // 附件：panel 读的文本落临时文件 + 软链 cwd，prompt 附件段给路径（resume 轮同样生效）
-    const attachFiles = await this.materializeAttachments()
+    // 附件：落盘（持久化）+ 软链 cwd，prompt 附件段给路径（resume 轮同样生效）
+    this.attachFiles = await this.materializeAttachments(agentCwd)
     const prompt = isResume
-      ? attachSection(attachFiles) + (this.input.instruction ?? '')
-      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction || wfBody, skillBodies, this.input.lang, outline, attachFiles)
+      ? attachSection(this.attachFiles) + (this.input.instruction ?? '')
+      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction || wfBody, skillBodies, this.input.lang, outline, this.attachFiles)
 
     this.startedAt = Date.now()
     this.cb.onStatus('spawned')
@@ -258,12 +259,13 @@ export class Task {
       }
       void this.persist('interrupted')
       this.cleanupCwd() // 不经过 finish()：timeout 路径自回收 cwd（r4-impl）
-      this.cancel()
+      // 收割挂死 CLI：走 cancel() 会被其 finished 守卫挡回（终局已前置），detached 进程组永久泄漏烧配额（r9-review 实证）
+      this.proc?.reap()
     }, TASK_TIMEOUT_MS)
 
     await new Promise<void>((resolve) => {
       this.proc!.child.on('exit', async (code, signal) => {
-        if (this.doneSent || this.timeoutSent) return resolve() // isError/timeout 路径已发终局，勿重复
+        if (this.finished || this.doneSent || this.timeoutSent) return resolve() // isError/timeout/error 已发终局勿重复（r11：error 后仍可触 exit）
         this.finished = true
         await this.finish(code, signal, stderrTail, contentFile)
         resolve()
@@ -286,14 +288,14 @@ export class Task {
         if (!this.cancelled) this.cb.onStatus(ev.phase)
         break
       case 'meta':
-        // 取消后迟到 meta 不发（r5：曾把取消任务 A 的 model 写上新任务 B 的气泡）
-        if (this.cancelled) break
+        if (this.cancelled) break // 取消后迟到 meta 不发（r5：曾把取消任务 A 的 model 写上新任务 B 的气泡）
         this.meta = {
           model: ev.model ?? this.meta?.model,
           sessionId: ev.sessionId ?? this.meta?.sessionId,
         }
         // 记录会话 → cwd（追问轮 resume 需要同 cwd 才能找到会话）
         if (this.meta.sessionId && this.proc?.cwd) {
+          if (sessionCwds.size > 256) sessionCwds.delete(sessionCwds.keys().next().value) // FIFO 上限：长寿进程不泄漏
           sessionCwds.set(this.meta.sessionId, this.proc.cwd)
         }
         this.cb.onMeta(this.meta)
@@ -306,8 +308,8 @@ export class Task {
         this.usage = ev
         break
       case 'result':
-        // claude 的运行内失败：退出码 0 也判失败（硬约束 #4）
-        if (ev.isError) {
+        if (this.cancelled) break
+        if (ev.isError) { // claude 运行内失败：退出码 0 也判失败（硬约束 #4）
           this.finished = true
           this.doneSent = true
           clearTimeout(this.timeoutTimer)
@@ -372,9 +374,8 @@ export class Task {
     }
   }
 
-  /** CLI 临时工作目录（mkdtemp）回收——固定工作区（stableCwd）与已被会话映射
-   * 记录的 cwd 不删（后续 resume 要用同 cwd）。isError/timeout/spawn 窗口期
-   * cancel 三条终局路径不经过 finish()，各自补调（r4-impl：cwd 曾在此泄漏） */
+  /** CLI 临时工作目录（mkdtemp）回收——固定工作区（stableCwd）与已被会话映射记录的 cwd 不删
+   * （后续 resume 要用同 cwd）。isError/timeout/spawn 窗口期 cancel 不经过 finish()，各自补调（r4-impl） */
   private cleanupCwd(): void {
     const cwd = this.proc?.cwd
     if (cwd && cwd !== stableCwd && ![...sessionCwds.values()].includes(cwd)) {
@@ -387,8 +388,7 @@ export class Task {
     clearTimeout(this.timeoutTimer)
     this.cleanupCwd()
     const durationMs = Date.now() - this.startedAt
-    // 追问轮不建新历史路径（append 首轮文件）
-    if (!this.input.resumeSessionId) {
+    if (!this.input.resumeSessionId) { // 追问轮不建新历史路径（append 首轮文件）
       this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
     }
     // r8-host：只有 cancelled/SIGTERM（reap 专属）算「已取消」；SIGKILL 可能来自 OOM
@@ -403,9 +403,8 @@ export class Task {
       this.cb.onError('parse', `killed by SIGKILL${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}（可能被系统或用户终止）`)
       return
     }
-    // 终局判定（r7-blocker：条件曾写反）：delivered=成功 result 已交付。① exit≠0
-    // 无 result → parse 错误（截断文本不得标成功）；② result 交付后 exit≠0 → 仍按
-    // 成功（硬约束 #4：失败语义在 is_error 不在退出码）；落盘口径与终局帧同式
+    // 终局判定（r7-blocker：条件曾写反）：delivered=成功 result 已交付。① exit≠0 无 result → parse 错误（截断文本
+    // 不得标成功）；② result 交付后 exit≠0 → 仍按成功（硬约束 #4：失败语义在 is_error 不在退出码）
     const delivered = this.gotResultOk && !!this.accText
     const isError = code !== 0 ? !delivered : !this.accText
     await this.persist(isError ? 'error' : 'done')
@@ -425,8 +424,7 @@ export class Task {
     }
   }
 
-  /** 终局回传历史路径：resume 轮用 input 首轮路径；首轮 saveHistory 失败回传空串——
-   * 虚构路径会进 lastSession，追问轮凭空创建孤儿文件（r7-review） */
+  /** 终局回传历史路径：resume 轮用 input 首轮路径；首轮 saveHistory 失败回传空串——虚构路径会让追问轮凭空创建孤儿文件（r7-review） */
   private get effectiveHistoryPath(): string {
     return this.input.historyPath || (this.persistOk ? this.historyPath : '')
   }
@@ -439,12 +437,14 @@ export class Task {
     if (this.input.resumeSessionId) {
       if (this.input.historyPath && this.accText) {
         await appendHistoryTurn(this.input.historyPath, {
-          // r8-ux：纯附件追问轮兜底——空 user 段落盘后恢复会话时该轮凭空消失
+          // r8-ux：纯附件追问轮兜底——空 user 段落盘后恢复会话时该轮凭空消失；
+          // r12：附件以 [Image #N] 标记行落盘（恢复会话可还原带过哪些附件）
           user:
-            this.input.instruction ||
-            (this.input.attachments?.length
-              ? `（附件：${this.input.attachments.map((a) => a.name).join('、')}）`
-              : ''),
+            attachMarkers(this.attachFiles) +
+            (this.input.instruction ||
+              (this.input.attachments?.length
+                ? `（附件：${this.input.attachments.map((a) => a.name).join('、')}）`
+                : '')),
           assistant: this.accText,
         }).catch(logFail)
       }
@@ -462,7 +462,8 @@ export class Task {
         durationMs: Date.now() - this.startedAt,
         sessionId: this.meta?.sessionId,
       },
-      this.accText,
+      // r12：首轮带附件时以 pd:user 段先行落标记（恢复会话时附件轮次可还原）
+      (this.attachFiles.length ? `<!-- pd:user -->\n${attachMarkers(this.attachFiles)}\n` : '') + this.accText,
     )
       .then((actual) => { // 冲突重试换了文件名：终局回传实际路径；成功才置 persistOk
         this.historyPath = actual
@@ -533,8 +534,7 @@ export function buildOutline(content: string): string {
   let total = 0
   let inCode = false
   for (const line of content.split('\n')) {
-    // 代码围栏内的 # 注释行不是标题
-    if (/^```/.test(line)) {
+    if (/^```/.test(line)) { // 代码围栏内的 # 注释行不是标题
       inCode = !inCode
       continue
     }
@@ -542,8 +542,7 @@ export function buildOutline(content: string): string {
     const m = line.match(/^(#{1,3})\s+(.+)$/)
     if (!m) continue
     const indent = '  '.repeat(m[1].length - 1)
-    // 标题文本页面完全可控、未经消毒——「正文只走文件」围栏的唯一旁路。过 sanitizeMeta
-    // 去控制字符/零宽/bidi + 单行化（防逐行铺伪造指令），与 meta 字段同一信任边界
+    // 标题文本页面完全可控、未经消毒——「正文只走文件」围栏的唯一旁路。过 sanitizeMeta 去控制字符/零宽/bidi + 单行化（防逐行铺伪造指令），与 meta 字段同一信任边界
     const item = `${indent}- ${sanitizeMeta(m[2].trim(), 200)}`
     if (total + item.length > 2000 || out.length >= 60) break
     out.push(item)
@@ -561,7 +560,7 @@ export function buildPrompt(
   skills?: { name: string; body: string }[],
   lang?: string,
   outline?: string,
-  attachments?: { name: string; path: string }[],
+  attachments?: { name: string; path: string; kind?: string }[],
 ): string {
   const task =
     workflowBody ||
@@ -570,8 +569,7 @@ export function buildPrompt(
     // 虽仅受信 SW 能发任意 workflow 名，仍不让未校验字符串直拼进 CLI 指令
     `请深度总结这个网页。（workflow: ${sanitizeMeta(workflow, 64)} 未找到，使用默认）`
   const meta = pageMetaLine(page)
-  // 技能段：每个技能一行小标题 + 正文，--- 分隔；用户启用的可选增强指令（风格/输出格式等）
-  const skillsSection = skills?.length
+  const skillsSection = skills?.length // 技能段：每个技能一行小标题 + 正文，--- 分隔；用户启用的可选增强指令（风格/输出格式等）
     ? `\n## 技能\n以下为用户启用的增强指令，在不与任务冲突的前提下遵循：\n\n${skills
         .map((s) => `### ${s.name}\n${s.body}`)
         .join('\n\n---\n\n')}\n`
@@ -579,8 +577,7 @@ export function buildPrompt(
   // 正文导航（可选）：长文 H1-H3 大纲，给 agent 分段读取参考
   const outlineSection =
     outline ? `\n## 正文导航\n以下为正文 H1-H3 标题大纲（无行号，仅供分段读取参考）：\n${outline}\n` : ''
-  // 输出语言（缺省自动）：固定尾部指令，优先级高于技能段
-  const langSection =
+  const langSection = // 输出语言（缺省自动）：固定尾部指令，优先级高于技能段
     lang === 'zh' ? `\n无论正文是什么语言，始终使用中文回答。\n`
     : lang === 'en' ? `\nAlways respond in English, regardless of the page language.\n`
     : ''
@@ -606,12 +603,19 @@ ${task}
 ${langSection}`
 }
 
-/** 附件段：路径给 CLI 自行读取（与正文同一「文件即上下文」模式）。空数组返回空串 */
-export function attachSection(attachments?: { name: string; path: string }[]): string {
+/** 附件段：[Image #N]/[File #N] 编号 + 路径给 CLI 自行读取（与正文同一「文件即上下文」模式；编号与
+ *  panel 气泡 chip、历史标记同源——用户与 CLI 引用同一附件时说的是同一个号）。空数组返回空串 */
+export function attachSection(attachments?: { name: string; path: string; kind?: string }[]): string {
   if (!attachments?.length) return ''
-  return `\n## 附件\n用户随任务附带的参考文件（按需读取）：\n${attachments
-    .map((a) => `- ${sanitizeMeta(a.name, 100)}: ${a.path}`)
+  return `\n## 附件\n用户随任务附带的参考文件（按需读取；引用某附件时用其编号，如 [Image #1]）：\n${attachments
+    .map((a, i) => `- [${a.kind === 'image' ? 'Image' : 'File'} #${i + 1}] ${sanitizeMeta(a.name, 100)}: ${a.path}${a.kind === 'image' ? '（图片文件，请用 Read 工具查看后再作答）' : ''}`)
     .join('\n')}\n`
+}
+
+/** 历史用户轮的附件标记（r12）：恢复会话时 panel 按行还原「带过哪些附件」 */
+export function attachMarkers(attachments?: { name: string; kind?: string }[]): string {
+  if (!attachments?.length) return ''
+  return attachments.map((a, i) => `[${a.kind === 'image' ? 'Image' : 'File'} #${i + 1}] ${a.name}`).join('\n') + '\n'
 }
 
 const DEFAULT_TASKS: Record<string, string> = {

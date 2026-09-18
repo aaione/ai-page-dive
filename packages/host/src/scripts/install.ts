@@ -31,7 +31,7 @@ async function writeHostWrapper(hostEntry: string): Promise<string> {
   const rawNode = process.execPath
   const stableNode = stableNodePath(rawNode)
   const wrapper = join(homedir(), '.ai-page-dive', 'host-wrapper.sh')
-  await mkdir(join(homedir(), '.ai-page-dive'), { recursive: true })
+  await mkdir(join(homedir(), '.ai-page-dive'), { recursive: true, mode: 0o700 })
   // 单引号转义（r7-review）：双引号插值时路径含 $/`/\" 会被 /bin/sh 运行时展开或
   // 破引——hostEntry 经 npm 全局路径含 homedir，特殊字符用户名的防御
   const sq = (p: string) => `'${p.replace(/'/g, "'\\''")}'`

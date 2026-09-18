@@ -15,15 +15,17 @@ const MAX_CONTENT = 200_000
 /** shadow DOM 文本收集：cloneNode/innerText 都进不去 shadow root，正文整体渲染
  * 在 shadow 里的站点会拿到壳。深度受限防深嵌套 DoS（采集器跑在页面进程里） */
 function collectShadowText(root: Element, depth = 0): string {
-  if (depth > 20) return ''
-  let out = ''
+  // r9-review：原实现只递归不读文本，恒返回空串（兜底链 no-op）。基座改为
+  // textContent——light DOM 文本 + 各 shadow root 递归拼接；截断与主链一致
+  if (depth > 20) return (root.textContent ?? '').slice(0, MAX_CONTENT)
+  let out = root.textContent ?? ''
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT)
   let el: Element | null
   while ((el = walker.nextNode() as Element | null)) {
     const sr = (el as HTMLElement).shadowRoot
     if (sr) out += `\n${collectShadowText(sr as unknown as Element, depth + 1)}`
   }
-  return out.trim()
+  return out.slice(0, MAX_CONTENT).trim()
 }
 
 // SW 经 executeScript(func) 直调 globalThis.__pagediveExtract（绕开 tabs.sendMessage

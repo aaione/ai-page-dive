@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readdir, readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { assertValidWorkflowName, buildWorkflowMd, parseWorkflow } from '../src/workflows.js'
 import { parseSkillMd } from '../src/skills.js'
 
@@ -36,6 +38,23 @@ describe('workflow 纯函数', () => {
   it('parseWorkflow：无 frontmatter / 空正文返回 undefined', () => {
     expect(parseWorkflow('no frontmatter', 'x', false)).toBeUndefined()
     expect(parseWorkflow('---\ndescription: d\n---\n', 'x', false)).toBeUndefined()
+  })
+})
+
+describe('内置 workflow 数据回归', () => {
+  // r9-review：坏 frontmatter 会被 listWorkflows 的 catch 静默吞掉——workflow 直接
+  // 从面板消失且无痕；此测试守住 builtins/ 数据完整性（humanize 此前仅手工验证）
+  it('builtins/ 每个 WORKFLOW.md 均可解析且 description/body 非空', async () => {
+    const dir = fileURLToPath(new URL('../builtins', import.meta.url))
+    const entries = (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory())
+    expect(entries.length).toBeGreaterThanOrEqual(4)
+    for (const e of entries) {
+      const raw = await readFile(`${dir}/${e.name}/WORKFLOW.md`, 'utf8')
+      const wf = parseWorkflow(raw, e.name, true)
+      expect(wf, e.name).toBeDefined()
+      expect(wf!.description.length, e.name).toBeGreaterThan(0)
+      expect(wf!.body.length, e.name).toBeGreaterThan(0)
+    }
   })
 })
 
