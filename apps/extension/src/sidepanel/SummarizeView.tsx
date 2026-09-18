@@ -10,7 +10,7 @@ interface Props {
   agentId: string
   onAgentChange: (id: string) => void
   onStartResult: (resp: { error?: string; [k: string]: unknown }) => void
-  beginTurn: (text: string) => void
+  beginTurn: (text: string, attachments?: { name: string; kind?: 'text' | 'image' }[]) => void
   beginSession: () => void
   pageMeta: PageMeta | null
   /** 会话是否可追问（CLI 回带过 sessionId）：codex 无 sessionId → false，关掉假追问入口 */
@@ -21,6 +21,9 @@ interface Props {
   /** 当前锚定页不可提取（chrome:// 等）：placeholder 前置说明（r8-ux） */
   pageUnsupported?: boolean
 }
+
+/** 待发送附件（r12：文本走 text、图片走 b64——host 落盘 ~/.ai-page-dive/attachments 持久化） */
+type Att = { name: string; kind: 'text' | 'image'; text?: string; b64?: string; mime?: string }
 
 /** 读 localStorage 的 JSON string[]（容错：坏数据/非数组一律回退默认） */
 function readList(key: string, fallback: string[] = []): string[] {
@@ -86,8 +89,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const messages = stream.messages
   const [workflow, setWorkflow] = useState('default')
   const [input, setInput] = useState('')
-  /** 待发送附件（文本，≤512KB/个）：随下一次 send 走 task-start，发完即清 */
-  const [attachments, setAttachments] = useState<{ name: string; text: string }[]>([])
+  /** 待发送附件（文本 ≤512KB/个、图片 ≤5MB/个）：随下一次 send 走 task-start，发完即清 */
+  const [attachments, setAttachments] = useState<Att[]>([])
   /** 附件跳过提示（超限/读失败）：下一条 notice 类消息展示后清除 */
   const [attachNotice, setAttachNotice] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -140,6 +143,20 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   // running：首帧已到（activeId）或 send 后等首帧（pending——SW 提取往返窗口，
   // 该窗口曾无反馈且双发门失效，重页秒级）
   const running = stream.activeId !== null || stream.pending
+
+  // 流式跟随滚动（聊天产品基线）：用户在底部（距底 <48px）时每个 chunk 自动
+  // 跟滚；一旦上滚回看即停跟随——不打断阅读，也不强迫用户每帧手动拖。
+  // 初始 stick=true：新会话/新消息发出时永远从底部开始
+  const contentRef = useRef<HTMLDivElement>(null)
+  const stickRef = useRef(true)
+  useEffect(() => {
+    const el = contentRef.current
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight
+  }, [messages])
+  const onContentScroll = useCallback(() => {
+    const el = contentRef.current
+    if (el) stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+  }, [])
   // hasSession 需 CLI 可追问（resumable：回带过 sessionId）——codex 无 sessionId 时
   // 有完整回答但不可 resume，显示「继续追问…」会让追问必得 session-lost（误导）。
   // reopened（r7-ux）：面板重开但 SW 侧活会话健在——React 态丢不代表 CLI 会话丢，
@@ -156,14 +173,16 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         (order[a.name] ?? (9 + a.name.localeCompare(b.name))) -
         (order[b.name] ?? (9 + b.name.localeCompare(b.name))),
       )
-    return [{ name: 'default', description: '按输入框内容执行；留空则快速摘要', builtin: true }, ...rest]
+    // 「留空则深度研读」与发送侧对齐（workflow==='default' → 'deep'）：曾写
+    // 「留空则快速摘要」，用户按文案留空预期快速档，实际跑最慢最贵的 deep
+    return [{ name: 'default', description: '按输入框内容执行；留空则深度研读', builtin: true }, ...rest]
   }, [workflows])
 
   /** 发送失败回填（r7-ux）：错误属于本轮时把输入/附件回填输入框（可改后重发），
    * 不回填则用户得凭记忆重敲。判据与 App 的迟到回调守卫同向（r7-review）：
    * 带 taskId 的错误与当前绑定比对（旧轮 taskId≠当前 → 新一轮运行中，旧文本
    * 不得覆写用户预输入）；无 taskId（SW 提取期即失败）要求本轮仍 pending */
-  function refillOnFailure(resp: { error?: string; taskId?: string }, text: string, atts: { name: string; text: string }[]) {
+  function refillOnFailure(resp: { error?: string; taskId?: string }, text: string, atts: Att[]) {
     return () => {
       const s = streamRef.current
       const mine = typeof resp.taskId === 'string' ? resp.taskId === s.taskId : s.pending
@@ -175,18 +194,20 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
 
   function send() {
     const text = input.trim()
-    if ((!text && !attachments.length) || running || !usable.length) return
-    // 附件-only 轮的展示与发送指令同文（r8-review：显示与执行一致——气泡显示
-    // 「（附件：x）」而 instruction 发空串，CLI 收到的与用户看到的不是一回事）
-    const shown = text || `（附件：${attachments.map((a) => a.name).join('、')}）`
-    beginTurn(shown)
+    // 空文本 + 空附件 + 无正文才拦：有正文时空输入 = 一键总结当前页（P0，修复
+    // 「一键总结」承诺断裂）；有输入/附件 = 追问轮（正文可能已不可用，不拦）
+    if ((!text && !attachments.length && !usable.length) || running) return
+    // r12：附件以 chip 展示在用户气泡上方（对齐用户期望形态），气泡文本只放用户
+    // 输入；附件-only 轮 instruction 仍发占位文本（r8-review：显示与执行一致，
+    // host 侧追问轮空 user 段会凭空消失）
+    beginTurn(text, attachments.map((a) => ({ name: a.name, kind: a.kind })))
     setAttachNotice('') // 提示已在输入区即时展示（r4-ux F3），发送即消费
     setInput('')
     const atts = attachments
     setAttachments([])
     const skills = getEnabledSkills()
-    // 追问轮无 workflow 兜底：附件-only 时 instruction 用与气泡一致的占位文本；
-    // 首轮保持空串——host 侧 `instruction || wfBody` 落默认摘要指令，比占位文本更有用
+    // 追问轮无 workflow 兜底：附件-only 时 instruction 用占位文本；首轮保持空串——
+    // host 侧 `instruction || wfBody` 落默认摘要指令，比占位文本更有用
     const instruction = text || (atts.length ? `（附件：${atts.map((a) => a.name).join('、')}）` : '')
     if (hasSession) {
       // 追问轮：agentId 由 SW 按会话归属决定，响应回带实际值——头部展示同步
@@ -201,7 +222,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         },
       )
     } else {
-      const wf = workflow === 'default' ? 'quick' : workflow
+      // 未显式选模式时默认 deep（DECISIONS D1「深度总结质量最优先」）；quick 留作显式选择
+      const wf = workflow === 'default' ? 'deep' : workflow
       chrome.runtime.sendMessage(
         { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined, attachments: atts },
         (resp) => {
@@ -214,40 +236,60 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     }
   }
 
-  /** 附件选择：读文本（>512KB 或读失败标红提示并跳过）；二进制/图片不在 v1 范围。
-   * 数量截断与超限/读失败同源提示（r4-ux）：静默丢弃 = 用户不知道附件没带上 */
+  /** 附件选择（r12 支持图片）：图片 image/* 读 b64（≤5MB/个，总量 ≤12MB——
+   * ext→host 方向 NM 帧限额宽松，但组帧内存与 CLI 上下文都要设防）；文本沿用
+   * 512KB/个。超限/读失败标红提示并跳过（r4-ux）：静默丢弃 = 用户不知道附件没带上 */
   async function pickAttachments(files: FileList | null) {
     if (!files?.length) return
     const all = Array.from(files)
-    const next: { name: string; text: string }[] = []
+    const next: Att[] = []
     const skipped: string[] = []
+    const IMG_MAX = 5 * 1024 * 1024
+    const IMG_TOTAL = 12 * 1024 * 1024
+    const readB64 = (f: File) =>
+      new Promise<string>((resolve, reject) => {
+        const r = new FileReader()
+        r.onload = () => resolve(String(r.result).split(',')[1] ?? '')
+        r.onerror = () => reject(r.error)
+        r.readAsDataURL(f)
+      })
     for (const f of all.slice(0, 5)) {
-      if (f.size > 512 * 1024) {
-        skipped.push(`${f.name}（超过 512KB）`)
+      const isImage = f.type.startsWith('image/')
+      if (isImage ? f.size > IMG_MAX : f.size > 512 * 1024) {
+        skipped.push(`${f.name}（超过 ${isImage ? '5MB' : '512KB'}）`)
         continue
       }
-      try { next.push({ name: f.name, text: await f.text() }) }
-      catch { skipped.push(`${f.name}（读取失败）`) }
+      try {
+        next.push(isImage ? { name: f.name, kind: 'image', b64: await readB64(f), mime: f.type } : { name: f.name, kind: 'text', text: await f.text() })
+      } catch { skipped.push(`${f.name}（读取失败）`) }
     }
     // 单批第 6+ 与合并累计超限都不静默（handler 闭包的 attachments 即当前快照）
     for (const f of all.slice(5)) skipped.push(`${f.name}（单批最多 5 个）`)
     let merged = [...attachments, ...next]
     for (const f of merged.slice(5)) skipped.push(`${f.name}（附件已达 5 个上限）`)
     merged = merged.slice(0, 5)
-    // 附件总字节预算（r5-sec）：task-start 帧内嵌全量附件文本，无预算时 3×500KB
-    // 即组出 >1MB 帧击穿 NM 上限（host 侧超限终结兜底，此处是第一道防线）。
-    // r6-sec：曾用 .length（UTF-16 码元）计量——中文 1 码元 = UTF-8 3 字节，
-    // 768KB 预算下纯中文附件实际可组出 >2MB 帧照样击穿。r7-sec：TextEncoder 计
-    // 裸 UTF-8 仍漏算 JSON 转义膨胀（\ " 控制字符最坏 6x/字符）——与 host 侧
-    // sendChunk 同口径：按 JSON.stringify 后的字节计量，注释「与 NM 帧序列化
-    // 口径一致」至此真正成立（与 sw.ts 分片循环同款）
+    // 图片总量预算（b64 后近似 4/3 膨胀，按原始 size 计；逐个累加，超出才跳过）
+    let imgUsed = 0
+    const withinImg: Att[] = []
+    for (const a of merged) {
+      if (a.kind !== 'image') { withinImg.push(a); continue }
+      const size = Math.round((a.b64?.length ?? 0) * 0.75)
+      if (imgUsed + size > IMG_TOTAL) { skipped.push(`${a.name}（图片总量超 12MB 上限）`); continue }
+      imgUsed += size
+      withinImg.push(a)
+    }
+    // 文本总字节预算（r5-sec）：task-start 帧内嵌全量文本附件，无预算时 3×500KB
+    // 即组出 >1MB 击穿 NM 上限（host 侧超限终结兜底，此处是第一道防线）。
+    // r7-sec：按 JSON.stringify 后的字节计量（\ " 控制字符最坏 6x/字符），与
+    // host 侧 sendChunk 同口径
     const BUDGET = 768 * 1024
     const utf8Len = (s: string) => new TextEncoder().encode(JSON.stringify(s)).length
     let used = 0
-    const withinBudget: typeof merged = []
-    for (const a of merged) {
-      const bytes = utf8Len(a.text)
-      if (used + bytes > BUDGET) { skipped.push(`${a.name}（附件总量超 768KB 上限）`); continue }
+    const withinBudget: Att[] = []
+    for (const a of withinImg) {
+      if (a.kind !== 'text') { withinBudget.push(a); continue }
+      const bytes = utf8Len(a.text ?? '')
+      if (used + bytes > BUDGET) { skipped.push(`${a.name}（文本附件总量超 768KB 上限）`); continue }
       used += bytes
       withinBudget.push(a)
     }
@@ -331,7 +373,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         />
       </div>
 
-      <div className="pd-content" role="region" aria-live="polite">
+      <div className="pd-content" role="region" aria-live="polite" ref={contentRef} onScroll={onContentScroll}>
         {stream.reopened && !running && (
           // r7-ux：切 tab 面板收起后重开，React 态已丢但 SW 侧活会话健在——明示
           // 此前对话去哪了（不静默空白），且追问可接续原会话上下文（canFollowUp 已放开）
@@ -343,7 +385,31 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         {messages.map((m) =>
           m.role === 'user' ? (
             <div key={m.id} className="pd-chat-user">
-              <p>{m.text}</p>
+              {/* r12：附件 chip 嵌在用户消息上方（对齐 Gemini 侧栏形态）——发送前
+                  输入区有 chip、发送后气泡里有 chip，附件全程可见不再「凭空消失」 */}
+              {!!m.attachments?.length && (
+                <div className="pd-msg-attaches">
+                  {m.attachments.map((a, i) => (
+                    <span key={a.name + i} className="pd-msg-attach" title={a.name}>
+                      {a.kind === 'image' ? (
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+                          <circle cx="5.8" cy="6.2" r="1.1" />
+                          <path d="m2.5 12 3.4-3.4 2.4 2.4 2.3-2.3 2.9 2.9" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M13.5 6.5v5a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h5L6.5 6 11 10.5 14 7.5l.5-1Z" />
+                          <path d="M9 2.5 13.5 7l-2.5 2.5L6.5 5 9 2.5Z" />
+                        </svg>
+                      )}
+                      <span className="pd-msg-attach-name">{a.name}</span>
+                      <span className="pd-msg-attach-kind">{a.kind === 'image' ? '图片' : '文件'}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {!!m.text && <p>{m.text}</p>}
             </div>
           ) : (
             <AssistantMessage
@@ -366,10 +432,18 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           <div className="pd-attach-chips">
             {attachments.map((a, i) => (
               <span key={a.name + i} className="pd-attach-chip" title={a.name}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M13.5 6.5v5a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h5L6.5 6 11 10.5 14 7.5l.5-1Z" />
-                  <path d="M9 2.5 13.5 7l-2.5 2.5L6.5 5 9 2.5Z" />
-                </svg>
+                {a.kind === 'image' ? (
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+                    <circle cx="5.8" cy="6.2" r="1.1" />
+                    <path d="m2.5 12 3.4-3.4 2.4 2.4 2.3-2.3 2.9 2.9" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M13.5 6.5v5a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h5L6.5 6 11 10.5 14 7.5l.5-1Z" />
+                    <path d="M9 2.5 13.5 7l-2.5 2.5L6.5 5 9 2.5Z" />
+                  </svg>
+                )}
                 {a.name}
                 <button aria-label={`移除附件 ${a.name}`} onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}>×</button>
               </span>
@@ -387,10 +461,16 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           input={input}
           workflowNotice={
             // r5-ux：host 语义是 instruction 优先（既定设计），但顶栏仍显示模式已
-            // 选中——不告知则用户以为模式生效，实际执行等价默认
-            input.trim() && workflow !== 'default' && workflow !== 'quick'
+            // 选中——不告知则用户以为模式生效，实际执行等价默认。
+            // r11：追问轮不走路由 workflow（上下文在 CLI 会话），提示不适用
+            input.trim() && !hasSession && workflow !== 'default' && workflow !== 'quick'
               ? `自定义问题将替代「${WF_LABEL[workflow] ?? workflow}」模式指令`
               : undefined
+          }
+          noFollowUpHint={
+            // r9-backlog：codex 等无 sessionId 的 CLI 定稿后，输入框仍暗示可续问——
+            // 不提示则追问预期落空。!resumable && 有完成答案精确区分 claude 首轮
+            !running && !resumable && messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text)
           }
           onInputChange={setInput}
           inputRef={inputRef}
@@ -442,7 +522,7 @@ function WorkflowDropdown({
       <button
         onClick={() => setWorkflowOpenGuarded()}
         disabled={hasSession}
-        aria-label="选择总结模式"
+        aria-label="选择模式"
         aria-haspopup="listbox"
         aria-expanded={open}
         title={hasSession ? '追问沿用首轮模式' : undefined}
@@ -494,7 +574,9 @@ function AssistantMessage({
   return (
     <div className="pd-chat-assistant">
       <div className="pd-chat-assistant-head">
-        <span className="pd-chat-model pd-mono">{agentId}</span>
+        {/* CLI 名是产品名非技术标识——sans 500（r13 字体统一：mono 只留给
+            version/model/token 数等机器量；曾用 pd-mono 与模式下拉/触发器不协调） */}
+        <span className="pd-chat-model">{agentId}</span>
         {/* r8-ux：订阅用量可见性——产品核心卖点是「复用你自己的 CLI 订阅」，每轮烧多少 token 应有出口 */}
         {!running && (msg.usage || msg.durationMs) && (
           <span className="pd-chat-usage pd-mono">
@@ -537,7 +619,7 @@ function AssistantMessage({
             <path d="M8 7.4v3" />
             <path d="M8 4.9v.1" />
           </svg>
-          <span>内容可能不完整（传输中断片）——如觉缺头少尾，请重试</span>
+          <span>内容可能不完整（面板重开或传输丢片）——完整版已存入历史</span>
         </div>
       )}
       {!running && msg.text && (
@@ -567,14 +649,16 @@ function MessageActions({ text, onNewChat }: { text: string; onNewChat: () => vo
   }
   return (
     <div className="pd-chat-actions">
-      <button onClick={copy} className="pd-chat-action-btn" title={copied ? '已复制' : '复制'} aria-label="复制">
+      {/* r12 回退：复制回 icon 形态（r11 曾升文字主按钮，用户反馈突兀——三 icon
+          工具栏与竞品基线一致）；已复制态 icon 换 ✓ + tooltip 反馈 */}
+      <button onClick={copy} className="pd-chat-action-btn" title={copied ? '已复制 ✓' : '复制全文'} aria-label="复制全文">
         {copied ? (
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m3 8.5 3.2 3L13 4.5" />
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m3 8.5 3.2 3.2L13 5" />
           </svg>
         ) : (
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1" />
             <path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" />
           </svg>
         )}
@@ -659,7 +743,8 @@ export function ModelDropdown({
                 className={`pd-dropdown-item ${it.key === value ? 'selected' : ''}`}
               >
                 {it.key === value && <span className="pd-dropdown-check" aria-hidden="true" />}
-                <span className="pd-dropdown-item-label pd-mono">{it.label}</span>
+                {/* CLI 名 sans（与模式下拉 item 一致）；version/model 保持 mono（机器量） */}
+                <span className="pd-dropdown-item-label">{it.label}</span>
                 {it.version && <span className="pd-dropdown-item-hint pd-mono">{it.version}</span>}
                 {it.model && <span className="pd-dropdown-item-hint pd-mono pd-dropdown-item-model">{it.model}</span>}
               </button>
@@ -672,13 +757,15 @@ export function ModelDropdown({
 }
 
 function ActionBar({
-  input, workflowNotice, onInputChange, inputRef,
+  input, workflowNotice, noFollowUpHint, onInputChange, inputRef,
   running, usableCount, hasSession,
   onStart, onCancel, onAttach, attachCount, attachRef, onPickFiles,
 }: {
   input: string
   /** 非空 = 输入自定义问题时提示所选模式将被替代（r5-ux） */
   workflowNotice?: string
+  /** true = 当前 CLI 定稿后不可追问（codex 无 sessionId），输入框旁提示新提问独立成轮 */
+  noFollowUpHint?: boolean
   onInputChange: (v: string) => void
   inputRef: React.RefObject<HTMLTextAreaElement | null>
   running: boolean
@@ -694,8 +781,13 @@ function ActionBar({
   return (
     <div className="pd-action-bar-inner">
       {workflowNotice && (
-        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice, #8a6d3b)' }}>
+        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice, #E3BE7F)' }}>
           ⚠ {workflowNotice}
+        </p>
+      )}
+      {noFollowUpHint && (
+        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice, #E3BE7F)' }}>
+          此 CLI 暂不支持追问：新提问将开始全新总结（不含以上对话）
         </p>
       )}
       <button
@@ -703,7 +795,7 @@ function ActionBar({
         // r7-review：与输入框同放开——附件仅暂存不触发任务，运行中预备下一问
         disabled={attachCount >= 5}
         aria-label="添加附件"
-        title="添加附件（文本文件，≤5 个）"
+        title="添加附件（文本/图片，≤5 个）"
         className="pd-attach-btn"
       >
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -714,7 +806,7 @@ function ActionBar({
         ref={attachRef}
         type="file"
         multiple
-        accept=".txt,.md,.markdown,.json,.csv,.log,.xml,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.go,.rs,.java,.c,.cpp,.h,.css,.html,text/*"
+        accept=".txt,.md,.markdown,.json,.csv,.log,.xml,.yaml,.yml,.ts,.tsx,.js,.jsx,.py,.go,.rs,.java,.c,.cpp,.h,.css,.html,text/*,image/*"
         className="pd-attach-file"
         onChange={(e) => onPickFiles(e.target.files)}
         tabIndex={-1}
@@ -727,7 +819,7 @@ function ActionBar({
         onKeyDown={(e) => {
           // Enter 发送 / Shift+Enter 换行（r8-ux：多行输入是竞品基线体验）。
           // keyCode 229：部分 IME（韩文等）compositionend 先于 keydown，isComposing 已 false
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229 && !running && usableCount) {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229 && !running && (usableCount || input.trim() || attachCount)) {
             e.preventDefault()
             onStart()
           }
@@ -742,7 +834,7 @@ function ActionBar({
 
       <button
         onClick={running ? onCancel : onStart}
-        disabled={!running && (!usableCount || (!input.trim() && !attachCount))}
+        disabled={!running && !usableCount && !input.trim() && !attachCount}
         aria-label={running ? '停止' : '发送'}
         title={running ? '停止' : '发送'}
         className={`pd-primary-btn ${running ? 'running' : ''}`}
@@ -791,6 +883,11 @@ function PageTips({ meta }: { meta: PageMeta }) {
       {meta.notice && (
         <span className="pd-page-tips-notice" title={meta.notice}>
           ⚠ {meta.notice}
+        </span>
+      )}
+      {!!meta.approxTokens && (
+        <span className="pd-page-tips-notice" title="正文体量估算，用量计入你的 CLI 订阅">
+          ≈{meta.approxTokens >= 10000 ? `${(meta.approxTokens / 10000).toFixed(1)}万` : meta.approxTokens} tokens
         </span>
       )}
     </div>
@@ -859,4 +956,5 @@ const WF_LABEL: Record<string, string> = {
   quick: '快速摘要',
   deep: '深度研读',
   paper: '论文模式',
+  humanize: '去 AI 味改写',
 }

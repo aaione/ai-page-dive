@@ -11,15 +11,24 @@ import type { AgentStatus, ExtToHost, HostToExt, PageContent } from '@ai-page-di
 // 静默无响应，症状是「按钮无反应」——在 panel-ready 时一次说清而不是让用户猜
 const MIN_HOST_VERSION = '0.1.0'
 
+/** 面板 → SW → host 的附件载荷（r12：图片走 b64——host 落盘持久化，文本走 text） */
+type AttachMsg = { name: string; text?: string; b64?: string; mime?: string; kind?: 'text' | 'image' }
+
 function versionLt(a: string, b: string): boolean {
-  const [a1, a2, a3] = a.split('.').map(Number)
-  const [b1, b2, b3] = b.split('.').map(Number)
+  // parseInt || 0：预发布号（0.1.0-beta）的 Number() 是 NaN，比较恒 false 会
+  // 静默丢失 outdated 提示——NaN 归 0 让比较始终有定义
+  const n = (s: string) => parseInt(s, 10) || 0
+  const [a1, a2, a3] = a.split('.').map(n)
+  const [b1, b2, b3] = b.split('.').map(n)
   return a1 !== b1 ? a1 < b1 : a2 !== b2 ? a2 < b2 : a3 < b3
 }
 
 // ponytail: 单任务状态（SW 可能重启丢内存态，重启后靠 panel 重新 ping 恢复 UI）
 let currentTask: {
   taskId: string
+  /** 任务源页签（r12）：会话归档 + 任务帧路由都按它——面板换锚到别的页签后，
+   * 旧任务的流不得漏进新面板（用户看到的 loading 必属当前页签） */
+  tabId: number
   page: Omit<PageContent, 'contentMarkdown'>
   /** 正文发送完成后即清空——SW 常驻数 MB 死重只会抬高被回收概率 */
   content: string
@@ -29,12 +38,15 @@ let currentTask: {
   startedAt: number
 } | null = null
 
-// 上一轮完成的会话（追问用）：agent + CLI 会话 id + 首轮历史文件路径。
+// 各页签最近完成的会话（追问用）：agent + CLI 会话 id + 首轮历史文件路径。
+// r12 按页签归档：会话跟「总结目标页签」走——A 页签的会话绝不串进 B 页签的
+// 新对话（B 独立开新总结），切回 A 追问仍接原会话。tab 关闭即清理。
 // historyPath：追问轮 append 进同一文件——历史详情还原完整多轮对话。
 // 同步持久化到 chrome.storage.session：MV3 SW 30s 空闲即回收，纯内存态在
 // 「看完总结 → 隔一分钟追问」场景下必丢（session-lost）。storage.session 随
-// 浏览器会话存活，SW 冷启动时恢复（restoreState）。
-let lastSession: { agentId: string; sessionId: string; historyPath?: string } | null = null
+// 浏览器会话存活，SW 冷启动时恢复（restoreSession）。
+type Session = { agentId: string; sessionId: string; historyPath?: string }
+const sessions = new Map<number, Session>()
 // 当前任务用的 agent（task-meta 到达时此刻的 agent 即会话归属）
 let currentAgentId = 'claude'
 // 会话态是否已被本 SW 生命周期内的显式动作（summarize/resume-history/new-session）触碰。
@@ -47,7 +59,7 @@ let sessionTouched = false
  * 绝不让持久化异常打断 host 帧转发链 */
 function persistSession() {
   try {
-    chrome.storage?.session?.set({ lastSession, currentAgentId, lastModels: [...lastModels] } as any)?.catch?.(() => {})
+    chrome.storage?.session?.set({ sessions: [...sessions.entries()], currentAgentId, lastModels: [...lastModels], panelTabId, panelWindowId, disabledTabs: [...disabledTabs] } as any)?.catch?.(() => {})
   } catch { /* 无 storage 权限：退化纯内存 */ }
 }
 // SW 顶层不能 await（listener 注册必须同步）——恢复放微任务。handleMessage 的
@@ -55,13 +67,19 @@ function persistSession() {
 void restoreSession()
 async function restoreSession() {
   try {
-    const s = (await chrome.storage?.session?.get?.(['lastSession', 'currentAgentId', 'lastModels'])) as Record<string, any> | undefined
+    const s = (await chrome.storage?.session?.get?.(['sessions', 'currentAgentId', 'lastModels', 'panelTabId', 'panelWindowId'])) as Record<string, any> | undefined
     // 已被显式动作触碰（含 new-session 清空）则不恢复会话/agent——旧持久化态不得复活。
     // lastModels 是纯展示缓存，逐 key 补全无害，不受 touched 约束
     if (!sessionTouched) {
-      if (s?.lastSession) lastSession = s.lastSession
+      if (Array.isArray(s?.sessions)) for (const [k, v] of s.sessions) if (typeof k === 'number' && v?.sessionId) sessions.set(k, v)
       if (s?.currentAgentId) currentAgentId = s.currentAgentId
     }
+    // 锚定态恢复（r9-backlog：SW 回收后 onActivated 不知该 unanchor 谁，切 tab 面板
+    // 不再收起——锚定承诺失效直到重点图标）。锚定非会话语义，不受 touched 约束；
+    // tab 已关的场景由 setOptions 的 catch 兜底，无害
+    if (typeof s?.panelTabId === 'number') panelTabId = s.panelTabId
+    if (typeof s?.panelWindowId === 'number') panelWindowId = s.panelWindowId
+    if (Array.isArray(s?.disabledTabs)) for (const id of s.disabledTabs) if (typeof id === 'number') disabledTabs.add(id)
     if (Array.isArray(s?.lastModels)) for (const [k, v] of s.lastModels) if (!lastModels.has(k)) lastModels.set(k, v)
   } catch { /* 无 storage 权限：退化纯内存 */ }
 }
@@ -101,28 +119,66 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((e: u
 // 恢复代价：切回锚定 tab 面板不会自动弹出（open 需用户手势），重点一次图标。
 
 // 面板归属的 tab（点开面板的那次 action 点击所在页）。总结目标 = 该 tab，
-// 不随用户切换 tab 而跟随变化。
+// 不随用户切换 tab 而跟随变化。panelWindowId：锚所在窗口（跨窗口不拆台判断）。
+// 两者随锚定变更持久化到 storage.session（SW 回收后恢复，见 restoreSession）
 let panelTabId: number | null = null
+let panelWindowId: number | null = null
+// 已 disable 的 tab 记账（r13）：幂等键——避免每次 onActivated 都对整窗口重发
+// setOptions。随 panelTabId 一起持久化 storage.session（浏览器关闭与 Chrome 侧
+// per-tab options 同步清空，不跨会话残留）
+const disabledTabs = new Set<number>()
 
 /** 锚定/解除锚定：enable 面板所在 tab、disable 其他 tab（锚定语义的落地开关）。
  * setOptions 被拒是真异常（tab 已关/老 Chrome），静默会让面板收起行为失效无痕 */
 function anchorPanel(tabId: number) {
+  disabledTabs.delete(tabId)
   chrome.sidePanel.setOptions({ tabId, path: 'sidepanel.html', enabled: true }).catch((e: unknown) => {
     console.warn('[pd] anchorPanel setOptions failed:', e)
   })
 }
 function unanchorPanel(tabId: number) {
+  disabledTabs.add(tabId)
   chrome.sidePanel.setOptions({ tabId, enabled: false }).catch((e: unknown) => {
     console.warn('[pd] unanchorPanel setOptions failed:', e)
   })
 }
 
+/** 预 disable（r13 根治「切 tab 面板首次不收起」）：Chrome 在切换瞬间读目标 tab
+ *  的 per-tab options 决定面板显隐——此前靠 onActivated 事后 disable，而 setOptions
+ *  落定时面板已按默认（enabled）显示，Chrome 不追溯收起，于是每个 tab 首次切到
+ *  必不收起、第二次才收起。改为锚定存续期把（锚窗口）所有非锚 tab 提前 disable，
+ *  切换决策时刻 tab 已是 disabled，首次即收起。切回锚定 tab 面板恢复显示是
+ *  Chrome 的 per-tab 面板状态原生行为。⚠️ 只 per-tab，绝不动全局默认 setOptions
+ *  （全局关死会废掉 sidePanel.open 的前置，r8 真机实证） */
+async function ensureTabsDisabled() {
+  if (panelTabId === null) return
+  const tabs = await chrome.tabs.query(panelWindowId == null ? {} : { windowId: panelWindowId }).catch(() => [] as chrome.tabs.Tab[])
+  for (const t of tabs) {
+    if (t.id == null || t.id === panelTabId || disabledTabs.has(t.id)) continue
+    unanchorPanel(t.id)
+  }
+}
+
+/** 任务/页面帧发面板。r12 曾按锚定/任务源 tab 用 tabs.sendMessage 定向——
+ * sidePanel 不是 tab 帧（不含 content script），任务帧 100% 送不到（真机实证：
+ * CLI 跑完落盘、面板永 loading）。sidePanel 唯一可靠通路是 runtime 广播；
+ * panel 侧 finished/taskId 台账已把迟到/跨任务帧的拒收兜住。真正的定向
+ * （换锚后旧任务流不漏进新面板、跨窗口双面板互不劫持）需 port 架构，v2 再做 */
+function sendToPanel(m: unknown): void {
+  chrome.runtime.sendMessage(m).catch(() => {})
+}
+
 chrome.action.onClicked.addListener((tab) => {
-  // 换 tab 开面板 = 换锚：旧锚定 tab 解除 disable
-  if (panelTabId !== null && panelTabId !== tab.id) unanchorPanel(panelTabId)
+  // 换 tab 开面板 = 换锚：旧锚定 tab 解除 disable。跨窗口例外（r9-backlog）：
+  // 双窗口各自开面板是合法形态，另一窗口的锚不拆台（面板不强制收起）
+  if (panelTabId !== null && panelTabId !== tab.id && panelWindowId === tab.windowId) unanchorPanel(panelTabId)
   target = tab
   panelTabId = tab.id ?? null
+  panelWindowId = tab.windowId ?? null
+  persistSession()
   if (tab.id != null) anchorPanel(tab.id)
+  // 面板开张即把本窗口其余 tab 预 disable（r13）：之后每次切 tab 首次即收起
+  void ensureTabsDisabled()
   // 直接 open：不夹 setOptions / 不吞错。open 要求 user gesture（onClicked 自带）
   chrome.sidePanel.open({ tabId: tab.id! }).catch((e: unknown) => {
     console.warn('[pd] sidePanel.open failed:', e)
@@ -131,18 +187,35 @@ chrome.action.onClicked.addListener((tab) => {
 
 const isNormalPage = (u?: string) => !!u && !/^(chrome|edge|about|chrome-extension|devtools|view-source|file|data|blob):/.test(u)
 
-// 切 tab：离开锚定 tab → 该 tab 面板 disabled，Chrome 自动收起面板；
+// 切 tab：离开锚定 tab → 非 anchor tab 面板 disabled，Chrome 自动收起面板；
 // 切回锚定 tab → 刷新 page-meta（tips 条同步，导航后 meta 可能已变）。
-chrome.tabs.onActivated.addListener(({ tabId }) => {
+// r12：先 await restoreSession——SW 冷启动竞态下 panelTabId 尚为 null，早退分支
+// 会吞掉 unanchor，切 tab 面板不收起（A 页签的 loading 流继续显示在 B 页签）
+// r13：单点 unanchor 收敛为 ensureTabsDisabled——它涵盖「本次激活的 tab」并补齐
+// 历史遗漏（预 disable 语义），windowId 过滤同理只在锚窗口/无窗口态时收
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
+  await restoreSession()
   if (panelTabId === null || panelTabId === tabId) {
     if (panelTabId === tabId) {
       // 面板未开时无接收端是常态（用户收起了面板），静默即可——勿改成 warn 刷屏
       // r8-review：附 pageUnsupported——切 tab 后 placeholder 与当前页事实一致
-      chrome.runtime.sendMessage({ t: 'page-meta', page: pageMeta(), pageUnsupported: !pageMeta() }).catch(() => {})
+      sendToPanel({ t: 'page-meta', page: pageMeta(), pageUnsupported: !pageMeta() })
     }
     return
   }
-  unanchorPanel(tabId)
+  // 只收锚所在窗口的 tab：其他窗口的 tab 不 disable（跨窗口不拆台，r9-backlog）。
+  // panelWindowId 缺失（旧持久化态）时宁可收起——页签独立是硬诉求，收起是安全方向
+  if (panelWindowId === null || windowId === panelWindowId) {
+    if (!disabledTabs.has(tabId)) unanchorPanel(tabId)
+    void ensureTabsDisabled()
+  }
+})
+// 锚定存续期新建的 tab 预 disable（r13）：Ctrl+T 新建即切过去，onActivated 时
+// setOptions 已落定，首次即收起。同窗口过滤——他窗口新 tab 不拆台（r9-backlog）
+chrome.tabs.onCreated.addListener((tab) => {
+  if (panelTabId !== null && tab.id != null && tab.id !== panelTabId && tab.windowId === panelWindowId) {
+    unanchorPanel(tab.id)
+  }
 })
 // ⚠️ 已知边界（设计内）：锚定 tab 内导航（tabId 不变）不触发 onActivated，
 // 面板保持可见——锚定语义是「页签」而非「URL」，与 Gemini 内置面板一致。
@@ -152,15 +225,20 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 // 推送，反向场景提示缺失，用户输入后才吃到 unsupported-page 错误
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (target?.id === tabId && info.status === 'complete' && tab.url) {
-    if (isNormalPage(tab.url)) target = tab
-    chrome.runtime.sendMessage({ t: 'page-meta', page: isNormalPage(tab.url) ? pageMeta() : null, pageUnsupported: !isNormalPage(tab.url) }).catch(() => {})
+    // r11：导航后旧页的用量估算不再算数（tips 条「≈N tokens」不得跨页沿用——用量透明是产品卖点）
+    if (isNormalPage(tab.url)) { target = tab; lastApproxTokens = 0 }
+    sendToPanel({ t: 'page-meta', page: isNormalPage(tab.url) ? pageMeta() : null, pageUnsupported: !isNormalPage(tab.url) })
   }
 })
 // 面板 tab 被关闭：重置作用域（运行中任务交给既有 cancel 语义，不强杀）
 chrome.tabs.onRemoved.addListener((tabId) => {
+  sessions.delete(tabId) // r12：页签没了，其会话归档一并清理
+  disabledTabs.delete(tabId) // r13：账随 tab 消亡，防 Set 无界增长
   if (panelTabId === tabId) {
     panelTabId = null
+    panelWindowId = null
     target = null
+    persistSession()
   }
 })
 
@@ -185,9 +263,14 @@ async function handleMessage(msg: any): Promise<unknown> {
           .query({ active: true, lastFocusedWindow: true })
           .catch(() => [])
         if (active?.id && isNormalPage(active.url)) {
+          // r12-fix：panelWindowId 必须同步补——缺它时 onActivated 的
+          // 「windowId === panelWindowId」恒 false，切 tab 永不 unanchor
+          // （面板从侧边栏下拉打开/SW 冷启动后走本分支的都中招）
           panelTabId = active.id
+          panelWindowId = active.windowId ?? null
           target = active
           anchorPanel(active.id)
+          persistSession()
         }
       }
       // probe 失败时带上 NM 断连错误（forbidden=ID 未登记 vs not found=host 未装）
@@ -200,7 +283,9 @@ async function handleMessage(msg: any): Promise<unknown> {
       // tips 条元数据无论 probe 成败都带回（panel 已开就有目标页）。
       // hasSession/activeTask（r4-ux）：面板切 tab 被收起后重开时 React 态已丢——
       // SW 侧活会话透出给 panel 恢复 resumable（追问不再静默降级为全量重总结），
-      // 在跑任务透出 taskId 供 panel 重建绑定（迟到 chunk 不再呈现为孤儿流）
+      // 在跑任务透出 taskId 供 panel 重建绑定（迟到 chunk 不再呈现为孤儿流）。
+      // r12：都按当前锚定页签过滤——别的页签的会话/任务不属于本面板
+      const sess = panelTabId !== null ? sessions.get(panelTabId) : undefined
       return {
         ...r,
         ...(r.ok ? {} : { nmError: nmPort.lastError }),
@@ -209,46 +294,50 @@ async function handleMessage(msg: any): Promise<unknown> {
         // r8-ux：不可提取页（chrome:// 等）前置告知——placeholder 直接说明而非
         // 等用户输入发送后才报「浏览器内置页面无法提取」（预期管理前移）
         pageUnsupported: !!(target && !isNormalPage(target.url)),
-        ...(lastSession ? { hasSession: true, sessionAgentId: lastSession.agentId } : {}),
-        ...(currentTask ? { activeTask: { taskId: currentTask.taskId, startedAt: currentTask.startedAt } } : {}),
+        ...(sess ? { hasSession: true, sessionAgentId: sess.agentId } : {}),
+        ...(currentTask && currentTask.tabId === panelTabId ? { activeTask: { taskId: currentTask.taskId, startedAt: currentTask.startedAt } } : {}),
       }
     }
     case 'summarize': {
       const instruction = msg.instruction as string | undefined
       const skills = msg.skills as string[] | undefined
       const lang = msg.lang as string | undefined
-      const attachments = msg.attachments as { name: string; text: string }[] | undefined
-      // 追问轮：复用上一轮 CLI 会话（claude --resume），不重新提取页面。
-      // SW 休眠丢 lastSession 时明确报错——静默降级为新总结会让用户误以为在追问
+      const attachments = msg.attachments as AttachMsg[] | undefined
+      // 追问轮：复用本页签上一轮 CLI 会话（claude --resume），不重新提取页面。
+      // 会话丢失时明确报错——静默降级为新总结会让用户误以为在追问
       if (msg.followUp === true) {
         // SW 恰在恢复中（微任务竞态窗）时补一次同步恢复——storage.session 读取 <1ms
-        if (!lastSession) await restoreSession()
-        if (!lastSession) return { error: 'session-lost' }
-        const r = startFollowUp(lastSession.agentId, lastSession.sessionId, instruction ?? '', lastSession.historyPath, attachments)
-        return { ...r, agentId: lastSession.agentId }
+        if (panelTabId === null || !sessions.get(panelTabId)) await restoreSession()
+        const sess = panelTabId !== null ? sessions.get(panelTabId) : undefined
+        if (!sess) return { error: 'session-lost' }
+        const r = startFollowUp(sess.agentId, sess.sessionId, instruction ?? '', sess.historyPath, attachments)
+        return { ...r, agentId: sess.agentId }
       }
       return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills, lang, attachments)
     }
     case 'resume-history': {
-      // 历史详情「继续对话」：装载历史会话（SW 记 lastSession），后续 followUp 走 --resume。
+      // 历史详情「继续对话」：装载历史会话到当前页签（SW 记 sessions），后续 followUp 走 --resume。
       // 在途任务先取消——否则旧任务的尾随 chunk 污染恢复的对话（panel taskId 已重置 null 放行一切）
       const { agentId, sessionId, historyPath } = msg
       if (!agentId || !sessionId) return { error: 'bad-request' }
       if (currentTask) cancelCurrent()
       sessionTouched = true // 显式设置会话：restoreSession 微任务不得用旧态覆盖
-      lastSession = { agentId, sessionId, historyPath }
+      if (panelTabId !== null) sessions.set(panelTabId, { agentId, sessionId, historyPath })
       currentAgentId = agentId
       persistSession()
       return { ok: true }
     }
     case 'cancel':
+      // 带 taskId 时只收割匹配任务：看门狗跨窗口场景——本面板判死的旧任务可能
+      // 早已结清、另一窗口正跑新任务，无条件 cancelCurrent 会错杀新面板的任务
+      if (msg.taskId && currentTask && msg.taskId !== currentTask.taskId) return { ok: false }
       return cancelCurrent()
     case 'new-session':
-      // 面板「新对话」：在跑的任务走既有取消路径，lastSession 清空——
+      // 面板「新对话」：在跑的任务走既有取消路径，本页签会话清空——
       // 下一轮总结全新开始（不再 resume 上一条 CLI 会话）
       if (currentTask) cancelCurrent()
       sessionTouched = true // 显式清空：restoreSession 微任务不得让旧会话「复活」
-      lastSession = null
+      if (panelTabId !== null) sessions.delete(panelTabId)
       persistSession()
       return { ok: true }
     case 'nm':
@@ -276,6 +365,11 @@ async function handleMessage(msg: any): Promise<unknown> {
 function cancelCurrent() {
   if (currentTask) {
     nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })
+    // 终局帧补发：发起面板按 taskId 对号（finished 幂等，双收无害）；host 迟到的
+    // 同义帧会被面板 finished 列表拒收——双窗口下也绝不错终局另一面板的新任务
+    chrome.runtime
+      .sendMessage({ t: 'task-error', taskId: currentTask.taskId, code: 'cancelled', message: '已取消' })
+      .catch(() => {})
     currentTask = null
     return { ok: true }
   }
@@ -302,16 +396,8 @@ nmPort.onMessage((m) => {
     chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
     return
   }
-  // 任务终局：释放内存 + 防后续 cancel 发过期 taskId。严格按 taskId 匹配——
-  // 旧任务晚到的 task-error 会清掉新任务的取消句柄（`|| msg.t === 'task-error''
-  // 兜底无依据：task-error 帧协议上必带 taskId）
-  if (
-    (msg?.t === 'task-done' || msg?.t === 'task-error') &&
-    currentTask &&
-    msg.taskId === currentTask.taskId
-  ) {
-    currentTask = null
-  }
+  // 任务终局清理移到本 handler 末尾（r12）：终局帧自身仍需 currentTask 路由到
+  // 任务源页签 + 会话按源页签归档——先清会让终局帧漏到当前锚定页签的新面板
   // host 心跳帧：保活（消息活动重置 SW idle 计时器）+ 转译成 task-alive 喂 panel 看门狗。
   // 不原样转发 heartbeat（避免 UI 出现 heartbeat 字样）；host 活着就有 20s 心跳，panel
   // 看门狗据此续命——检测的是「host/SW 死」而非「UI 长时间无内容帧」（codex 思考期静默）
@@ -340,16 +426,20 @@ nmPort.onMessage((m) => {
   // （追问轮 task-done 带回首轮文件路径，覆盖亦无损——路径不变）。
   // 会话归属跟帧走（r4-arch）：帧自带 agentId，不用全局 currentAgentId——取消 A 后
   // 立即起 B 时，A 的迟到 meta 会把 A 的 sessionId 记到 B 名下（多引擎审校模式会把
-  // 该窗口放大为必然）；无 agentId 的帧仅在 taskId 匹配 currentTask 时才归属当前 agent
+  // 该窗口放大为必然）；无 agentId 的帧仅在 taskId 匹配 currentTask 时才归属当前 agent。
+  // r12：归档到任务源页签（迟到帧无任务匹配时兜底当前锚）——别的页签绝不捡到会话
   if (msg?.t === 'task-meta' || msg?.t === 'task-done') {
     const owner =
       msg.agentId ??
       (currentTask && msg.taskId === currentTask.taskId ? currentAgentId : undefined)
     if (msg.sessionId && owner) {
+      const tabId = currentTask && msg.taskId === currentTask.taskId ? currentTask.tabId : panelTabId
       // || 而非 ??：host 首轮 persist 失败时回传空串（不虚构路径），跳过且保留
       // 上一会话已有路径（r7-review）；合法路径永非空串
-      lastSession = { agentId: owner, sessionId: msg.sessionId, historyPath: msg.historyPath || lastSession?.historyPath }
-      persistSession()
+      if (tabId !== null) {
+        sessions.set(tabId, { agentId: owner, sessionId: msg.sessionId, historyPath: msg.historyPath || sessions.get(tabId)?.historyPath })
+        persistSession()
+      }
     }
     // 记住该 CLI 最近模型，merge 进 agents 缓存即刻下发（下拉展示 claude · GLM-5.2）
     if (msg.model && owner) {
@@ -361,7 +451,12 @@ nmPort.onMessage((m) => {
       }
     }
   }
-  chrome.runtime.sendMessage(m).catch(() => {})
+  // r12 修正：sendToPanel 恒广播（tabs.sendMessage 到不了 sidePanel，见函数注释）；
+  // 终局清理仍在路由之后（见上方说明）
+  sendToPanel(m)
+  if ((msg?.t === 'task-done' || msg?.t === 'task-error') && currentTask && msg.taskId === currentTask.taskId) {
+    currentTask = null
+  }
 })
 nmPort.onDisconnect(() => {
   // r6-sec：带断连时在跑任务的 taskId（panel 据此拒收迟到帧、不误伤重 spawn 后的
@@ -375,7 +470,7 @@ nmPort.onDisconnect(() => {
 })
 
 /** 追问轮：上下文在 CLI 会话里，host 直接 resume，无提取/无正文 */
-function startFollowUp(agentId: string, sessionId: string, instruction: string, historyPath?: string, attachments?: { name: string; text: string }[]) {
+function startFollowUp(agentId: string, sessionId: string, instruction: string, historyPath?: string, attachments?: AttachMsg[]) {
   if (!instruction.trim() && !attachments?.length) return { error: 'empty-instruction' }
   if (currentTask) cancelCurrent() // 收割在跑任务（同 startSummarize：句柄丢失 = 进程泄漏）
   const taskId = newTaskId()
@@ -388,7 +483,7 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
     },
   })
   if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
-  currentTask = { taskId, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
+  currentTask = { taskId, tabId: panelTabId ?? -1, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
   // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）。
   // r8-review：失败同样终止——重连拉起的新 host 没收过 task-start，追问会静默丢失
   if (!nmPort.send({ t: 'task-content', taskId, seq: 0, text: '', done: true })) {
@@ -417,15 +512,18 @@ async function extractBest(tabId: number): Promise<PageContent | { error: string
   return pages.reduce((a, b) => (b.contentMarkdown.length > a.contentMarkdown.length ? b : a))
 }
 
+/** 最近一次成功提取的正文体量（tips 条「≈N tokens」——用量透明，r9-backlog） */
+let lastApproxTokens = 0
+
 /** 当前总结目标页元数据（tips 条展示用）；target 无 url 时（无 tabs 权限）fallback tab query */
-function pageMeta(): { title: string; url: string; favIconUrl?: string } | null {
+function pageMeta(): { title: string; url: string; favIconUrl?: string; approxTokens?: number } | null {
   if (target?.url && isNormalPage(target.url)) {
-    return { title: target.title ?? '', url: target.url, favIconUrl: target.favIconUrl }
+    return { title: target.title ?? '', url: target.url, favIconUrl: target.favIconUrl, approxTokens: lastApproxTokens || undefined }
   }
   return null
 }
 
-async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string, attachments?: { name: string; text: string }[]) {
+async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string, attachments?: AttachMsg[]) {
   // 入口先收割在跑任务（提取/注入可能 await 数秒，期间旧任务继续烧额度）——
   // 对称于 resume-history/new-session 的既有守卫
   if (currentTask) cancelCurrent()
@@ -451,19 +549,21 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // 出 loading/停止钮，不再秒级零反馈）。占位 page 会在提取成功后被真实 meta 覆盖
   const taskId = newTaskId()
   currentAgentId = agentId
-  // 新一轮总结开始：旧会话失效（防切换 CLI 后追问串回旧 agent 的会话）
+  // 新一轮总结开始：本页签旧会话失效（防切换 CLI 后追问串回旧 agent 的会话）。
+  // r12：只清发起页签——别的页签会话不受牵连（页签维度独立）
   sessionTouched = true // 显式起新总结：restoreSession 微任务不得复活旧会话
-  lastSession = null
+  if (panelTabId !== null) sessions.delete(panelTabId)
   persistSession()
   currentTask = {
     taskId,
+    tabId: tab.id!,
     page: { url: tab.url ?? '', title: tab.title ?? '', extractor: 'pending', approxTokens: 0 },
     content: '',
     startedAt: Date.now(),
   }
   // 面板未开时无接收端是常态，静默。agentId（r7-ux）：气泡创建即快照归属 CLI，
   // 流式中切下拉不错标（host 侧 status 帧不带，meta 帧到时再补）
-  chrome.runtime.sendMessage({ t: 'task-status', taskId, phase: 'reading', agentId: currentAgentId }).catch(() => {})
+  sendToPanel({ t: 'task-status', taskId, phase: 'reading', agentId: currentAgentId })
 
   // content script 需 modules → 动态 files 注入（activeTab 授权下用户手势有效）。
   // allFrames：豆包文档等 SPA 正文渲染在 iframe，只注 top frame 会拿到空壳误报
@@ -493,10 +593,11 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   if (!currentTask || currentTask.taskId !== taskId) return { error: 'cancelled', taskId }
 
   const { contentMarkdown, ...meta } = page
-  currentTask = { taskId, page: meta, content: contentMarkdown, startedAt: currentTask?.startedAt ?? Date.now() }
+  currentTask = { taskId, tabId: tab.id!, page: meta, content: contentMarkdown, startedAt: currentTask?.startedAt ?? Date.now() }
+  lastApproxTokens = meta.approxTokens ?? 0
 
   // 提取成功 → 下发目标页元数据（panel tips 条「正在分享 …」；notice=截断/低置信提示）
-  chrome.runtime.sendMessage({ t: 'page-meta', page: { title: tab.title ?? meta.title, url: tab.url ?? meta.url, favIconUrl: tab.favIconUrl, notice: meta.notice } }).catch(() => {})
+  sendToPanel({ t: 'page-meta', page: { title: tab.title ?? meta.title, url: tab.url ?? meta.url, favIconUrl: tab.favIconUrl, notice: meta.notice, approxTokens: meta.approxTokens } })
 
   const ok = nmPort.send({
     t: 'task-start',
@@ -545,5 +646,5 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // 回执对账挂 currentTask.expectedChars：content-received 到达时校验
   currentTask.content = ''
   currentTask.expectedChars = total
-  return { ok: true, taskId }
+  return { ok: true, taskId, agentId } // r11：panel 对齐实际执行 CLI（与追问轮返回形态一致）
 }
