@@ -200,7 +200,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     }
   }
 
-  function send() {
+  function send(forceWf?: string) {
     const text = input.trim()
     // 空文本 + 空附件 + 无正文才拦：有正文时空输入 = 一键总结当前页（P0，修复
     // 「一键总结」承诺断裂）；有输入/附件 = 追问轮（正文可能已不可用，不拦）
@@ -208,7 +208,12 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // r12：附件以 chip 展示在用户气泡上方（对齐用户期望形态），气泡文本只放用户
     // 输入；附件-only 轮 instruction 仍发占位文本（r8-review：显示与执行一致，
     // host 侧追问轮空 user 段会凭空消失）
-    beginTurn(text, attachments.map((a) => ({ name: a.name, kind: a.kind })))
+    // r16：空文首轮（CTA/一键总结）气泡放实际档位文案——空壳气泡既无反馈又占版面；
+    // instruction 不受影响（首轮 host 侧 `instruction || wfBody` 落默认摘要指令）
+    const wf = forceWf ?? (workflow === 'default' ? 'deep' : workflow)
+    const bubbleText =
+      text || (hasSession || attachments.length ? '' : wf === 'quick' ? '快速摘要本页' : '深度总结本页')
+    beginTurn(bubbleText, attachments.map((a) => ({ name: a.name, kind: a.kind })))
     setAttachNotice('') // 提示已在输入区即时展示（r4-ux F3），发送即消费
     setInput('')
     const atts = attachments
@@ -230,8 +235,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         },
       )
     } else {
-      // 未显式选模式时默认 deep（DECISIONS D1「深度总结质量最优先」）；quick 留作显式选择
-      const wf = workflow === 'default' ? 'deep' : workflow
+      // 未显式选模式时默认 deep（DECISIONS D1「深度总结质量最优先」）；quick 留作显式
+      // 选择。forceWf：空态 CTA 直传（r15 3-agent P0-1）——「深度总结本页」按钮把
+      // default→deep 的静默映射显式化，用户看到的按钮名 = 实际跑的档（wf 已在
+      // beginTurn 前算好，r16）
       chrome.runtime.sendMessage(
         { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined, attachments: atts },
         (resp) => {
@@ -391,7 +398,15 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             <span>面板重开：此前对话已清空——完整内容可在「总结历史」中查看；继续提问将接续原会话。</span>
           </div>
         )}
-        {messages.length === 0 && <Placeholder clis={usable.map((a) => a.id)} anyInstalled={agents.some((a) => a.available)} pageUnsupported={pageUnsupported} agentsLoaded={agentsLoaded} />}
+        {messages.length === 0 && (
+          <Placeholder
+            clis={usable.map((a) => a.id)}
+            anyInstalled={agents.some((a) => a.available)}
+            pageUnsupported={pageUnsupported}
+            agentsLoaded={agentsLoaded}
+            onSummarize={(wf) => send(wf)}
+          />
+        )}
         {messages.map((m) =>
           m.role === 'user' ? (
             <div key={m.id} className="pd-chat-user">
@@ -908,7 +923,7 @@ function PageTips({ meta }: { meta: PageMeta }) {
   )
 }
 
-function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded }: { clis: string[]; anyInstalled?: boolean; pageUnsupported?: boolean; agentsLoaded?: boolean }) {
+function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSummarize }: { clis: string[]; anyInstalled?: boolean; pageUnsupported?: boolean; agentsLoaded?: boolean; onSummarize?: (wf: 'deep' | 'quick') => void }) {
   // r14 首旅程：探测在途（host spawn + 逐 CLI --version 秒级）——agents 未回帧前
   // 显示中性等待，抢跑「未检测到」假告示会误导已装用户去重装
   if (!clis.length && !agentsLoaded) {
@@ -960,8 +975,20 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded }: { cl
   return (
     <div className="pd-placeholder">
       <p className="pd-placeholder-title">想了解这个网页的什么？</p>
+      {/* r15（3-agent P0-1）：一键总结可见入口——「深度总结本页」即空输入发送的
+          default→deep 映射显式化（按钮名 = 实际跑的档），quick 给轻量选项 */}
+      {onSummarize && (
+        <div className="pd-placeholder-cta">
+          <button className="pd-cta-primary" onClick={() => onSummarize('deep')}>
+            深度总结本页
+          </button>
+          <button className="pd-cta-ghost" onClick={() => onSummarize('quick')}>
+            快速摘要
+          </button>
+        </div>
+      )}
       <p className="pd-placeholder-hint">
-        直接在下方输入问题，或选择一种总结模式
+        或在下方输入任何问题（Enter 发送）
         <br />
         {clis.map((id, i) => (
           <span key={id}>
