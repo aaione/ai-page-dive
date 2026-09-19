@@ -109,14 +109,15 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((e: u
 })
 
 // 面板作用域 = tab 维度（锚定页签）：action 点击的 tab 记为 panelTabId 并
-// setOptions(enabled:true)（含 path），同窗口其他 tab 在 onActivated 时逐个
-// setOptions(enabled:false)——官方 site-scoped 机制：切到 disabled tab 时
-// Chrome 自动收起已开面板（"it will close"，官方文档），切回/重点图标即恢复。
+// setOptions(enabled:true)（含 path），全局默认 enabled:false，非锚 tab per-tab
+// disable——Chrome 147 真机实证（r15 probe）：只有「全局 false + 锚 per-tab true」
+// 才能让已开面板在切到非锚 tab 时收起、切回锚 tab 时恢复；只做 per-tab disable
+// 时已开面板穿行所有 tab 不收起（用户实锤的「切页签不隐藏」）。
 //
-// ⚠️ 只做 per-tab 开关，绝不动全局默认（无 tabId 的 setOptions 必须保持
-// enabled:true）：全局关死会使 sidePanel.open({tabId}) 永远不满足「该 tab
-// 面板已激活」前置（真机 probe 实证报 "No active side panel for tabId"）。
-// 恢复代价：切回锚定 tab 面板不会自动弹出（open 需用户手势），重点一次图标。
+// r15 修订（推翻 r8「全局关死废 open 前置」）：全局 false 下 open({tabId}) 的
+// 前置是「目标 tab 的面板已激活」——锚定路径恒先 anchorPanel（per-tab true）
+// 再 open，前置成立（真机热键实证面板正常打开）。r8 踩的坑是全局 false 而
+// 未先设 per-tab true 就 open。
 
 // 面板归属的 tab（点开面板的那次 action 点击所在页）。总结目标 = 该 tab，
 // 不随用户切换 tab 而跟随变化。panelWindowId：锚所在窗口（跨窗口不拆台判断）。
@@ -129,9 +130,14 @@ let panelWindowId: number | null = null
 const disabledTabs = new Set<number>()
 
 /** 锚定/解除锚定：enable 面板所在 tab、disable 其他 tab（锚定语义的落地开关）。
+ * 锚定同时压全局默认 enabled:false（r15）：已开面板的收起/恢复只在全局 false
+ * 下生效（Chrome 147 真机实证）。幂等——重复 setOptions 同值无副作用。
  * setOptions 被拒是真异常（tab 已关/老 Chrome），静默会让面板收起行为失效无痕 */
 function anchorPanel(tabId: number) {
   disabledTabs.delete(tabId)
+  chrome.sidePanel.setOptions({ enabled: false }).catch((e: unknown) => {
+    console.warn('[pd] anchorPanel global setOptions failed:', e)
+  })
   chrome.sidePanel.setOptions({ tabId, path: 'sidepanel.html', enabled: true }).catch((e: unknown) => {
     console.warn('[pd] anchorPanel setOptions failed:', e)
   })
@@ -242,6 +248,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     // tab 经 Chrome 原生侧边栏 UI 打不开面板且无自愈路径（仅图标点击才 anchor
     // 单个 tab）。恢复「无锚状态 = 无 per-tab 痕迹」：记账正好是完整残留清单。
     // 与 onClicked 换锚互斥（本分支执行时 panelTabId 仍是旧锚）
+    // r15：全局默认一并还原——anchorPanel 压过全局 false，锚死不留全局痕迹
+    chrome.sidePanel.setOptions({ enabled: true }).catch(() => {})
     for (const id of [...disabledTabs]) {
       chrome.sidePanel.setOptions({ tabId: id, path: 'sidepanel.html', enabled: true }).catch(() => {})
     }
