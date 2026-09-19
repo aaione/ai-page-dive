@@ -462,7 +462,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                         <span className={`pd-set-dot ${a.available ? 'available' : 'unavailable'}`} />
                         <div className="pd-set-row-main">
                           <div className="pd-set-row-name">
-                            <span className="pd-mono">{a.id}</span>
+                            <span>{a.id}</span>
                             <span style={{ fontSize: 10.5, color: 'var(--color-pd-ink-2)' }}>
                               {a.available ? a.version ?? '已安装' : '未安装'}
                             </span>

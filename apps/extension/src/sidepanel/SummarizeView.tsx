@@ -592,7 +592,7 @@ const AssistantMessage = memo(function AssistantMessage({
         <span className="pd-chat-model">{agentId}</span>
         {/* r8-ux：订阅用量可见性——产品核心卖点是「复用你自己的 CLI 订阅」，每轮烧多少 token 应有出口 */}
         {!running && (msg.usage || msg.durationMs) && (
-          <span className="pd-chat-usage pd-mono">
+          <span className="pd-chat-usage">
             {msg.usage?.inputTokens != null && `${fmtK(msg.usage.inputTokens)}↑`}
             {msg.usage?.outputTokens != null && ` ${fmtK(msg.usage.outputTokens)}↓`}
             {msg.durationMs != null && ` · ${(msg.durationMs / 1000).toFixed(1)}s`}
@@ -933,7 +933,7 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded }: { cl
             </>
           ) : (
             <>
-              请先安装并登录 <span className="pd-mono">claude</span> 或 <span className="pd-mono">codex</span>
+              请先安装并登录 claude 或 codex
               <br />
               安装后回到本页即可使用 · 内容只在本机处理
             </>
@@ -965,7 +965,7 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded }: { cl
         {clis.map((id, i) => (
           <span key={id}>
             {i > 0 && ' / '}
-            <span className="pd-mono">{id}</span>
+            {id}
           </span>
         ))}
         {' · 内容只在本机处理'}

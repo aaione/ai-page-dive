@@ -192,7 +192,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
                   {hostOf(it.url)}
                 </p>
               )}
-              <p className="pd-history-item-meta pd-mono">
+              <p className="pd-history-item-meta">
                 {it.agent} · {new Date(it.ts).toLocaleString('zh-CN')}
               </p>
             </button>
