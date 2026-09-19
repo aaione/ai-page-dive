@@ -495,7 +495,7 @@
   color: var(--color-pd-ink);
 }
 .pd-set-ver {
-  font-family: var(--font-mono-ui);
+  /* r15：版本号是展示元信息非复制目标，随 dropdown model 一并去 mono */
   font-size: 10.5px;
   color: var(--color-pd-ink-2);
 }

@@ -279,13 +279,14 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   align-items: center;
   gap: 4px;
   padding: 10px 48px 6px 12px; /* 右侧留白避让 pd-float-tools；略加高拉宽磨砂过渡带 */
-  /* r14 磨砂重做：罩再调淡（磨砂要「透」不要「压暗」）+ blur 24 加深雾化 + 饱和度
-     180% 让穿过的文字带彩色光晕（真玻璃感）+ brightness 补回亮度 + 底缘发丝线
-     给玻璃一个「边缘」；视觉评审：blur16/罩.58 版被批「磨砂感不足、像半透明黑条」 */
-  background: linear-gradient(180deg, rgba(20,20,20,.42) 0%, rgba(20,20,20,.22) 55%, rgba(20,20,20,.06) 100%);
+  /* r15 磨砂二轮：渐变与 action-bar 同源镜像（d1 锚顶缘→52→透明）——r14 的
+     .42/.22/.06 淡出罩与 action-bar 的 #0000→52→d1 是两套语言，整机不成体系；
+     锚缘加重后玻璃有了重心，穿过内容自深雾渐显（iOS 导航栏范式）；顶缘补
+     specular 高光、底缘留发丝线——玻璃上下都有「边缘」 */
+  background: linear-gradient(180deg, #141414d1 0%, #14141452 48%, #0000 100%);
   -webkit-backdrop-filter: blur(24px) saturate(180%) brightness(1.06);
   backdrop-filter: blur(24px) saturate(180%) brightness(1.06);
-  box-shadow: inset 0 -1px 0 rgba(255,255,255,.06);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), inset 0 -1px 0 rgba(255,255,255,.06);
 }
 /* 磨砂颗粒层（与 pd-action-bar::before 同法）：mask 上浓下淡随主罩 */
 .pd-topbar::before {
@@ -786,21 +787,15 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   color: var(--pd-text-1);
 }
 .pd-dropdown-item-hint {
-  font-size: 10px;
+  /* r15：hint 三行全 sans 后对齐全站小字惯例 10.5px（原 10px 是给 mono 视觉
+      宽度找平的特化，mono 移除即失去意义） */
+  font-size: 10.5px;
   line-height: 1.5;
   color: var(--pd-text-2);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* 三行信息：label / version / model 各占一行，左对齐紧凑。
-   字号统一 10px（曾 9.5px 特化——mono 与 sans hint 并排时字号不一致是
-   「字体不统一」观感来源之一；等宽 10px 视觉 ≈ sans 10.5px，可接受） */
-.pd-dropdown-item-hint.pd-mono {
-  font-family: var(--font-mono-ui);
-  font-size: 10px;
-  opacity: .85;
 }
 .pd-dropdown-item-model {
   color: var(--pd-accent);
@@ -1274,34 +1269,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 .pd-settings-list-item + .pd-settings-list-item {
   border-top: 1px solid rgba(255,255,255,.05);
 }
-.pd-settings-cli-name {
-  font-size: 12px;
-  font-family: var(--font-mono-ui);
-  color: var(--pd-text-1);
-}
-.pd-settings-cli-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-.pd-settings-cli-status.available {
-  color: var(--pd-ok);
-}
-.pd-settings-cli-status.unavailable {
-  color: var(--pd-text-2);
-}
-.pd-settings-cli-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-}
-.pd-settings-cli-dot.available {
-  background: var(--pd-ok);
-}
-.pd-settings-cli-dot.unavailable {
-  background: var(--color-pd-off);
-}
+/* r15：pd-settings-cli-{name,status,dot} 全家零引用死规则，连删 */
 .pd-settings-empty {
   margin-top: 8px;
   font-size: 11.5px;

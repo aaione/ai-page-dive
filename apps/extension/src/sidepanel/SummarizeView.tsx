@@ -756,10 +756,11 @@ export function ModelDropdown({
                 className={`pd-dropdown-item ${it.key === value ? 'selected' : ''}`}
               >
                 {it.key === value && <span className="pd-dropdown-check" aria-hidden="true" />}
-                {/* CLI 名 sans（与模式下拉 item 一致）；version/model 保持 mono（机器量） */}
+                {/* r15 字体统一：version/model 去 mono——同一菜单内 mono/sans 混排是
+                    「字体不统一」观感主源（用户实锤）；mono 只留给命令/代码/文件名 */}
                 <span className="pd-dropdown-item-label">{it.label}</span>
-                {it.version && <span className="pd-dropdown-item-hint pd-mono">{it.version}</span>}
-                {it.model && <span className="pd-dropdown-item-hint pd-mono pd-dropdown-item-model">{it.model}</span>}
+                {it.version && <span className="pd-dropdown-item-hint">{it.version}</span>}
+                {it.model && <span className="pd-dropdown-item-hint pd-dropdown-item-model">{it.model}</span>}
               </button>
             </li>
           ))}
