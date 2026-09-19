@@ -75,6 +75,9 @@ export function App() {
   const [hostOk, setHostOk] = useState<boolean | null>(null)
   const [outdated, setOutdated] = useState('')
   const [agents, setAgents] = useState<AgentStatus[]>([])
+  /** host 探测结果是否已到（r14 首旅程）：区分「在途」与「真空」——空列表不该
+   * 被渲染成「未检测到本机 AI CLI」假告示 */
+  const [agentsLoaded, setAgentsLoaded] = useState(false)
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [stream, setStream] = useState<TaskStreamState>(BLANK)
   const [agentId, setAgentId] = useState('')
@@ -605,7 +608,7 @@ export function App() {
             <span>{outdated}</span>
           </div>
         )}
-        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} resumable={stream.resumable} sessionAgentId={sessionAgent} pageUnsupported={pageUnsupported} />
+        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} resumable={stream.resumable} sessionAgentId={sessionAgent} pageUnsupported={pageUnsupported} agentsLoaded={agentsLoaded} />
       </main>
 
       {overlay === 'history' && (

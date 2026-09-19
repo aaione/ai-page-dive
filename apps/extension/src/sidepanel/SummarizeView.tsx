@@ -20,6 +20,9 @@ interface Props {
   sessionAgentId?: string
   /** 当前锚定页不可提取（chrome:// 等）：placeholder 前置说明（r8-ux） */
   pageUnsupported?: boolean
+  /** host 的 agents 探测是否已回帧（r14 首旅程）：未回前 agents=[] 是在途不是空——
+   * placeholder 不得抢跑「未检测到本机 AI CLI」假告示 */
+  agentsLoaded?: boolean
 }
 
 /** 待发送附件（r12：文本走 text、图片走 b64——host 落盘 ~/.ai-page-dive/attachments 持久化） */
@@ -81,7 +84,7 @@ export function useSetting(key: string): [string, (v: string) => void] {
   return [v, set]
 }
 
-export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, resumable, sessionAgentId, pageUnsupported }: Props) {
+export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, resumable, sessionAgentId, pageUnsupported, agentsLoaded }: Props) {
   const disabledClis = useDisabledClis()
   const getEnabledSkills = useEnabledSkills()
   const [sumLang] = useSetting('pd-sum-lang')
@@ -388,7 +391,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             <span>面板重开：此前对话已清空——完整内容可在「总结历史」中查看；继续提问将接续原会话。</span>
           </div>
         )}
-        {messages.length === 0 && <Placeholder clis={usable.map((a) => a.id)} anyInstalled={agents.some((a) => a.available)} pageUnsupported={pageUnsupported} />}
+        {messages.length === 0 && <Placeholder clis={usable.map((a) => a.id)} anyInstalled={agents.some((a) => a.available)} pageUnsupported={pageUnsupported} agentsLoaded={agentsLoaded} />}
         {messages.map((m) =>
           m.role === 'user' ? (
             <div key={m.id} className="pd-chat-user">
@@ -904,7 +907,17 @@ function PageTips({ meta }: { meta: PageMeta }) {
   )
 }
 
-function Placeholder({ clis, anyInstalled, pageUnsupported }: { clis: string[]; anyInstalled?: boolean; pageUnsupported?: boolean }) {
+function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded }: { clis: string[]; anyInstalled?: boolean; pageUnsupported?: boolean; agentsLoaded?: boolean }) {
+  // r14 首旅程：探测在途（host spawn + 逐 CLI --version 秒级）——agents 未回帧前
+  // 显示中性等待，抢跑「未检测到」假告示会误导已装用户去重装
+  if (!clis.length && !agentsLoaded) {
+    return (
+      <div className="pd-placeholder">
+        <p className="pd-placeholder-title">正在检测本机 CLI…</p>
+        <p className="pd-placeholder-hint">首次检测需唤起本机组件，稍等片刻</p>
+      </div>
+    )
+  }
   // 无可用 CLI：给出明确指引而非让用户对着灰按钮/无反应回车猜（F10）。
   // 区分「未安装」与「已装但全被停用」（r5-ux：文案曾把后者引向重装排查）
   if (!clis.length) {
