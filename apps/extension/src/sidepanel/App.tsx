@@ -90,6 +90,9 @@ export function App() {
   // 看门狗 judge 回调需读最新 aliveAt（睡眠唤醒场景，闭包快照会滞后）
   const streamRef = useRef(stream)
   streamRef.current = stream
+  // r14-ux：panel-ready 触发的在途 history-read 路径（还原重开前的对话）——
+  // listener 的 history-file 分支只收它匹配的那条，HistoryView 自己的读取互不干扰
+  const restorePathRef = useRef<string | null>(null)
 
   useEffect(() => {
     // Esc 关 overlay（输入框/下拉自身的 Esc 处理在前，事件冒泡到此处才关面板）
@@ -177,12 +180,28 @@ export function App() {
         // 看门狗 120s 收尾）
         if (resp?.hasSession) {
           if (typeof resp.sessionAgentId === 'string') setSessionAgent(resp.sessionAgentId)
-          setStream((s) => ({
-            ...s,
-            resumable: true,
-            // 无在跑任务时才提示（activeTask 在跑 = 迟到 chunk 会续流，不算丢失）
-            ...(resp?.activeTask ? {} : { reopened: true }),
-          }))
+          // r14-ux：带 historyPath 时优先还原完整对话（history-file 回帧在 listener
+          // 处理）；拿不到路径/读失败再退回 reopened 提示（「此前对话已清空」）
+          const hp = typeof (resp as any).historyPath === 'string' ? (resp as any).historyPath : ''
+          if (hp && !resp?.activeTask) {
+            restorePathRef.current = hp
+            chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: hp } }).catch(() => {})
+            // 还原失败兜底（文件被删 / host 无回帧）：5s 后仍无 history-file 则退回
+            // reopened 提示语义——绝不让追问入口锁死在中间态
+            setTimeout(() => {
+              if (restorePathRef.current === hp) {
+                restorePathRef.current = null
+                setStream((s) => ({ ...s, resumable: true, reopened: true }))
+              }
+            }, 5_000)
+          } else {
+            setStream((s) => ({
+              ...s,
+              resumable: true,
+              // 无在跑任务时才提示（activeTask 在跑 = 迟到 chunk 会续流，不算丢失）
+              ...(resp?.activeTask ? {} : { reopened: true }),
+            }))
+          }
         }
         if (resp?.activeTask) {
           const at = resp.activeTask as { taskId: string; startedAt: number }
@@ -217,8 +236,29 @@ export function App() {
         case 'agents':
           // 单一事实源：SW 下发前已 merge 最近模型（agentsCache），panel 只渲染
           setAgents(m.agents as AgentStatus[])
+          setAgentsLoaded(true)
           break
         case 'workflows': setWorkflows(m.items); break
+        case 'history-file':
+          // r14-ux：面板重开的对话还原（只收 restorePathRef 在途那条——HistoryView
+          // 的详情读取由它自己的 listener 消费）。空正文退回 reopened 提示语义
+          if ((m as any).path !== restorePathRef.current) break
+          restorePathRef.current = null
+          {
+            const msgs = parseHistoryTurns((m as any).body ?? '')
+            if (msgs.length) {
+              setStream((s) => ({
+                ...BLANK,
+                done: true,
+                resumable: true,
+                finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
+                messages: msgs,
+              }))
+            } else {
+              setStream((s) => ({ ...s, resumable: true, reopened: true }))
+            }
+          }
+          break
         case 'task-meta':
           setStream((s) => {
             // 台账/绑定双守卫（r5：曾是 6 个帧 handler 中唯一缺席者——取消 A 后起 B，

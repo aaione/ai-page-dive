@@ -282,6 +282,11 @@ async function handleMessage(msg: any): Promise<unknown> {
           target = active
           anchorPanel(active.id)
           persistSession()
+          // r14：非图标点击路径开的面板（侧边栏下拉 / SW 冷启动后重开）此前只锚定
+          // 不预 disable——切 tab 时 Chrome 读的是切换瞬间的 per-tab options，事后
+          // disable 不追溯收起（真机实验：面板在未用页签恒开，用户抱怨的正是这个）。
+          // 补齐与 onClicked 路径相同的收起机器：锚定即预 disable 同窗口其余 tab
+          void ensureTabsDisabled()
         }
       }
       // probe 失败时带上 NM 断连错误（forbidden=ID 未登记 vs not found=host 未装）
@@ -305,7 +310,16 @@ async function handleMessage(msg: any): Promise<unknown> {
         // r8-ux：不可提取页（chrome:// 等）前置告知——placeholder 直接说明而非
         // 等用户输入发送后才报「浏览器内置页面无法提取」（预期管理前移）
         pageUnsupported: !!(target && !isNormalPage(target.url)),
-        ...(sess ? { hasSession: true, sessionAgentId: sess.agentId } : {}),
+        ...(sess
+          ? {
+              hasSession: true,
+              sessionAgentId: sess.agentId,
+              // r14-ux：带出历史文件路径——面板被收起后重开（React 态已丢）时，
+              // panel 自动 history-read 还原完整多轮对话，而不是一句
+              // 「此前对话已清空」（切页签回来内容消失感的另一半根因）
+              ...(sess.historyPath ? { historyPath: sess.historyPath } : {}),
+            }
+          : {}),
         ...(currentTask && currentTask.tabId === panelTabId ? { activeTask: { taskId: currentTask.taskId, startedAt: currentTask.startedAt } } : {}),
       }
     }
