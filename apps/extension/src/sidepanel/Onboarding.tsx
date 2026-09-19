@@ -6,6 +6,13 @@ const extId = chrome.runtime.id
 const installCmd = `curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- ${extId}`
 /** forbidden：host 已装但本扩展 ID 不在白名单（只差补登记，无需再装） */
 const registerCmd = `ai-page-dive install --ext-id ${extId}`
+/** r16（3-agent P0）：v1 仅 macOS——CWS 全球可见，Win/Linux 用户拿到 curl|sh 粘进
+ * PowerShell 必败且面板永久停在轮询。非 darwin 整卡替换为不支持说明，不给死命令 */
+const unsupportedOs = !/mac/i.test(
+  (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ??
+    navigator.platform ??
+    '',
+)
 
 export function Onboarding() {
   const [copied, setCopied] = useState(false)
@@ -23,6 +30,7 @@ export function Onboarding() {
   const copiedAtRef = useRef(0)
 
   useEffect(() => {
+    if (unsupportedOs) return // 不支持的系统：命令永远装不成，探测轮询只白烧进程
     let alive = true
     const probe = () => {
       if (document.visibilityState === 'hidden') return // 可见性恢复时由 visibilitychange 立即触发
@@ -63,8 +71,26 @@ export function Onboarding() {
   return (
     <div className="pd-onboarding">
       <div className="pd-onboarding-card">
+        {unsupportedOs ? (
+          <>
+            <h1 className="pd-onboarding-title">v1 仅支持 macOS + Chrome</h1>
+            <p className="pd-onboarding-text">
+              检测到你正在使用其他操作系统——本机组件依赖 Chrome Native Messaging
+              的 macOS 注册方式，Windows / Linux 支持在路线图上。
+              <br />
+              扩展本体可先安装（无需本机组件），支持落地后即可使用。
+            </p>
+            <p className="pd-onboarding-note">
+              关注进展或催更：
+              <a href="https://github.com/aaione/ai-page-dive" target="_blank" rel="noreferrer">
+                github.com/aaione/ai-page-dive
+              </a>
+            </p>
+          </>
+        ) : (
+          <>
         <h1 className="pd-onboarding-title">
-          {forbidden ? '本扩展还未登记到本机组件' : '还差一步（仅此一次；已有 Node 约 1 分钟，需装 Node 约 5-15 分钟）'}
+          {forbidden ? '本扩展还未登记到本机组件' : '还差一步（仅此一次，约 1 分钟）'}
         </h1>
         <p className="pd-onboarding-text">
           {forbidden ? (
@@ -83,7 +109,9 @@ export function Onboarding() {
           )}
         </p>
         <p className="pd-onboarding-label">
-          {forbidden ? '复制这一行到终端执行：' : '复制这一行到终端执行（无 Node 也会自动引导安装）：'}
+          {forbidden
+            ? '复制这一行到终端执行：'
+            : '复制这一行到终端执行（无 Node 也会自动引导安装，需装 Node 约 5-15 分钟）：'}
         </p>
         <button onClick={copy} className="pd-onboarding-cmd" title="点击复制">
           <span className="pd-onboarding-cmd-text">{forbidden ? registerCmd : installCmd}</span>
@@ -94,11 +122,23 @@ export function Onboarding() {
         </button>
         {copied && <p className="pd-onboarding-copied">已复制 ✓</p>}
         {/* r16 信任证据前置（3-agent P0-3）：curl|sh 是恐惧时刻——在执行前给可自行
-            验证的事实（源码可查/无 sudo/落点明确），而非执行后才出现的宽慰话 */}
+            验证的事实（源码可查/无 sudo/落点明确），而非执行后才出现的宽慰话。
+            r16b（3-agent 修订）：不承诺「全部落在 ~/.ai-page-dive/」——npm 全局包与
+            Chrome 登记文件在别处，溢出承诺一查即穿；install.sh 给一键可验证的链接 */}
         <p className="pd-onboarding-trust">
-          命令内容公开可查（install.sh，MIT 开源）· 无 sudo · 不碰 CLI 凭证 · 只做一件事：
-          装 npm 包并注册 Chrome 本机组件，全部落在 <code>~/.ai-page-dive/</code>
+          命令内容公开可查（
+          <a href="https://github.com/aaione/ai-page-dive/blob/main/install.sh" target="_blank" rel="noreferrer">
+            install.sh
+          </a>
+          ，MIT 开源）· 无 sudo · 不碰 CLI 凭证 · 只做一件事：装 npm 包并注册 Chrome
+          本机组件；运行数据落在 <code>~/.ai-page-dive/</code>
         </p>
+        {!forbidden && (
+          <p className="pd-onboarding-alt">
+            curl 走不通（代理/网络受限）？直接 npm 装：
+            <code>npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id {extId}</code>
+          </p>
+        )}
         <details className="pd-onboarding-faq">
           <summary>命令报错了？</summary>
           <p>
@@ -110,7 +150,7 @@ export function Onboarding() {
             <strong>勿用 sudo npm</strong>——root 属主会写坏本机组件注册，后续重装会反复失败）。
           </p>
           <p>
-            用 <code>pnpm</code>？全局安装默认不执行安装钩子——装完直接执行面板当前显示的 <code>ai-page-dive install</code> 命令即可。
+            用 <code>pnpm</code>？全局安装默认不执行安装钩子——装完重跑面板中的完整 curl 命令即可（幂等）。
           </p>
         </details>
         {stuck ? (
@@ -127,7 +167,7 @@ export function Onboarding() {
         ) : (
           <p className="pd-onboarding-note">
             终端看到 <code>🎉 安装完成</code> 后回本页，通常会自动进入；若超过 1 分半未进入，
-            多半需完全重启 Chrome（⌘Q，见下方提示）。
+            多半需完全重启 Chrome（⌘Q）。
             <br />
             <strong>内容不经 PageDive 任何服务器；上传与否只由你的 CLI 自身决定。</strong>
           </p>
@@ -144,6 +184,8 @@ export function Onboarding() {
         >
           已安装 / 已重启？立即检测
         </button>
+          </>
+        )}
       </div>
     </div>
   )

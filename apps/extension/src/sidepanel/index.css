@@ -1466,6 +1466,20 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   font-family: var(--font-mono-ui);
   font-size: 10px;
 }
+/* r16b npm 直装备选（常显一行）：大陆网络 curl 首跑即断是高频路径，
+   兜底不再藏进折叠 FAQ；a 链接复用 pd-onboarding-faq 的样式基因 */
+.pd-onboarding-alt {
+  margin-top: 8px;
+  font-size: 10.5px;
+  line-height: 1.75;
+  color: var(--pd-text-2);
+  text-align: left;
+}
+.pd-onboarding-alt code {
+  font-family: var(--font-mono-ui);
+  font-size: 10px;
+  word-break: break-all;
+}
 /* 终端失败兜底（npm 未装 / EACCES）：默认折叠，命令报错才展开看 */
 .pd-onboarding-faq {
   margin-top: 10px;
