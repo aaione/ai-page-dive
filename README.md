@@ -22,9 +22,10 @@
 
 - **零配置**——无账号、无 API key：直接用你终端里已登录的 CLI（claude / codex 全支持，opencode 实验档）
 - **无服务器、零遥测**——网页正文经 Chrome → Native Messaging 直交本机 CLI，全程不经 PageDive 中转、零遥测（CLI 与其模型服务的通信遵循该 CLI 自身的隐私政策，见 [PRIVACY.md](PRIVACY.md)）
+- **权限最小化**——只申请 5 项权限，不申请 `<all_urls>`：点哪读哪（activeTab），其余页面零访问面
+- **不只总结，还能改写**——「去 AI 味」模式把 AI 生成文本改写为自然人类口吻（竞品均无的独占档）；另有快速摘要 / 深度研读 / 论文阅读，`~/.ai-page-dive/workflows/` 可自定义新增
 - **零凭证接触**——只子进程调起官方 CLI 二进制，不碰 token、不代理流量、不额外收费
 - **流式输出**——markdown 实时渲染，正文下方继续输入即可多轮追问
-- **四种内置模式**——快速摘要 / 深度研读 / 论文阅读 / 去 AI 味（全文改写为自然人类口吻），并可在 `~/.ai-page-dive/workflows/` 自定义新增
 - **本地历史**——自动保存在 `~/.ai-page-dive/history/`，面板内可恢复
 
 ## 快速开始（macOS + Chrome）
@@ -61,6 +62,12 @@ npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id <扩展ID>
 <summary>网页内容会被上传到你们的服务器吗？</summary>
 
 不会。PageDive 没有服务器、零遥测，正文经 Chrome Native Messaging 直达本机 CLI，不经任何 PageDive 中转。之后内容如何处理由你所选 CLI 自身的隐私政策决定（claude → Anthropic、codex → OpenAI），详见 [PRIVACY.md](PRIVACY.md)。
+</details>
+
+<details>
+<summary>和 Claude / ChatGPT 官方浏览器扩展有什么区别？</summary>
+
+三点：**① 厂商中立**——官方扩展只接自家模型，PageDive 是多引擎（claude / codex / opencode），哪家订阅在用哪家，随时可换；**② 无云桥中转**——官方扩展的页面数据经厂商云端桥接服务处理，PageDive 正文直交本机 CLI，不经任何桥接域名；**③ 零凭证**——PageDive 不碰 OAuth/token，只子进程调起你已登录的 CLI，host 代码开源可审计。
 </details>
 
 <details>
