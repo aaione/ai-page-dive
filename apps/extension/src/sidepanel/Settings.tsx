@@ -586,6 +586,9 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               </p>
               <div className="pd-set-actions" style={{ marginTop: 14, flexWrap: 'wrap' }}>
                 <button className="pd-set-btn" onClick={revealHistoryDir}>打开历史目录</button>
+                <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'https://github.com/aaione/ai-page-dive/blob/main/PRIVACY.md' })}>
+                  隐私政策
+                </button>
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })}>
                   自定义快捷键
                 </button>
