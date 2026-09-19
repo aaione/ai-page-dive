@@ -63,8 +63,8 @@ body {
   width: 100%;
   font-family: var(--font-sans-ui);
   background:
-    radial-gradient(600px 320px at 70% -8%, rgba(255,255,255,0.05) 0%, transparent 60%),
-    radial-gradient(520px 360px at 12% 108%, rgba(226,185,111,0.05) 0%, transparent 62%),
+    radial-gradient(600px 320px at 70% -8%, rgba(255,255,255,0.07) 0%, transparent 60%),
+    radial-gradient(520px 360px at 12% 108%, rgba(226,185,111,0.08) 0%, transparent 62%),
     linear-gradient(180deg, #171717 0%, #141414 40%, #121212 100%);
   background-attachment: fixed;
 }
@@ -279,11 +279,13 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   align-items: center;
   gap: 4px;
   padding: 10px 48px 6px 12px; /* 右侧留白避让 pd-float-tools；略加高拉宽磨砂过渡带 */
-  /* 罩整体调淡 + 渐变拉满全高：雾化路径更长可感知（视觉评审：.72/.42@72% 版
-     被批「暗罩过重、过渡带太窄，blur 形同虚设」） */
-  background: linear-gradient(180deg, rgba(20,20,20,.58) 0%, rgba(20,20,20,.30) 55%, rgba(20,20,20,.05) 100%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
-  backdrop-filter: blur(16px) saturate(160%);
+  /* r14 磨砂重做：罩再调淡（磨砂要「透」不要「压暗」）+ blur 24 加深雾化 + 饱和度
+     180% 让穿过的文字带彩色光晕（真玻璃感）+ brightness 补回亮度 + 底缘发丝线
+     给玻璃一个「边缘」；视觉评审：blur16/罩.58 版被批「磨砂感不足、像半透明黑条」 */
+  background: linear-gradient(180deg, rgba(20,20,20,.42) 0%, rgba(20,20,20,.22) 55%, rgba(20,20,20,.06) 100%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%) brightness(1.06);
+  backdrop-filter: blur(24px) saturate(180%) brightness(1.06);
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,.06);
 }
 /* 磨砂颗粒层（与 pd-action-bar::before 同法）：mask 上浓下淡随主罩 */
 .pd-topbar::before {
@@ -292,7 +294,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: .12;
+  opacity: .16; /* r14：颗粒加浓一档——「砂」的质感主体（.12 版被评「几乎看不见」） */
   background: var(--pd-grain) repeat;
   -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,.8) 0%, rgba(0,0,0,.4) 55%, transparent 100%);
   mask-image: linear-gradient(180deg, rgba(0,0,0,.8) 0%, rgba(0,0,0,.4) 55%, transparent 100%);
@@ -382,8 +384,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   inset: 0;
   z-index: 20;
   background: rgba(20,20,20,.72);
-  -webkit-backdrop-filter: blur(28px) saturate(140%);
-  backdrop-filter: blur(28px) saturate(140%);
+  /* r14：重磨砂弹层——blur 32 深雾 + 饱和 180%（140% 版彩色穿层发灰） */
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  backdrop-filter: blur(32px) saturate(180%);
 }
 
 /* ══════════════════════════════════════════════
@@ -462,8 +465,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   z-index: 5;
   padding: 56px 16px 16px; /* 顶 padding = 纯透明渐变过渡带（终审建议再放宽半档），输入控件不顶着边缘 */
   background: linear-gradient(180deg, transparent 0%, #14141452 48%, #141414d1 100%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  backdrop-filter: blur(20px) saturate(160%);
+  /* r14：与 topbar 同档磨砂（24/180）——两块玻璃一致才成体系 */
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
 }
 /* 磨砂颗粒层（质感关键）：blur 只给「雾」，颗粒给「砂」——真实磨砂玻璃表面
    有微细颗粒，纯 blur+渐变在低对比内容上观感是「加蒙版的渐变」而非玻璃。
@@ -474,7 +478,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: .12;
+  opacity: .16; /* r14：与 topbar 颗粒同档加浓 */
   background: var(--pd-grain) repeat;
   -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.5) 48%, #000 100%);
   mask-image: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.5) 48%, #000 100%);
