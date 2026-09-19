@@ -278,6 +278,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 async function handleMessage(msg: any): Promise<unknown> {
   switch (msg?.t) {
     case 'panel-ready': {
+      // r16：面板（重）唤起即清完成角标——用户已看到结果，✓ 完成使命
+      chrome.action.setBadgeText({ text: '' }).catch(() => {})
       // 面板打开时对齐：面板 dock 在 panelTabId 上（= 打开面板时 action 手势
       // 授权过的那个 tab）。SW 重启丢 panelTabId 态时 fallback 当前活跃普通页。
       if (!panelTabId || !target) {
@@ -513,6 +515,10 @@ nmPort.onMessage((m) => {
       ? { ...(msg as object), tabId: currentTask.tabId }
       : m,
   )
+  // r16（3-agent P1）：任务完成打 ✓ 角标——面板被收起期间 done 广播无接收端，
+  // 「deep 跑 2 分钟切走干别的」回不回看全靠记忆。SW 由任务期心跳保活必活着，
+  // setBadgeText 免权限；面板重新唤起（panel-ready）或下一轮起跑时清除
+  if (msg?.t === 'task-done') chrome.action.setBadgeText({ text: '✓' }).catch(() => {})
   if ((msg?.t === 'task-done' || msg?.t === 'task-error') && currentTask && msg.taskId === currentTask.taskId) {
     currentTask = null
   }
@@ -586,6 +592,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // 入口先收割在跑任务（提取/注入可能 await 数秒，期间旧任务继续烧额度）——
   // 对称于 resume-history/new-session 的既有守卫
   if (currentTask) cancelCurrent()
+  chrome.action.setBadgeText({ text: '' }).catch(() => {}) // 新轮起跑清完成角标（r16）
   // target：action 点击的 tab（activeTab 授权随手势生效）。SW 重启丢态或 panel
   // 直接点按钮时 fallback 到当前活跃 tab——无授权的 tab 注入会失败并提示，
   // 不会造成越权（executeScript 直接被 Chrome 拒绝）。

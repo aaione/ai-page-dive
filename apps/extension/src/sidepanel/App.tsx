@@ -159,7 +159,21 @@ export function App() {
       })
     }
     timer = setTimeout(judge, Math.max(WATCHDOG_MS - (Date.now() - stream.aliveAt), 25_000))
-    return () => clearTimeout(timer)
+    // r16（3-agent P1）：真实睡眠 >120s 后唤醒——sinceAlive 必超限，judge 派发即
+    // 冤杀仍在跑的任务（上方 r7 保护只盖 <WATCHDOG_MS 的冻结）。唤醒（面板可见性
+    // 恢复）即重置存活计时并重开完整窗口：host 真死则连丢 6 次心跳后仍被新窗口
+    // 判死；活着则首个 post-wake 心跳（≤20s）照常续命
+    const onWake = () => {
+      if (document.visibilityState !== 'visible') return
+      clearTimeout(timer)
+      setStream((s) => (s.activeId === null && !s.pending ? s : { ...s, aliveAt: Date.now() }))
+      timer = setTimeout(judge, WATCHDOG_MS)
+    }
+    document.addEventListener('visibilitychange', onWake)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onWake)
+    }
   }, [running])
 
   useEffect(() => {
@@ -509,6 +523,7 @@ export function App() {
         : resp.error === 'no-permission' ? '无提取权限：浏览器要求换页后重新授权——点击工具栏上的 AI PageDive 图标后重试'
         : resp.error === 'empty-content' ? '页面没有可提取的正文——等页面加载完成（或滚动到底部触发懒加载）后重试；也可粘贴正文作为附件直接追问'
         : resp.error === 'cancelled' ? '已取消'
+        : resp.error === 'empty-instruction' ? '请输入要追问的内容（或直接点「新对话」重新总结本页）'
         : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——直接重新发送即可（将开始全新总结）'
         : String(resp.error)
       setStream((s) => {

@@ -90,7 +90,26 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const [sumLang] = useSetting('pd-sum-lang')
   const usable = agents.filter((a) => a.available && !disabledClis.has(a.id))
   const messages = stream.messages
-  const [workflow, setWorkflow] = useState('default')
+  // r16（3-agent P1）：workflow 落 localStorage——面板收起即文档重载（锚定模型），
+  // 组件态每次切页签回来都重置 default→deep：快捷用户的「快速」误发成最贵档。
+  // 与 pd-default-cli 同款模式：mount 读回 + 选中即写
+  const [workflow, setWorkflowState] = useState(() => {
+    try { return localStorage.getItem('pd-workflow') || 'default' } catch { return 'default' }
+  })
+  const setWorkflow = (wf: string) => {
+    setWorkflowState(wf)
+    try { localStorage.setItem('pd-workflow', wf) } catch { /* quota 等 */ }
+  }
+  // 持久值失效自愈（自定义 workflow 被删/换机残留）：列表到手后校验，不在则回 default。
+  // workflows 初始为 []（App 异步拉取）——空表=未加载而非「全没了」，跳过校验，
+  // 否则 mount 竞态会把持久值当场复位清库（localStorage 白写）
+  useEffect(() => {
+    if (!workflows.length) return
+    if (workflow !== 'default' && !workflows.some((w) => w.name === workflow)) {
+      setWorkflowState('default')
+      try { localStorage.removeItem('pd-workflow') } catch { /* quota 等 */ }
+    }
+  }, [workflows])
   const [input, setInput] = useState('')
   /** 待发送附件（文本 ≤512KB/个、图片 ≤5MB/个）：随下一次 send 走 task-start，发完即清 */
   const [attachments, setAttachments] = useState<Att[]>([])
@@ -103,6 +122,14 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const prevMsgCount = useRef(0)
   useEffect(() => {
     if (prevMsgCount.current > 0 && messages.length === 0) inputRef.current?.focus()
+    // r16（3-agent P2）：历史还原/重开恢复的多轮对话末条是 assistant，不触发
+    // 「末条为 user 才吸底」的常规逻辑——开场会停在第 1 轮而非最新结论。
+    // 0→N（还原）一次性跳底；rAF 等 React 把长文真正铺进 DOM 再滚
+    if (prevMsgCount.current === 0 && messages.length > 1) {
+      requestAnimationFrame(() => {
+        if (contentRef.current) contentRef.current.scrollTop = contentRef.current.scrollHeight
+      })
+    }
     prevMsgCount.current = messages.length
   }, [messages.length])
   // 终局异常（看门狗/断连）回填：refill.n 递增保证同文本也触发。
@@ -404,7 +431,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             anyInstalled={agents.some((a) => a.available)}
             pageUnsupported={pageUnsupported}
             agentsLoaded={agentsLoaded}
-            onSummarize={(wf) => send(wf)}
+            /* r16（3-agent P1）：活会话（重开兜底/追问中）不给一键 CTA——CTA 走首轮
+               总结分支会拆会话，走追问分支又必吃 empty-instruction；空态请用户输入 */
+            onSummarize={hasSession ? undefined : (wf) => send(wf)}
           />
         )}
         {messages.map((m) =>
@@ -443,6 +472,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
               phase={stream.phase}
               running={running && !!m.streaming}
               onNewChat={newChat}
+              pageTitle={pageMeta?.title}
               // 气泡创建时快照的归属 CLI（r7-ux）：流式中切下拉不错标；
               // 旧气泡无快照时回退 effectiveAgent/followAgent
               agentId={m.agentId ?? (followAgent && m.streaming !== true ? followAgent : effectiveAgent)}
@@ -591,13 +621,14 @@ function fmtK(n?: number): string {
 // 不变（msg 引用稳定、running=自己 streaming、onNewChat 已 useCallback），
 // memo 后旧气泡零重渲，只重绘正在流的那条
 const AssistantMessage = memo(function AssistantMessage({
-  msg, phase, running, agentId, onNewChat,
+  msg, phase, running, agentId, onNewChat, pageTitle,
 }: {
   msg: ChatMessage
   phase: string
   running: boolean
   agentId: string
   onNewChat: () => void
+  pageTitle?: string
 }) {
   return (
     <div className="pd-chat-assistant">
@@ -651,13 +682,13 @@ const AssistantMessage = memo(function AssistantMessage({
         </div>
       )}
       {!running && msg.text && (
-        <MessageActions text={msg.text} onNewChat={onNewChat} />
+        <MessageActions text={msg.text} onNewChat={onNewChat} pageTitle={pageTitle} />
       )}
     </div>
   )
 })
 
-function MessageActions({ text, onNewChat }: { text: string; onNewChat: () => void }) {
+function MessageActions({ text, onNewChat, pageTitle }: { text: string; onNewChat: () => void; pageTitle?: string }) {
   const [copied, setCopied] = useState(false)
   async function copy() {
     try {
@@ -671,7 +702,15 @@ function MessageActions({ text, onNewChat }: { text: string; onNewChat: () => vo
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `pagedive-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.md`
+    // r16（3-agent P2）：文件名带页面 slug（host buildHistoryPath 同款逻辑）——
+    // 高频归档者能从文件名认出内容，纯时间戳全是谜语
+    const slug = (pageTitle || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40)
+    a.download = `pagedive-${slug ? slug + '-' : ''}${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.md`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -807,11 +846,18 @@ function ActionBar({
   attachRef: React.RefObject<HTMLInputElement | null>
   onPickFiles: (files: FileList | null) => void
 }) {
+  // r16（3-agent P1）：运行中 Enter 的轻提示（本地态自包含——草稿保干净 + 有反馈）
+  const [enterHint, setEnterHint] = useState(false)
   return (
     <div className="pd-action-bar-inner">
       {workflowNotice && (
         <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice, #E3BE7F)' }}>
           ⚠ {workflowNotice}
+        </p>
+      )}
+      {enterHint && (
+        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice, #E3BE7F)' }}>
+          上一轮还在跑——内容已保留，完成后按 Enter 再发
         </p>
       )}
       {noFollowUpHint && (
@@ -848,7 +894,18 @@ function ActionBar({
         onKeyDown={(e) => {
           // Enter 发送 / Shift+Enter 换行（r8-ux：多行输入是竞品基线体验）。
           // keyCode 229：部分 IME（韩文等）compositionend 先于 keydown，isComposing 已 false
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229 && !running && (usableCount || input.trim() || attachCount)) {
+          if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return
+          // r16（3-agent P1）：运行中 Enter 曾漏成默认换行——预写的下一问被插空行
+          // 且零反馈。拦截并轻提示，草稿保干净，跑完再 Enter 即发
+          if (running) {
+            e.preventDefault()
+            if (input.trim() || attachCount) {
+              setEnterHint(true)
+              setTimeout(() => setEnterHint(false), 3500)
+            }
+            return
+          }
+          if (usableCount || input.trim() || attachCount) {
             e.preventDefault()
             onStart()
           }
@@ -945,13 +1002,13 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
             <>
               在「设置 → 本机 CLI」中开启至少一个即可使用
               <br />
-              内容只在本机处理
+              无服务器 · 正文不经 PageDive 中转
             </>
           ) : (
             <>
-              请先安装并登录 claude 或 codex
+              终端执行 <code>npm i -g @anthropic-ai/claude-code</code>（或 codex）并登录
               <br />
-              安装后回到本页即可使用 · 内容只在本机处理
+              安装后点上方「重试检测」 · 无服务器 · 正文不经 PageDive 中转
             </>
           )}
         </p>
@@ -988,7 +1045,9 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
         </div>
       )}
       <p className="pd-placeholder-hint">
-        或在下方输入任何问题（Enter 发送）
+        深度：全篇精读约 1-3 分钟 · 快速：抓要点秒级出稿
+        <br />
+        或在下方输入任何问题（Enter 发送 · Alt+D 随时唤起）
         <br />
         {clis.map((id, i) => (
           <span key={id}>
@@ -996,7 +1055,7 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
             {id}
           </span>
         ))}
-        {' · 内容只在本机处理'}
+        {' · 无服务器 · 正文不经 PageDive 中转'}
       </p>
     </div>
   )
