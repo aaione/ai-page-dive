@@ -476,10 +476,6 @@ export class Task {
       })
       .catch(logFail)
   }
-
-  get accumulated(): string {
-    return this.accText
-  }
 }
 
 /** 把正文文件软链进 CLI cwd（opencode 沙箱只准读 cwd） */
@@ -514,10 +510,7 @@ function pageMetaLine(page: TaskInput['page']): string {
     .join('  ')
 }
 
-/**
- * workflow 正文占位符展开（{url} {title} {file} {meta}）。
- * 只替换四个已知占位符，未知（含大小写变体）原样保留。
- */
+/** workflow 正文占位符展开（{url} {title} {file} {meta}）：只替换四个已知占位符，未知（含大小写变体）原样保留 */
 export function expandWorkflowPlaceholders(
   body: string,
   page: TaskInput['page'],
