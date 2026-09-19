@@ -93,6 +93,13 @@ export function App() {
   // r14-ux：panel-ready 触发的在途 history-read 路径（还原重开前的对话）——
   // listener 的 history-file 分支只收它匹配的那条，HistoryView 自己的读取互不干扰
   const restorePathRef = useRef<string | null>(null)
+  // r16：本面板锚定页签（get-state 初值 + panel-anchor 帧刷新）——任务帧「未绑定
+  // 收养」瞬间的邮戳核验基准：别的页签任务的流不得在本面板凭空开场（串台根修）
+  const anchorTabIdRef = useRef<number | null>(null)
+  /** r16 收养守卫：未绑定（含 pending 等首帧窗口）时只收养本锚页签的任务帧；
+   * 已绑定照收——折叠续流/双窗口恒广播语义不变。无邮戳的旧帧放行（向后兼容） */
+  const foreignAdopt = (m: any, s: typeof stream) =>
+    s.taskId === null && s.activeId === null && typeof m.tabId === 'number' && m.tabId !== anchorTabIdRef.current
 
   useEffect(() => {
     // Esc 关 overlay（输入框/下拉自身的 Esc 处理在前，事件冒泡到此处才关面板）
@@ -170,6 +177,7 @@ export function App() {
           return
         }
         setHostOk(!!resp?.ok)
+        if (typeof (resp as any).panelTabId === 'number') anchorTabIdRef.current = (resp as any).panelTabId
         if (resp?.outdated) setOutdated(String(resp.outdated))
         if (resp?.ok) requestLists()
         if (resp?.page) setPageMeta(resp.page)
@@ -227,6 +235,10 @@ export function App() {
     ping()
     const listener = (m: any) => {
       switch (m.t) {
+        case 'panel-anchor':
+          // r16：换锚不重载面板——收养邮戳的核验基准跟着锚走
+          if (typeof m.tabId === 'number') anchorTabIdRef.current = m.tabId
+          break
         case 'page-meta':
           setPageMeta(m.page)
           // r8-review：pageUnsupported 只在 panel-ready 同步过一次——tab 导航/切换后
@@ -264,6 +276,7 @@ export function App() {
             // 台账/绑定双守卫（r5：曾是 6 个帧 handler 中唯一缺席者——取消 A 后起 B，
             // A 的迟到 meta 把 model 写上 B 的气泡并虚刷 B 的看门狗）
             if (s.finished.includes(m.taskId)) return s
+            if (foreignAdopt(m, s)) return s
             if (s.taskId !== null && s.taskId !== m.taskId) return s
             return ({
             ...s,
@@ -288,6 +301,8 @@ export function App() {
           setStream((s) => {
             // 已终局任务的迟到 chunk（进程收割尾巴）：拒收——放行会新开永终局气泡
             if (s.finished.includes(m.taskId)) return s
+            // r16：未绑定时只收养本锚页签的流（别的页签任务不得在本面板凭空开场）
+            if (foreignAdopt(m, s)) return s
             // 首帧绑定或已绑定同任务；绑定后不同 taskId = 过期帧（取消后尾随），丢弃
             if (s.taskId !== null && s.taskId !== m.taskId) return s
             // r6-ux seq 跳变检测：host 每 chunk 递增 seq，SW 重放/断连窗口丢片时跳变
@@ -309,6 +324,7 @@ export function App() {
           // 不新建/改动气泡文本，只更新 aliveAt（看门狗依赖）+ phase 时长提示
           setStream((s) => {
             if (s.finished.includes(m.taskId)) return s
+            if (foreignAdopt(m, s)) return s
             if (s.taskId !== null && s.taskId !== m.taskId) return s
             const secs = m.elapsedMs ? Math.round(m.elapsedMs / 1000) : 0
             const phase = secs > 30 ? `处理中（已 ${secs}s）…` : s.phase
@@ -321,6 +337,7 @@ export function App() {
           // 光标都不出现
           setStream((s) => {
             if (s.finished.includes(m.taskId)) return s
+            if (foreignAdopt(m, s)) return s
             if (s.taskId !== null && s.taskId !== m.taskId) return s
             const activeId = s.activeId ?? `a${m.taskId}`
             const messages = s.messages.some((x) => x.id === activeId)
@@ -380,6 +397,9 @@ export function App() {
             // 已终局任务的迟到 error（如 content-mismatch 已收尾后 host 侧 cancelled 帧
             // 迟到）：拒收——否则同一事故叠出第二个错误气泡（与 chunk/status 对齐）
             if (s.finished.includes(m.taskId)) return s
+            // r16：未绑定 + 他页签任务的取消帧（本页签起新总结连坐收割）——本面板
+            // 与该任务素不相识，不得把空闲态误标成错误
+            if (foreignAdopt(m, s)) return s
             // 过期帧（绑定的是别的任务）：不劫持新一轮状态，仅收尾还在 streaming 的气泡
             if (s.taskId !== null && s.taskId !== m.taskId) {
               return {
@@ -395,8 +415,15 @@ export function App() {
                     ...msg,
                     streaming: false,
                     // 用户主动停止：文案只「已取消」不拼英文 message、不标故障（r5-ux：
-                    // 曾显示「CLI 报告运行失败：已取消: task cancelled」错怪 CLI）
-                    error: m.code === 'cancelled' ? '已取消' : `${ERROR_LABEL[m.code] ?? m.code}: ${authHint(m.message)}`,
+                    // 曾显示「CLI 报告运行失败：已取消: task cancelled」错怪 CLI）。
+                    // r16 例外：连坐收割（他页签起新任务砍本任务）时 SW 下发的
+                    // message 自带来源页说明——照抄，被折叠的面板切回时看得到解释
+                    error:
+                      m.code === 'cancelled'
+                        ? m.message && m.message !== '已取消'
+                          ? m.message
+                          : '已取消'
+                        : `${ERROR_LABEL[m.code] ?? m.code}: ${authHint(m.message)}`,
                     isError: true,
                     cancelled: m.code === 'cancelled',
                   }

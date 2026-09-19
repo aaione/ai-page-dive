@@ -141,6 +141,9 @@ function anchorPanel(tabId: number) {
   chrome.sidePanel.setOptions({ tabId, path: 'sidepanel.html', enabled: true }).catch((e: unknown) => {
     console.warn('[pd] anchorPanel setOptions failed:', e)
   })
+  // r16：锚变更广播——存活面板（换锚不重载 React）据此刷新收养邮戳的核验基准；
+  // 新开面板靠 panel-ready/get-state 兜底（listener 未就绪时本帧丢失无害）
+  sendToPanel({ t: 'panel-anchor', tabId })
 }
 function unanchorPanel(tabId: number) {
   disabledTabs.add(tabId)
@@ -315,6 +318,8 @@ async function handleMessage(msg: any): Promise<unknown> {
         ...(r.ok ? {} : { nmError: nmPort.lastError }),
         ...(outdated ? { outdated } : {}),
         page: pageMeta(),
+        // r16：锚定页签透出——panel 未绑定收养任务帧时核邮戳用（防跨页签串台）
+        panelTabId,
         // r8-ux：不可提取页（chrome:// 等）前置告知——placeholder 直接说明而非
         // 等用户输入发送后才报「浏览器内置页面无法提取」（预期管理前移）
         pageUnsupported: !!(target && !isNormalPage(target.url)),
@@ -399,9 +404,19 @@ function cancelCurrent() {
   if (currentTask) {
     nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })
     // 终局帧补发：发起面板按 taskId 对号（finished 幂等，双收无害）；host 迟到的
-    // 同义帧会被面板 finished 列表拒收——双窗口下也绝不错终局另一面板的新任务
+    // 同义帧会被面板 finished 列表拒收——双窗口下也绝不错终局另一面板的新任务。
+    // r16：被砍任务属别的页签时（本页签起新总结连坐）文案点名来源页——被折叠的
+    // 旧锚面板切回时能看到「谁被取消了」，不再是无解释的凭空终止
+    const cross = panelTabId !== null && currentTask.tabId !== panelTabId
+    const title = (currentTask.page.title || '其他页签').slice(0, 24)
     chrome.runtime
-      .sendMessage({ t: 'task-error', taskId: currentTask.taskId, code: 'cancelled', message: '已取消' })
+      .sendMessage({
+        t: 'task-error',
+        taskId: currentTask.taskId,
+        code: 'cancelled',
+        message: cross ? `已取消「${title}」页签的在跑任务` : '已取消',
+        tabId: currentTask.tabId,
+      })
       .catch(() => {})
     currentTask = null
     return { ok: true }
@@ -437,7 +452,12 @@ nmPort.onMessage((m) => {
   if (msg?.t === 'heartbeat') {
     if (currentTask) {
       chrome.runtime
-        .sendMessage({ t: 'task-alive', taskId: currentTask.taskId, elapsedMs: Date.now() - currentTask.startedAt })
+        .sendMessage({
+          t: 'task-alive',
+          taskId: currentTask.taskId,
+          elapsedMs: Date.now() - currentTask.startedAt,
+          tabId: currentTask.tabId,
+        })
         .catch(() => {})
     }
     return
@@ -485,8 +505,14 @@ nmPort.onMessage((m) => {
     }
   }
   // r12 修正：sendToPanel 恒广播（tabs.sendMessage 到不了 sidePanel，见函数注释）；
-  // 终局清理仍在路由之后（见上方说明）
-  sendToPanel(m)
+  // 终局清理仍在路由之后（见上方说明）。
+  // r16：任务帧盖 tabId 邮戳（帧属任务源页签）——panel 只在「未绑定收养」瞬间核
+  // 邮戳（绑定态照收：折叠续流/双窗口恒广播语义不回归），跨页签流不再串台
+  sendToPanel(
+    currentTask && (msg as { taskId?: string })?.taskId === currentTask.taskId
+      ? { ...(msg as object), tabId: currentTask.tabId }
+      : m,
+  )
   if ((msg?.t === 'task-done' || msg?.t === 'task-error') && currentTask && msg.taskId === currentTask.taskId) {
     currentTask = null
   }
@@ -596,7 +622,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   }
   // 面板未开时无接收端是常态，静默。agentId（r7-ux）：气泡创建即快照归属 CLI，
   // 流式中切下拉不错标（host 侧 status 帧不带，meta 帧到时再补）
-  sendToPanel({ t: 'task-status', taskId, phase: 'reading', agentId: currentAgentId })
+  sendToPanel({ t: 'task-status', taskId, phase: 'reading', agentId: currentAgentId, tabId: tab.id! })
 
   // content script 需 modules → 动态 files 注入（activeTab 授权下用户手势有效）。
   // allFrames：豆包文档等 SPA 正文渲染在 iframe，只注 top frame 会拿到空壳误报
