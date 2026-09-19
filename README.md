@@ -12,7 +12,7 @@
 <!-- CWS 上线后替换为商店 badge：
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/<扩展ID>.svg)](https://chromewebstore.google.com/detail/<扩展ID>) -->
 
-零配置 · 复用你已有的 CLI 订阅 · 内容不出本机
+零配置 · 复用你已有的 CLI 订阅 · 无服务器、零遥测
 
 <!-- TODO: 补 demo GIF（侧边栏总结动线 3-5 秒），放此位 -->
 
@@ -21,7 +21,7 @@
 ## 为什么是 AI PageDive
 
 - **零配置**——无账号、无 API key：直接用你终端里已登录的 CLI（claude / codex 全支持，opencode 实验档）
-- **内容不出本机**——网页正文全程本机处理：Chrome → Native Messaging → 本机 CLI，无服务器、零遥测
+- **无服务器、零遥测**——网页正文经 Chrome → Native Messaging 直交本机 CLI，全程不经 PageDive 中转、零遥测（CLI 与其模型服务的通信遵循该 CLI 自身的隐私政策，见 [PRIVACY.md](PRIVACY.md)）
 - **零凭证接触**——只子进程调起官方 CLI 二进制，不碰 token、不代理流量、不额外收费
 - **流式输出**——markdown 实时渲染，正文下方继续输入即可多轮追问
 - **四种内置模式**——快速摘要 / 深度研读 / 论文阅读 / 去 AI 味（全文改写为自然人类口吻），并可在 `~/.ai-page-dive/workflows/` 自定义新增
@@ -60,7 +60,7 @@ npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id <扩展ID>
 <details>
 <summary>网页内容会被上传到你们的服务器吗？</summary>
 
-不会。没有服务器、零遥测。正文提取后全程在本机处理（Chrome → Native Messaging → 本机 CLI），详见 [PRIVACY.md](PRIVACY.md)。
+不会。PageDive 没有服务器、零遥测，正文经 Chrome Native Messaging 直达本机 CLI，不经任何 PageDive 中转。之后内容如何处理由你所选 CLI 自身的隐私政策决定（claude → Anthropic、codex → OpenAI），详见 [PRIVACY.md](PRIVACY.md)。
 </details>
 
 <details>

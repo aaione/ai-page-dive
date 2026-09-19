@@ -93,6 +93,12 @@ export function Onboarding() {
           </svg>
         </button>
         {copied && <p className="pd-onboarding-copied">已复制 ✓</p>}
+        {/* r16 信任证据前置（3-agent P0-3）：curl|sh 是恐惧时刻——在执行前给可自行
+            验证的事实（源码可查/无 sudo/落点明确），而非执行后才出现的宽慰话 */}
+        <p className="pd-onboarding-trust">
+          命令内容公开可查（install.sh，MIT 开源）· 无 sudo · 不碰 CLI 凭证 · 只做一件事：
+          装 npm 包并注册 Chrome 本机组件，全部落在 <code>~/.ai-page-dive/</code>
+        </p>
         <details className="pd-onboarding-faq">
           <summary>命令报错了？</summary>
           <p>
@@ -123,7 +129,7 @@ export function Onboarding() {
             终端看到 <code>🎉 安装完成</code> 后回本页，通常会自动进入；若超过 1 分半未进入，
             多半需完全重启 Chrome（⌘Q，见下方提示）。
             <br />
-            <strong>内容只在本机处理，不经过任何服务器。</strong>
+            <strong>内容不经 PageDive 任何服务器；上传与否只由你的 CLI 自身决定。</strong>
           </p>
         )}
         <p className="pd-onboarding-note">本页自动检测（间隔渐放缓至 15 秒），装好后自动进入。</p>

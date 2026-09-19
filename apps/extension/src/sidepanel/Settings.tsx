@@ -574,6 +574,11 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                 <strong>不接触任何凭证、不代理流量、不额外收费</strong>；总结用量计入你的 CLI 订阅。
               </p>
               <p>
+                无服务器、零遥测：网页正文经 Chrome 直交本机 CLI，不经 PageDive 中转（CLI 与其
+                模型服务的通信遵循该 CLI 自身隐私政策）。代码全部开源，可自行审计：
+                <code>github.com/aaione/ai-page-dive</code>
+              </p>
+              <p>
                 付费墙站点会尽力提取当前已渲染内容（等价于你手动复制），不会绕过访问控制。
               </p>
               <p>

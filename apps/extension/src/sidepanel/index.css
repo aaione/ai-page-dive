@@ -1451,6 +1451,21 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   font-size: 11px;
   color: var(--pd-accent);
 }
+/* r16 信任证据条（curl|sh 执行前给可验证事实）：比 copied 醒目半档、比正文轻 */
+.pd-onboarding-trust {
+  margin-top: 10px;
+  font-size: 10.5px;
+  line-height: 1.75;
+  color: var(--pd-text-2);
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.03);
+}
+.pd-onboarding-trust code {
+  font-family: var(--font-mono-ui);
+  font-size: 10px;
+}
 /* 终端失败兜底（npm 未装 / EACCES）：默认折叠，命令报错才展开看 */
 .pd-onboarding-faq {
   margin-top: 10px;
