@@ -1047,7 +1047,7 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
       <p className="pd-placeholder-hint">
         深度：全篇精读约 1-3 分钟 · 快速：抓要点秒级出稿
         <br />
-        或在下方输入任何问题（Enter 发送 · Ctrl+Shift+D 随时唤起）
+        或在下方输入任何问题
       </p>
     </div>
   )
