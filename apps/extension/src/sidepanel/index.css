@@ -1014,6 +1014,8 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   color: var(--pd-text-2);
 }
 .pd-dropdown-label {
+  /* 模型身份显示（claude/codex…）：13px 略高于顶栏 12px 档——身份元素优先可辨识 */
+  font-size: 13px;
   max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
