@@ -353,6 +353,64 @@
   background: rgba(226,185,111,.10);
   flex-shrink: 0;
 }
+
+/* ── 外观 tab：壁纸氛围档（r24）——分段控件与 pd-set-lang-opts 同谱 ── */
+.pd-set-amb-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pd-set-amb-opts {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--pd-grain-soft) repeat, rgba(255,255,255,.05);
+  border: 1px solid var(--pd-line-soft);
+}
+.pd-set-amb-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: var(--font-sans-ui);
+  font-size: 11px;
+  color: var(--color-pd-ink-2);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.pd-set-amb-opt:hover {
+  color: var(--color-pd-ink);
+}
+.pd-set-amb-opt.active {
+  background: rgba(226,185,111,.20);
+  color: var(--color-pd-ink);
+}
+/* 色点：该档主光色的双端渐变缩略（中性档 = 冷天光→暖金双色并存） */
+.pd-set-amb-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.25);
+}
+/* r26：氛围档扩到 6 个，~320px 面板一行放不下——标签上置 + 3 列网格 */
+.pd-set-amb-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.pd-set-amb-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.pd-set-amb-grid .pd-set-amb-opt {
+  justify-content: center;
+  padding: 4px 6px;
+}
 .pd-set-empty {
   padding: 20px 6px;
   font-size: 11.5px;

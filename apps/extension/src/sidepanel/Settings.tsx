@@ -5,7 +5,7 @@ import './Settings.css'
 /** workflow 名称合法字符（与目录名一致）：字母数字下划线连字符，≤64 */
 const WF_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/
 
-type Tab = 'modes' | 'clis' | 'skills' | 'about'
+type Tab = 'modes' | 'clis' | 'skills' | 'look' | 'about'
 
 interface EditorState {
   /** 原始名（保存时定位）；新建未保存时为 null */
@@ -84,6 +84,10 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const [disabledClis, setDisabledClis] = useState<string[]>(() => readStrList('pd-disabled-clis'))
   const [defaultCli, setDefaultCli] = useState(() => readStr('pd-default-cli'))
   const [lang, setLang] = useState(() => readStr('pd-sum-lang'))
+  /** r24 氛围档：''=中性（默认）| warm | cool——写 localStorage + body[data-ambience] */
+  const [ambience, setAmbienceState] = useState(() => readStr('pd-ambience'))
+  /** r25 阅读字号档：''=标准 | sm | lg——写 localStorage + body[data-reading-size] */
+  const [readSize, setReadSizeState] = useState(() => readStr('pd-reading-size'))
 
   /** 单值设置写入 + 广播（App/SummarizeView 监听 pd-settings-changed 联动） */
   function setSetting(key: string, v: string) {
@@ -305,6 +309,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
       { key: 'modes', label: '模式' },
       { key: 'clis', label: '本机 CLI' },
       { key: 'skills', label: '技能' },
+      { key: 'look', label: '外观' },
       { key: 'about', label: '关于' },
     ],
     [],
@@ -555,6 +560,64 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                   ③ frontmatter 写 <code>name</code>/<code>description</code>、正文写技能指令——保存即出现在此列表。
                 </p>
               )}
+            </div>
+          </div>
+        )}
+
+        {tab === 'look' && (
+          <div className="pd-set-pane">
+            <div className="pd-set-panel">
+              <p className="pd-set-hint">氛围光只改壁纸光斑色（透过磨砂玻璃被放大成主调）；界面锚点色不随档变化。</p>
+              {/* r26：氛围档 3→6，一行放不下——标签上置 + 3 列网格（见 pd-set-amb-row-stack） */}
+              <div className="pd-set-amb-row pd-set-amb-row-stack">
+                <span className="pd-set-label" style={{ margin: 0 }}>壁纸氛围</span>
+                <div className="pd-set-amb-opts pd-set-amb-grid" role="radiogroup" aria-label="壁纸氛围光">
+                  {([
+                    ['', '中性', 'linear-gradient(135deg, #D2E1FF 0%, #ECC070 100%)'],
+                    ['warm', '暖琥珀', 'linear-gradient(135deg, #FFE0B2 0%, #F0BE6E 100%)'],
+                    ['cool', '冷冰蓝', 'linear-gradient(135deg, #BCC6FF 0%, #5C80D7 100%)'],
+                    ['dusk', '暮紫', 'linear-gradient(135deg, #E2D4FF 0%, #9B82E8 100%)'],
+                    ['pine', '松绿', 'linear-gradient(135deg, #D4EEDF 0%, #7FB490 100%)'],
+                    ['rose', '绯樱', 'linear-gradient(135deg, #FFDEE4 0%, #D28A9C 100%)'],
+                  ] as const).map(([v, label, dot]) => (
+                    <button
+                      key={v || 'neutral'}
+                      className={`pd-set-amb-opt ${(ambience || '') === v ? 'active' : ''}`}
+                      onClick={() => {
+                        setSetting('pd-ambience', v)
+                        setAmbienceState(v)
+                        document.body.dataset.ambience = v
+                      }}
+                      role="radio"
+                      aria-checked={(ambience || '') === v}
+                    >
+                      <span className="pd-set-amb-dot" style={{ background: dot }} aria-hidden="true" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* r25 阅读字号档：A11y 刚需——标题用 em 相对正文，切档层级不倒挂 */}
+              <div className="pd-set-amb-row" style={{ marginTop: 16 }}>
+                <span className="pd-set-label" style={{ margin: 0 }}>阅读字号</span>
+                <div className="pd-set-amb-opts" role="radiogroup" aria-label="阅读字号">
+                  {([['sm', '小'], ['', '标准'], ['lg', '大']] as const).map(([v, label]) => (
+                    <button
+                      key={v || 'md'}
+                      className={`pd-set-amb-opt ${(readSize || '') === v ? 'active' : ''}`}
+                      onClick={() => {
+                        setSetting('pd-reading-size', v)
+                        setReadSizeState(v)
+                        document.body.dataset.readingSize = v
+                      }}
+                      role="radio"
+                      aria-checked={(readSize || '') === v}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}

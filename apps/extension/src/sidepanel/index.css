@@ -128,22 +128,86 @@ body {
   font-family: var(--font-sans-ui);
   /* r21c 感知阈值校准（r21b 被 vision 判「光斑接近不可感知」：深色 UI 里人眼
      需要 5-8% 局部亮度差+色相偏移才读得出氛围光）——alpha 全面再推一档、
-     暖金提纯加饱和（色相拉距），半径微收让峰值落进面板 */
+     暖金提纯加饱和（色相拉距），半径微收让峰值落进面板。
+     r23：真机截图实锤空闲主页面光场仍低于感知线（背景是所有磨砂的取样源，
+     源平则上面全平）——主光斑再推一档（约 +40%）、半径放宽让衰减更贵气 */
   background:
-    radial-gradient(320px 250px at 50% -6%, rgba(210,225,255,.20) 0%, transparent 58%),
-    radial-gradient(290px 350px at -8% 28%, rgba(236,192,112,.24) 0%, transparent 66%),
-    radial-gradient(300px 360px at 104% 88%, rgba(96,130,220,.18) 0%, transparent 64%),
-    radial-gradient(200px 190px at 92% 12%, rgba(255,255,255,.11) 0%, transparent 56%),
+    radial-gradient(360px 280px at 50% -6%, rgba(210,225,255,.30) 0%, transparent 60%),
+    radial-gradient(310px 380px at -8% 28%, rgba(236,192,112,.34) 0%, transparent 68%),
+    radial-gradient(320px 380px at 104% 88%, rgba(96,130,220,.27) 0%, transparent 66%),
+    radial-gradient(220px 200px at 92% 12%, rgba(255,255,255,.16) 0%, transparent 58%),
     linear-gradient(180deg, #191922 0%, #121218 44%, #0B0B0F 100%);
   background-attachment: fixed;
 }
+/* ── r24 氛围档 / r26 扩至六档：壁纸光斑换色（localStorage pd-ambience →
+     body[data-ambience]，main.tsx render 前同步应用）。只换光斑+底梯色温微倾，
+     玻璃栈（中性白受光）与 accent 锚点不随档变——氛围感知通道 = 光斑色透过
+     玻璃被 saturate 放大。每档总光通量对齐 neutral（≈1.07，绯樱档刻意 .95 收敛
+     防艳）防某档明显更亮；简写会重置 attachment，各档补一行 fixed。
+     r26 视觉校准：暖档主斑提纯（.38→.42，暗部不再灰褐浑浊）、冷档深斑
+     靛紫→钢蓝（92,128,215 → 108,150,230，贴回「冰蓝」命名）── */
+body[data-ambience='warm'] {
+  background:
+    radial-gradient(360px 280px at 50% -6%, rgba(255,224,178,.26) 0%, transparent 60%),
+    radial-gradient(310px 380px at -8% 28%, rgba(242,188,102,.42) 0%, transparent 68%),
+    radial-gradient(320px 380px at 104% 88%, rgba(205,145,95,.20) 0%, transparent 66%),
+    radial-gradient(220px 200px at 92% 12%, rgba(255,235,205,.16) 0%, transparent 58%),
+    linear-gradient(180deg, #1C1916 0%, #141210 44%, #0D0B09 100%);
+  background-attachment: fixed;
+}
+body[data-ambience='cool'] {
+  background:
+    radial-gradient(360px 280px at 50% -6%, rgba(188,214,255,.32) 0%, transparent 60%),
+    radial-gradient(310px 380px at -8% 28%, rgba(142,180,240,.30) 0%, transparent 68%),
+    radial-gradient(320px 380px at 104% 88%, rgba(108,150,230,.30) 0%, transparent 66%),
+    radial-gradient(220px 200px at 92% 12%, rgba(215,232,255,.15) 0%, transparent 58%),
+    linear-gradient(180deg, #16181F 0%, #101218 44%, #090A0E 100%);
+  background-attachment: fixed;
+}
+/* r26 新三档：全部低饱和暮调——过饱和即「AI 产品默认渐变」的廉价感来源 */
+body[data-ambience='dusk'] { /* 暮紫：薰衣草雾 + 深靛黄昏 */
+  background:
+    radial-gradient(360px 280px at 50% -6%, rgba(226,212,255,.27) 0%, transparent 60%),
+    radial-gradient(310px 380px at -8% 28%, rgba(178,156,240,.30) 0%, transparent 68%),
+    radial-gradient(320px 380px at 104% 88%, rgba(118,96,205,.25) 0%, transparent 66%),
+    radial-gradient(220px 200px at 92% 12%, rgba(238,230,255,.15) 0%, transparent 58%),
+    linear-gradient(180deg, #1A1622 0%, #12101A 44%, #0B090F 100%);
+  background-attachment: fixed;
+}
+body[data-ambience='pine'] { /* 松绿：苔原雾 + 深林墨 */
+  background:
+    radial-gradient(360px 280px at 50% -6%, rgba(212,238,224,.26) 0%, transparent 60%),
+    radial-gradient(310px 380px at -8% 28%, rgba(156,206,176,.30) 0%, transparent 68%),
+    radial-gradient(320px 380px at 104% 88%, rgba(96,148,124,.26) 0%, transparent 66%),
+    radial-gradient(220px 200px at 92% 12%, rgba(232,246,238,.15) 0%, transparent 58%),
+    linear-gradient(180deg, #151B18 0%, #0F1310 44%, #090B0A 100%);
+  background-attachment: fixed;
+}
+body[data-ambience='rose'] { /* 绯樱：樱粉雾 + 干玫瑰。r26 视觉复审：首版收光过狠
+     （sum .92）与暮紫撞脸读作暗紫灰——主/深斑提饱和拉色相存在感，sum 回 1.03 仍最低档 */
+  background:
+    radial-gradient(360px 280px at 50% -6%, rgba(255,214,224,.27) 0%, transparent 60%),
+    radial-gradient(310px 380px at -8% 28%, rgba(242,168,186,.34) 0%, transparent 68%),
+    radial-gradient(320px 380px at 104% 88%, rgba(202,118,140,.27) 0%, transparent 66%),
+    radial-gradient(220px 200px at 92% 12%, rgba(255,236,242,.15) 0%, transparent 58%),
+    linear-gradient(180deg, #1D1517 0%, #150F11 44%, #0C0809 100%);
+  background-attachment: fixed;
+}
+
+/* ── r25 阅读字号档：localStorage pd-reading-size → body[data-reading-size]
+     （main.tsx render 前同步应用，同氛围档机制）。只覆盖 --pd-read-size，
+     阅读层标题用 em 相对正文，随档等比缩放 ── */
+body { --pd-read-size: 14px; }
+body[data-reading-size='sm'] { --pd-read-size: 13px; }
+body[data-reading-size='lg'] { --pd-read-size: 15px; }
+
 body::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: .035;
+  opacity: .045; /* r23：全局细砂随光场微提——壁纸上可乘的颗粒是「氛围」的一部分 */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 .pd-app { position: relative; z-index: 1; }
