@@ -431,9 +431,10 @@
 }
 .pd-set-wf-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 8px 10px;
   border: none;
   border-radius: 8px;
   background: transparent;
@@ -449,6 +450,12 @@
   background: rgba(226,185,111,.14);
   box-shadow: inset 0 0 0 1px rgba(226,185,111,.40);
 }
+/* r29：名称行（名称 + 徽标）与描述行上下两行——旧单行 flex 曾把描述挤到右侧硬截断 */
+.pd-set-wf-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .pd-set-wf-name {
   flex: 1;
   min-width: 0;
@@ -459,7 +466,7 @@
   white-space: nowrap;
 }
 .pd-set-wf-desc {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--color-pd-ink-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -480,6 +487,11 @@
 .pd-set-label {
   font-size: 11px;
   color: var(--color-pd-ink-2);
+}
+.pd-set-label-note {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.72;
 }
 .pd-set-input {
   padding: 6px 10px;

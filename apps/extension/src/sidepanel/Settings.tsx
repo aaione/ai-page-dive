@@ -351,12 +351,12 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
           <div className="pd-set-pane">
             <div className="pd-set-modes">
               <div className="pd-set-panel">
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-                  <p className="pd-set-hint" style={{ margin: 0, flex: 1 }}>
-                    总结模式即插件：目录在 <code>~/.ai-page-dive/workflows/</code>
-                  </p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 2 }}>
                   <button className="pd-set-btn primary" onClick={newWorkflow}>＋ 新建模式</button>
                 </div>
+                <p className="pd-set-hint" style={{ margin: '0 0 8px' }}>
+                  总结模式即插件：目录在 <code>~/.ai-page-dive/workflows/</code>
+                </p>
                 {pendingSwitch && (
                   <div className="pd-set-dirty-bar" role="alert">
                     <span>
@@ -384,8 +384,8 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                         onClick={() => selectWorkflow(w)}
                         title={w.description}
                       >
-                        <span className="pd-set-wf-name">
-                          {w.name}
+                        <span className="pd-set-wf-name-row">
+                          <span className="pd-set-wf-name">{w.name}</span>
                           {w.builtin && <span className="pd-set-badge">内置</span>}
                         </span>
                         <span className="pd-set-wf-desc">{w.description}</span>
@@ -400,7 +400,10 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               {editor && (
                 <div className="pd-set-panel pd-set-editor">
                   <div className="pd-set-field">
-                    <span className="pd-set-label">名称{editor.builtin ? '（内置模式，保存将在用户目录创建副本）' : ''}</span>
+                    <span className="pd-set-label">
+                      名称
+                      {editor.builtin && <span className="pd-set-label-note">内置模式 · 保存将在用户目录创建副本</span>}
+                    </span>
                     <input
                       className="pd-set-input name"
                       value={editor.name}
