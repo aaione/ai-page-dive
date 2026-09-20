@@ -256,6 +256,8 @@ export interface HistoryItem {
   ts: number
   /** CLI 会话 id（有则支持「继续对话」resume） */
   sessionId?: string
+  /** 正文命中片段（全文检索命中时携带，title/url 命中不带） */
+  snippet?: string
 }
 
 export interface HistoryListResultMsg {

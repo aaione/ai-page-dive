@@ -1,7 +1,6 @@
 /** 历史落盘：~/.ai-page-dive/history/年/月/日/时间戳-slug.md（frontmatter 元数据）
- * 多轮对话：同一 CLI 会话的追问轮 append 到首轮文件，pd:user/pd:assistant
- * HTML 注释分段（对 markdown 渲染不可见，解析简单且不会被正文伪造的标记骗到
- * ——正文里的标记会被转义/包进代码块；即便伪造也只是显示分层问题，无安全面） */
+ * 多轮对话：追问轮 append 到首轮文件，pd:user/pd:assistant HTML 注释分段——markdown
+ * 渲染不可见、解析简单、正文伪造的标记只影响显示分层无安全面 */
 import { mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -55,8 +54,7 @@ export function slugify(s: string): string {
 }
 
 function escapeYaml(s: string): string {
-  // ponytail: 引号包裹 + 反斜杠转义。r8-review：C0 控制字符（含 \r——YAML 规范
-  // 当换行，引号内裸 CR 会让标准 YAML 工具解析失败）一并替空格
+  // ponytail: 引号+反斜杠转义；C0 控制字符（含 \r，YAML 规范当换行、裸 CR 破坏引号解析）替空格（r8-review）
   return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\x00-\x1f]+/g, ' ')}"`
 }
 
@@ -125,48 +123,53 @@ export async function appendHistoryTurn(
   })
 }
 
-/** 扫描历史目录，按 ts 倒序，query 子串过滤 title/url。
- * r8-host：年/月/日/文件名（HHMMSS 前缀）零填充天然可排序——各层倒序遍历即近似
- * 时间倒序，无 query 时凑够 limit 提前返回（旧版全量读 frontmatter 再排序截断）。
- * r8-perf：query 须全量后过滤，逐文件串行 await 数千文件时单次搜索秒级——32 并发批读 */
+/** 正文命中片段：命中点前后各 ~40 字符、空白压扁；未命中 undefined。
+ * r17（高频 P1）：搜索从 title/url 扩全文——「之前总结过讲 X 的那篇」常只记得内容词 */
+export function extractSnippet(body: string, q: string): string | undefined {
+  const idx = body.toLowerCase().indexOf(q.toLowerCase())
+  if (idx < 0) return undefined
+  return body.slice(Math.max(0, idx - 40), idx + q.length + 40).replace(/\s+/g, ' ').trim()
+}
+
+/** 扫描历史目录，按 ts 倒序，query 匹配 title/url/正文（r8-perf：32 并发批读）。
+ * r8-host：年/月/日/文件名零填充天然可排序——各层倒序遍历即近似时间倒序，无 query
+ * 时凑够 limit 提前返回；readdir 兜底 []：单目录 EACCES 只跳过该子树不崩进程 */
 export async function listHistory(query?: string, limit = 100): Promise<HistoryItem[]> {
-  // files 层 readdir 返回 string[]，年/月/日层返回 Dirent[]——统一按 name 倒序。
-  // 各层 readdir 兜底 []：单个年/月/日目录 EACCES（共享 mac 属主/手动 chmod）不再
-  // 抛出未捕获 rejection 崩溃进程，只跳过该子树、其余历史照常返回
   const desc = (a: string | { name: string }, b: string | { name: string }) =>
     (typeof b === 'string' ? b : b.name).localeCompare(typeof a === 'string' ? a : a.name)
   const paths: string[] = []
-  const years = (await readdir(ROOT, { withFileTypes: true }).catch(() => [] as any[])).sort(desc)
-  for (const y of years) {
-    if (!y.isDirectory() || !/^\d{4}$/.test(y.name)) continue
-    const months = (await readdir(join(ROOT, y.name), { withFileTypes: true }).catch(() => [] as any[])).sort(desc)
-    for (const m of months) {
-      if (!m.isDirectory() || !/^\d{2}$/.test(m.name)) continue
-      const days = (await readdir(join(ROOT, y.name, m.name), { withFileTypes: true }).catch(() => [] as any[])).sort(desc)
-      for (const d of days) {
-        if (!d.isDirectory() || !/^\d{2}$/.test(d.name)) continue
-        const files = (await readdir(join(ROOT, y.name, m.name, d.name)).catch(() => [] as string[])).sort(desc)
-        for (const f of files) if (f.endsWith('.md')) paths.push(join(ROOT, y.name, m.name, d.name, f))
-      }
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    const entries = (await readdir(dir, { withFileTypes: true }).catch(() => [] as any[])).sort(desc)
+    for (const e of entries) {
+      if (depth === 3) { if (e.isFile() && e.name.endsWith('.md')) paths.push(join(dir, e.name)) }
+      else if (e.isDirectory() && (depth === 0 ? /^\d{4}$/ : /^\d{2}$/).test(e.name)) await walk(join(dir, e.name), depth + 1)
     }
   }
-  const readOne = async (p: string): Promise<HistoryItem | undefined> => {
+  await walk(ROOT, 0)
+  // r17：query 时 title/url 命中免读全文，未命中才全量读正文搜 snippet（巨文件
+  // >2MB 跳过——正文扫描 IO 上界）；坏文件一律跳过
+  const readOne = async (p: string, q?: string): Promise<HistoryItem | undefined> => {
     try {
       const meta = await readFrontmatter(p)
-      return meta ? { path: p, ...meta } : undefined
+      if (!meta) return undefined
+      if (q) {
+        if (meta.title.toLowerCase().includes(q) || meta.url.toLowerCase().includes(q)) return { path: p, ...meta }
+        if ((await stat(p)).size > 2 * 1024 * 1024) return undefined
+        const raw = await readFile(p, 'utf8')
+        const snippet = extractSnippet(splitFrontmatter(raw)?.body ?? raw, q) // 剥 frontmatter：元数据字段（url/ts）不进搜索域
+        if (!snippet) return undefined
+        return { path: p, ...meta, snippet }
+      }
+      return { path: p, ...meta }
     } catch { /* 跳过坏文件 */ }
   }
   if (query) {
     const items: HistoryItem[] = []
     for (let i = 0; i < paths.length; i += 32) {
-      const batch = await Promise.all(paths.slice(i, i + 32).map(readOne))
+      const batch = await Promise.all(paths.slice(i, i + 32).map((p) => readOne(p, query.toLowerCase())))
       for (const it of batch) if (it) items.push(it)
     }
-    const q = query.toLowerCase()
-    return items
-      .sort((a, b) => b.ts - a.ts)
-      .filter((i) => i.title.toLowerCase().includes(q) || i.url.toLowerCase().includes(q))
-      .slice(0, limit)
+    return items.sort((a, b) => b.ts - a.ts).slice(0, limit)
   }
   const items: HistoryItem[] = [] // 无过滤：倒序遍历凑够即收（近似时间倒序）；全量走完时最终按 ts 精确排序
   for (const p of paths) {
@@ -233,8 +236,7 @@ export function revealInFinder(path: string): void {
 
 /** 打开历史根目录（设置页「打开历史目录」：目录即备份，拖走即导出） */
 export function revealHistoryRoot(): void {
-  // r8-host：mkdirSync——异步 mkdir 与 spawn('open') 竞态，首次点击时 open 先于
-  // 目录创建而报错（stdio 'ignore' 静默），按钮表现为无反应
+  // r8-host：mkdirSync——异步 mkdir 与 spawn('open') 竞态，首次点击 open 先于建目录而报错（表现为按钮无反应）
   try {
     mkdirSync(ROOT, { recursive: true })
   } catch { /* open 仍尝试，双失败走 UI 错误路径 */ }

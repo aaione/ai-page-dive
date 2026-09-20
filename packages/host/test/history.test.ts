@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { appendHistoryTurn, buildHistoryPath, escapeYamlForTest, saveHistory, slugify } from '../src/history.js'
+import { appendHistoryTurn, buildHistoryPath, escapeYamlForTest, extractSnippet, saveHistory, slugify } from '../src/history.js'
 
 // history ROOT 指向 ~/.ai-page-dive——测试隔离：monkeypatch homedir 不可行（模块级常量），
 // 故本组只测纯函数与写入格式；listHistory 的扫描逻辑由 M3 冒烟覆盖。
@@ -25,6 +25,19 @@ describe('history 纯函数', () => {
   it('escapeYaml：引号与反斜杠转义', () => {
     expect(escapeYamlForTest('say "hi"')).toBe('"say \\"hi\\""')
     expect(escapeYamlForTest('a\\b')).toBe('"a\\\\b"')
+  })
+
+  it('extractSnippet：正文命中片段提取', () => {
+    // 命中：前后各 ~40 字符、空白压扁
+    const body = 'A'.repeat(50) + '\n\n关键内容 here\n' + 'B'.repeat(50)
+    expect(extractSnippet(body, '关键内容')).toContain('关键内容')
+    expect(extractSnippet(body, '关键内容')).not.toContain('\n')
+    // 大小写不敏感（英文关键词）
+    expect(extractSnippet('Learn Kubernetes the hard way', 'kubernetes')).toContain('Kubernetes')
+    // 未命中 → undefined
+    expect(extractSnippet('完全无关的正文', '关键词')).toBeUndefined()
+    // 命中在开头：不越界、不产生前导空格
+    expect(extractSnippet('开头就是关键词', '开头')).toBe('开头就是关键词'.slice(0, 44))
   })
 })
 
