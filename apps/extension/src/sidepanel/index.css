@@ -1218,7 +1218,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 .pd-md li { margin: 0.35em 0; }
 .pd-md blockquote {
   border-left: 2px solid rgba(226,185,111,.45); /* r25：弱琥珀轴线替代灰线，去合成伪斜（中文 serif 斜体是可读性反模式）。r26：.35 在暗底读作灰——提至 .45 保琥珀色相可辨 */
-  padding-left: 0.9em;
+  background: rgba(226,185,111,.05); /* r27：轴线同族微 wash——第三级身份双保险（压缩截图评审：仅靠轴线+缩进层级弱） */
+  border-radius: 0 6px 6px 0;
+  padding: 0.3em 0.9em;
   font-style: normal;
   font-size: 0.93em;
   line-height: 1.85;
