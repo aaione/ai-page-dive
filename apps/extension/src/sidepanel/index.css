@@ -1,17 +1,18 @@
 @import "tailwindcss";
 
 /* ══ 设计 token（中性近黑 + 单一琥珀锚点）══
-   底：#1A1A20→#141419→#0E0E12 三点梯 + 三光斑 ambient（顶冷白/左暖金/右下冷蓝）——
-   r15 整体玻璃：壁纸光斑是磨砂的取样物，弱了玻璃就不可感知（用户实锤「纯背景色」）。
+   底：#191922→#121218→#0B0B0F 三点梯 + 四光斑 ambient（顶冷天光/左暖金/右下靛蓝/
+   右上补光）——r15 整体玻璃 + r21 取样源重铸：壁纸光斑是磨砂的取样物，弱了玻璃
+   就不可感知（用户实锤「纯背景色」）；r21 主光移顶中、暖金提纯降 alpha（原版磨出
+   偏土黄），底阶压深拉玻璃层次。
    accent 琥珀 #E2B96F 一屏一处锚点；中性灰阶承担 95% 界面。
-   玻璃体系（r15）：结构性 blur = topbar(24)/overlay(32)/action-bar(24)；表面玻璃 =
-   气泡/dropdown/tips/搜索框/CTA/onboarding 卡（blur 20-24 + saturate 155-170，
-   半透明叠层 rgba(18,18,24,.36-.46)）。长文阅读面（.pd-md）保持直坐壁纸——玻璃
-   只给「容器」，不给「正文」，可读性优先。 */
+   玻璃体系（r15 铺面，r21 提质）：结构性 blur = topbar(24)/overlay(40)/action-bar(24)，
+   均带方向性 specular 亮线（r21）；表面玻璃 = 气泡/dropdown(28)/tips/搜索框/CTA/
+   onboarding 卡/设置面板（blur 20-28 + saturate 155-170，半透明叠层
+   rgba(18,18,24,.36-.46)）——r21 起全部叠软颗粒（--pd-grain-soft 进 background
+   栈）：雾(blur)+砂(grain) 双要件齐了才是磨砂。长文阅读面（.pd-md）保持直坐壁纸
+   ——玻璃只给「容器」，不给「正文」，可读性优先。 */
 :root {
-  --pd-bg-0: #171717;
-  --pd-bg-1: #141414;
-  --pd-bg-2: #121212;
   --pd-text-1: #F5F5F5; /* 主文 ≈18.9:1 */
   --pd-text-2: #A3A3A3; /* 次文 ≈9.2:1 */
   --pd-text-3: #8C8C8C; /* 弱文 ≈5.5:1（r14：#737373≈4:1 在 10px 档偏吃力，提亮一档） */
@@ -32,6 +33,9 @@
   /* 磨砂颗粒（fractalNoise → 纯白颗粒、alpha 取噪声 ×.45）：颗粒层 ::before 用，
      配合 mask 随主罩渐变分布。inline SVG 无网络请求、无 CSP 问题（data:） */
   --pd-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .45 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  /* r21 软颗粒（×.14）：表面玻璃家族直接进 background 栈——零 ::before/零 z-index
+     改动，「砂」从结构条下沉到每个玻璃面（纯 blur 只有雾，砂才是磨砂） */
+  --pd-grain-soft: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .14 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
 }
 
 @theme {
@@ -66,14 +70,15 @@ html { height: 100%; }
 body {
   width: 100%;
   font-family: var(--font-sans-ui);
-  /* r15 整体玻璃（用户实锤「背景像纯色」）：壁纸必须有可被磨的结构——弱到
-     0.07 alpha 的光斑磨了也看不见。三光斑（顶冷白 / 左暖金 / 右下冷蓝）+
-     更深的底阶，玻璃表面取样后才有可感知的柔化与偏色 */
+  /* r21c 感知阈值校准（r21b 被 vision 判「光斑接近不可感知」：深色 UI 里人眼
+     需要 5-8% 局部亮度差+色相偏移才读得出氛围光）——alpha 全面再推一档、
+     暖金提纯加饱和（色相拉距），半径微收让峰值落进面板 */
   background:
-    radial-gradient(680px 420px at 76% -8%, rgba(255,255,255,.11) 0%, transparent 58%),
-    radial-gradient(520px 400px at -10% 36%, rgba(226,185,111,.14) 0%, transparent 60%),
-    radial-gradient(620px 480px at 104% 88%, rgba(122,150,214,.11) 0%, transparent 62%),
-    linear-gradient(180deg, #1A1A20 0%, #141419 46%, #0E0E12 100%);
+    radial-gradient(320px 250px at 50% -6%, rgba(210,225,255,.20) 0%, transparent 58%),
+    radial-gradient(290px 350px at -8% 28%, rgba(236,192,112,.24) 0%, transparent 66%),
+    radial-gradient(300px 360px at 104% 88%, rgba(96,130,220,.18) 0%, transparent 64%),
+    radial-gradient(200px 190px at 92% 12%, rgba(255,255,255,.11) 0%, transparent 56%),
+    linear-gradient(180deg, #191922 0%, #121218 44%, #0B0B0F 100%);
   background-attachment: fixed;
 }
 body::after {
@@ -124,17 +129,18 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   max-width: 85%;
   padding: 9px 14px;
   border-radius: 14px 14px 5px 14px;
-  /* r15 整体玻璃：气泡半透明 + backdrop 磨壁纸（每轮一个用户气泡，层数可控） */
-  background: linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.42);
+  /* r15 整体玻璃：气泡半透明 + backdrop 磨壁纸（每轮一个用户气泡，层数可控）。
+     r21：颗粒进 background 栈（雾+砂才是磨砂）+ 描边/顶光各提一档 */
+  background: var(--pd-grain-soft) repeat, linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.42);
   -webkit-backdrop-filter: blur(22px) saturate(160%);
   backdrop-filter: blur(22px) saturate(160%);
-  border: 1px solid rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.12);
   font-size: 12.5px;
   line-height: 1.7;
   color: var(--pd-text-1);
   word-break: break-word;
   white-space: pre-wrap;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), var(--pd-shadow-1);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), var(--pd-shadow-1);
 }
 .pd-chat-assistant {
   margin: 14px 0 20px;
@@ -297,7 +303,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   background: linear-gradient(180deg, #141414d1 0%, #14141452 48%, #0000 100%);
   -webkit-backdrop-filter: blur(24px) saturate(180%) brightness(1.06);
   backdrop-filter: blur(24px) saturate(180%) brightness(1.06);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), inset 0 -1px 0 rgba(255,255,255,.06);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), inset 0 -1px 0 rgba(255,255,255,.06);
 }
 /* 磨砂颗粒层（与 pd-action-bar::before 同法）：mask 上浓下淡随主罩 */
 .pd-topbar::before {
@@ -314,6 +320,20 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 .pd-topbar > * {
   position: relative;
   z-index: 1; /* 颗粒层之上：控件文字不被噪点压 */
+}
+/* r21 方向性 specular：高级玻璃的边缘光是「有方向的光」而非均匀描边——
+   左起渐亮的 1px 天光沿，与左暖金光斑同源（光源在左上），右侧渐隐 */
+.pd-topbar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  z-index: 0;
+  pointer-events: none;
+  /* r21b：峰值 .16 截图里不可感知（vision 实锤「顶栏无受光边」）——提峰加宽 */
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.30) 18%, rgba(255,255,255,.08) 60%, transparent 100%);
 }
 .pd-new-chat-btn {
   display: flex;
@@ -395,10 +415,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   position: absolute;
   inset: 0;
   z-index: 20;
-  background: rgba(20,20,20,.72);
-  /* r14：重磨砂弹层——blur 32 深雾 + 饱和 180%（140% 版彩色穿层发灰） */
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  backdrop-filter: blur(32px) saturate(180%);
+  /* r21：黑罩 → 重玻璃——alpha .72→.58 降遮黑、blur 32→40 雾更重、饱和 200%：
+     透出的内容更多但更糊，「玻璃时刻」替代「遮黑时刻」（内容仍被压到不可读干扰以下） */
+  background: rgba(16,16,22,.58);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  backdrop-filter: blur(40px) saturate(200%);
 }
 
 /* ══════════════════════════════════════════════
@@ -479,10 +500,22 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   font-weight: 600;
   letter-spacing: .02em;
   color: #141414;
-  background: var(--pd-accent-deep);
+  /* r21b：实底琥珀被 vision 实锤「纯平色块」——树脂化：顶部受光渐变 + 底部
+     沉影 + 上下缘 1px 内光/内影，光照方向与面板天光一致（上亮下暗） */
+  background: linear-gradient(180deg, rgba(255,255,255,.36) 0%, rgba(255,255,255,.04) 50%, rgba(0,0,0,.26) 100%), var(--pd-accent-deep);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    inset 0 -1px 0 rgba(70,46,14,.45),
+    0 2px 8px rgba(0,0,0,.28);
   transition: all 0.2s;
 }
-.pd-cta-primary:hover { background: var(--pd-accent); box-shadow: var(--pd-glow); }
+.pd-cta-primary:hover {
+  background: linear-gradient(180deg, rgba(255,255,255,.40) 0%, rgba(255,255,255,.06) 50%, rgba(0,0,0,.18) 100%), var(--pd-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.50),
+    inset 0 -1px 0 rgba(90,60,20,.28),
+    var(--pd-glow);
+}
 .pd-cta-primary:active { transform: scale(.96); }
 .pd-cta-ghost {
   height: 34px;
@@ -491,13 +524,13 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   cursor: pointer;
   font-size: 12px;
   color: var(--pd-text-2);
-  background: linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.36);
+  background: var(--pd-grain-soft) repeat, linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.36);
   -webkit-backdrop-filter: blur(20px) saturate(155%);
   backdrop-filter: blur(20px) saturate(155%);
-  border: 1px solid rgba(255,255,255,.09);
+  border: 1px solid rgba(255,255,255,.12);
   transition: all 0.2s;
 }
-.pd-cta-ghost:hover { color: var(--pd-text-1); border-color: rgba(255,255,255,.14); }
+.pd-cta-ghost:hover { color: var(--pd-text-1); border-color: rgba(255,255,255,.18); }
 
 /* ══════════════════════════════════════════════
    Action Bar
@@ -536,6 +569,18 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   position: relative;
   z-index: 1; /* 颗粒层之上：控件文字不被噪点压 */
 }
+/* r21 底缘回光：光从上来，底缘是桌面反弹的弱回光（topbar specular 的弱化镜像） */
+.pd-action-bar::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.08) 30%, rgba(255,255,255,.02) 70%, transparent 100%);
+}
 
 /* ── Page tips：「正在分享 …」上下文条（半嵌入层，低于输入框一级）── */
 .pd-page-tips {
@@ -545,11 +590,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   margin: 0 4px 8px;
   padding: 6px 10px;
   border-radius: var(--pd-r-md);
-  /* r15 整体玻璃：页面元信息条随全表面玻璃化 */
-  background: linear-gradient(180deg, rgba(255,255,255,.04) 0%, rgba(255,255,255,.012) 100%), rgba(18,18,24,.36);
+  /* r15 整体玻璃：页面元信息条随全表面玻璃化；r21 软颗粒 + 描边提亮 */
+  background: var(--pd-grain-soft) repeat, linear-gradient(180deg, rgba(255,255,255,.04) 0%, rgba(255,255,255,.012) 100%), rgba(18,18,24,.36);
   -webkit-backdrop-filter: blur(20px) saturate(155%);
   backdrop-filter: blur(20px) saturate(155%);
-  border: 1px solid rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.10);
 }
 .pd-page-tips-favicon {
   width: 16px;
@@ -575,11 +620,14 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   padding: 8px 10px;
   border-radius: var(--pd-r-lg);
   /* 输入胶囊：磨砂交由外层 pd-action-bar（双层 backdrop-filter 嵌套只费 GPU 不增层次），
-     此处保留 alpha 渐变 + 描边 + 内光做出「层压在磨砂上」的体积感 */
-  background: linear-gradient(180deg, rgba(255,255,255,0.060) 0%, rgba(255,255,255,0.030) 100%);
-  border: 1px solid rgba(255,255,255,.10);
+     此处保留 alpha 渐变 + 描边 + 内光做出「层压在磨砂上」的体积感。
+     r21：软颗粒进栈——常驻视觉焦点也要有「砂」，托盘感才立得住 */
+  /* r21c：表面渐变顶档与描边再抬一档（vision 判「贴在背景上的稍浅区域」——
+     深底上玻璃分离感靠表面亮一档 + 边缘亮线，黑影对黑底物理不可见） */
+  background: var(--pd-grain-soft) repeat, linear-gradient(180deg, rgba(255,255,255,0.078) 0%, rgba(255,255,255,0.038) 100%);
+  border: 1px solid rgba(255,255,255,.15);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.08),
+    inset 0 1px 0 rgba(255,255,255,.14),
     0 8px 28px rgba(0,0,0,.45);
 }
 
@@ -701,11 +749,20 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   color: #141414;
   cursor: pointer;
   transition: all 0.2s;
-  background: var(--pd-accent-deep);
+  /* r21b：与 pd-cta-primary 同法树脂化（发送按钮是唯一的圆形高饱和焦点）；
+     r21c 跨度再拉（vision 判 <5% 不可感知） */
+  background: linear-gradient(180deg, rgba(255,255,255,.32) 0%, rgba(255,255,255,.06) 45%, rgba(0,0,0,.22) 100%), var(--pd-accent-deep);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    inset 0 -1px 0 rgba(70,46,14,.45),
+    0 2px 8px rgba(0,0,0,.28);
 }
 .pd-primary-btn:hover:not(:disabled) {
-  background: var(--pd-accent);
-  box-shadow: var(--pd-glow);
+  background: linear-gradient(180deg, rgba(255,255,255,.36) 0%, rgba(255,255,255,.08) 45%, rgba(0,0,0,.16) 100%), var(--pd-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.50),
+    inset 0 -1px 0 rgba(90,60,20,.28),
+    var(--pd-glow);
 }
 .pd-primary-btn:active:not(:disabled) {
   transform: scale(0.95);
@@ -799,12 +856,13 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   border-radius: 12px;
   list-style: none;
   /* r15 整体玻璃：菜单悬浮在滚动内容之上——backdrop 磨的是真实内容流，
-     全站最显眼的玻璃时刻（原不透明 #1F1F1F） */
-  background: linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.46);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  backdrop-filter: blur(24px) saturate(170%);
-  border: 1px solid rgba(255,255,255,.10);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 12px 36px rgba(0,0,0,.55);
+     全站最显眼的玻璃时刻（原不透明 #1F1F1F）。r21：越浮越糊（24→28，
+     层次差：menu > 气泡 > 搜索框）+ 软颗粒 + 描边提亮 */
+  background: var(--pd-grain-soft) repeat, linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.46);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 12px 36px rgba(0,0,0,.55);
 }
 .pd-dropdown-item {
   position: relative;
@@ -1009,11 +1067,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   min-width: 0;
   padding: 6px 10px;
   border-radius: var(--pd-r-md);
-  /* r15 整体玻璃：搜索框磨壁纸 */
-  background: linear-gradient(180deg, rgba(255,255,255,.045) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.40);
+  /* r15 整体玻璃：搜索框磨壁纸；r21 软颗粒 + 描边提亮 */
+  background: var(--pd-grain-soft) repeat, linear-gradient(180deg, rgba(255,255,255,.045) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.40);
   -webkit-backdrop-filter: blur(20px) saturate(155%);
   backdrop-filter: blur(20px) saturate(155%);
-  border: 1px solid rgba(255,255,255,.09);
+  border: 1px solid rgba(255,255,255,.12);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .pd-history-search:focus-within {
@@ -1385,12 +1443,13 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   max-width: 300px;
   padding: 24px;
   border-radius: 16px;
-  /* r15 整体玻璃：首旅程主卡是「质感」的第一印象时刻——半透明 + 磨壁纸光斑 */
-  background: linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.42);
+  /* r15 整体玻璃：首旅程主卡是「质感」的第一印象时刻——半透明 + 磨壁纸光斑。
+     r21：软颗粒 + 描边/顶光提亮——第一印象时刻的玻璃要给足 */
+  background: var(--pd-grain-soft) repeat, linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.42);
   -webkit-backdrop-filter: blur(22px) saturate(160%);
   backdrop-filter: blur(22px) saturate(160%);
-  border: 1px solid rgba(255,255,255,.09);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), var(--pd-shadow-2);
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), var(--pd-shadow-2);
 }
 .pd-onboarding-title {
   font-family: var(--font-serif-read);
@@ -1419,7 +1478,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   margin-top: 8px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: var(--pd-accent-deep);
+  /* r21b：同法树脂化（Onboarding 的复制命令条也是琥珀实底） */
+  background: linear-gradient(180deg, rgba(255,255,255,.32) 0%, rgba(255,255,255,.06) 45%, rgba(0,0,0,.22) 100%), var(--pd-accent-deep);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    inset 0 -1px 0 rgba(70,46,14,.45);
   border: none;
   cursor: pointer;
   text-align: left;
@@ -1427,7 +1490,10 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 }
 .pd-onboarding-cmd:hover {
   filter: brightness(1.08);
-  box-shadow: 0 0 14px rgba(226,185,111,.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    inset 0 -1px 0 rgba(70,46,14,.45),
+    0 0 14px rgba(226,185,111,.25);
 }
 .pd-page-tips-notice {
   /* tips 条内的提取质量警示（截断/低置信）——琥珀色弱警示，不抢错误红 */
