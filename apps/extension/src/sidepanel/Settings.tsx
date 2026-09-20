@@ -318,7 +318,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   return (
     <div className="pd-set">
       <div className="pd-set-top">
-        <button onClick={onClose} className="pd-set-back" title="返回面板" aria-label="返回面板">
+        <button onClick={onClose} className="pd-set-back" title="返回面板" aria-label="返回面板" autoFocus>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10 3 5 8l5 5" />
           </svg>

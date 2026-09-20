@@ -701,12 +701,24 @@ export function App() {
       </main>
 
       {overlay === 'history' && (
-        <div className="pd-overlay pd-fade-in-fast">
+        <div
+          className="pd-overlay pd-fade-in-fast"
+          role="dialog"
+          aria-modal="true"
+          aria-label="总结历史"
+          onKeyDown={(e) => e.key === 'Escape' && setOverlay(null)}
+        >
           <HistoryView onClose={() => setOverlay(null)} onResume={resumeHistory} />
         </div>
       )}
       {overlay === 'settings' && (
-        <div className="pd-overlay pd-fade-in-fast">
+        <div
+          className="pd-overlay pd-fade-in-fast"
+          role="dialog"
+          aria-modal="true"
+          aria-label="设置"
+          onKeyDown={(e) => e.key === 'Escape' && setOverlay(null)}
+        >
           <Settings agents={agents} onClose={() => setOverlay(null)} />
         </div>
       )}

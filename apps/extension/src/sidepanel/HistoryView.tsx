@@ -33,6 +33,8 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
   // 条目读取失败提示（文件被外部删除/权限变化——r3-ux R3-m2：零反馈会让用户
   // 以为「按钮坏了」）：4s 自清
   const [readError, setReadError] = useState(false)
+  // r31-ux：详情在途读取可见（loading 行 + 5s 超时兜底）
+  const [reading, setReading] = useState(false)
   // r8-ux：两步删除确认。side panel 的 WebContents 不挂模态对话框宿主，
   // window.confirm 恒返 false 且零反馈——删除按钮等于静默失效。改为面板内
   // 两步：第一次点变「确认删除」，3s 未确认自动还原
@@ -51,6 +53,30 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-delete', path } })
     setItems((xs) => xs.filter((x) => x.path !== path))
   }
+  // r31-a11y：Esc 取消删除确认（capture 阶段拦截——先于 overlay 的 Esc 关闭，
+  // 有确认态时 Esc 只取消确认、不连历史页一起关）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && confirmDel) {
+        e.stopPropagation()
+        e.preventDefault()
+        clearTimeout(confirmDelTimer.current)
+        setConfirmDel(null)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [confirmDel])
+  // r31-ux：详情在途读取可见 + 超时兜底——host 断连无回帧时不再是「点了没反应」
+  // （同 Settings readTimeout 的面板侧防线；错误提示复用 readError 通道）
+  const readTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(readTimer.current), [])
+  const failRead = () => {
+    pendingPathRef.current = null
+    setReading(false)
+    setReadError(true)
+    setTimeout(() => setReadError(false), 4000)
+  }
   useEffect(() => {
     const t = setTimeout(() => setWaited(true), 3000)
     return () => clearTimeout(t)
@@ -64,15 +90,13 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
         // 严格等值：pendingPath 为 null（已返回列表/切走）时同样拒收——否则迟到
         // 帧会把用户「拽回」详情页（r9-review，原 && 短路使 null 分支放行）
         if ((m as HistoryFileMsg).path !== pendingPathRef.current) return
+        clearTimeout(readTimer.current)
+        setReading(false)
         setViewing(m as HistoryFileMsg)
       }
       // 读取失败（文件被外部删除/权限变化）：清在途 path + 一次性提示，
       // 不再停留在「点了没反应」（r3-ux R3-m2）
-      if (m.t === 'error' && m.code === 'read-fail') {
-        pendingPathRef.current = null
-        setReadError(true)
-        setTimeout(() => setReadError(false), 4000)
-      }
+      if (m.t === 'error' && m.code === 'read-fail') failRead()
       // 删除结果对账：删除是乐观更新（先移出列表），失败必须回滚——
       // host 是事实源，重拉列表即恢复；成功帧也重拉对齐（host 落盘后列表序可能变）
       if (m.t === 'deleted' || (m.t === 'error' && m.code === 'delete-fail')) refresh()
@@ -170,9 +194,10 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
           </svg>
         </button>
       </div>
+      {reading && <p className="pd-history-empty">正在读取…</p>}
       {readError && (
         <p className="pd-history-empty" role="alert" style={{ color: 'var(--color-pd-danger, #c0392b)' }}>
-          该记录读取失败（文件可能已被移动或删除）
+          该记录读取失败（文件可能已被移动或删除，或本机组件未响应）
         </p>
       )}
       <ul className="pd-history-list">
@@ -182,6 +207,11 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
               onClick={() => {
                 setViewingItem(it)
                 pendingPathRef.current = it.path
+                setReading(true)
+                clearTimeout(readTimer.current)
+                readTimer.current = setTimeout(() => {
+                  if (pendingPathRef.current === it.path) failRead()
+                }, 5000)
                 chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: it.path } })
               }}
               className="pd-history-item-main"
@@ -201,8 +231,9 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
               onClick={() => chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-reveal', path: it.path } })}
               className="pd-history-item-action"
               title="在 Finder 中显示"
+              aria-label="在 Finder 中显示"
             >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M1.5 4.5A1.5 1.5 0 0 1 3 3h2.6l1.2 1.6H13a1.5 1.5 0 0 1 1.5 1.5v5.4A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5V4.5Z" />
               </svg>
             </button>
@@ -210,11 +241,12 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
               onClick={() => askDelete(it.path)}
               className={`pd-history-item-action danger${confirmDel === it.path ? ' confirming' : ''}`}
               title={confirmDel === it.path ? '再次点击确认删除' : '删除'}
+              aria-label={confirmDel === it.path ? '再次点击确认删除' : '删除'}
             >
               {confirmDel === it.path ? (
                 '确认删除'
               ) : (
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M2.5 4.5h11M6.5 2.5h3M4 4.5l.7 8.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8l.7-8.2M6.7 7v4M9.3 7v4" />
                 </svg>
               )}

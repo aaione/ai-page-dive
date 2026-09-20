@@ -16,6 +16,9 @@ const unsupportedOs = !/mac/i.test(
 
 export function Onboarding() {
   const [copied, setCopied] = useState(false)
+  // r31-a11y：剪贴板写入可能被拒（非聚焦/权限策略）——静默失败会让用户以为
+  // 复制成功、去终端粘贴出旧内容。失败给可见提示 + 手动复制出路
+  const [copyFail, setCopyFail] = useState(false)
   // forbidden = host 已装但本扩展 ID 不在白名单（只差补登记）；其余按未安装引导
   const [forbidden, setForbidden] = useState(false)
   // 探测轮询：3s 起步指数退避封顶 15s（每次 probe 都 spawn 冷 node，固定 3s 白烧进程）；
@@ -61,11 +64,17 @@ export function Onboarding() {
   }, [])
 
   const copy = () => {
-    navigator.clipboard.writeText(forbidden ? registerCmd : installCmd).then(() => {
-      copiedAtRef.current = Date.now() // 每次复制刷新计时（重复复制 = 用户还在折腾，stuck 重新起算）
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    })
+    navigator.clipboard
+      .writeText(forbidden ? registerCmd : installCmd)
+      .then(() => {
+        copiedAtRef.current = Date.now() // 每次复制刷新计时（重复复制 = 用户还在折腾，stuck 重新起算）
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {
+        setCopyFail(true)
+        setTimeout(() => setCopyFail(false), 4000)
+      })
   }
 
   return (
@@ -120,7 +129,12 @@ export function Onboarding() {
             <path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" />
           </svg>
         </button>
-        {copied && <p className="pd-onboarding-copied">已复制 ✓</p>}
+        {copied && <p className="pd-onboarding-copied" role="status">已复制 ✓</p>}
+        {copyFail && (
+          <p className="pd-onboarding-copied" role="alert" style={{ color: 'var(--color-pd-danger, #c0392b)' }}>
+            复制失败——请手动选中上方命令行复制
+          </p>
+        )}
         {/* r16 信任证据前置（3-agent P0-3）：curl|sh 是恐惧时刻——在执行前给可自行
             验证的事实（源码可查/无 sudo/落点明确），而非执行后才出现的宽慰话。
             r16b（3-agent 修订）：不承诺「全部落在 ~/.ai-page-dive/」——npm 全局包与

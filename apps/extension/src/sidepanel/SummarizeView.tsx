@@ -407,7 +407,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         />
       </div>
 
-      <div className="pd-content" role="region" aria-live="polite" ref={contentRef} onScroll={onContentScroll}>
+      {/* r31-a11y：容器不再 aria-live——流式 chunk 逐帧变更会让读屏器整区重读（洪泛）；
+          改由下方视觉隐藏 status 区只播报关键节点（完成；错误仍由气泡内 role=alert 播） */}
+      <div className="pd-content" role="region" aria-label="对话内容" ref={contentRef} onScroll={onContentScroll}>
+        <span className="pd-sr-only" role="status">{!running && messages.length > 0 && stream.done ? '本轮已完成' : ''}</span>
         {stream.reopened && !running && (
           // r7-ux：切 tab 面板收起后重开，React 态已丢但 SW 侧活会话健在——明示
           // 此前对话去哪了（不静默空白），且追问可接续原会话上下文（canFollowUp 已放开）
