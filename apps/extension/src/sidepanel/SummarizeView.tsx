@@ -111,7 +111,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     }
   }, [workflows])
   const [input, setInput] = useState('')
-  /** 待发送附件（文本 ≤512KB/个、图片 ≤5MB/个）：随下一次 send 走 task-start，发完即清 */
+  /** 待发送附件（文本 ≤512KB/个、图片 ≤500KB/个，总量见 pickAttachments 预算）：随下一次 send 走 task-start，发完即清 */
   const [attachments, setAttachments] = useState<Att[]>([])
   /** 附件跳过提示（超限/读失败）：下一条 notice 类消息展示后清除 */
   const [attachNotice, setAttachNotice] = useState('')
@@ -278,16 +278,17 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     }
   }
 
-  /** 附件选择（r12 支持图片）：图片 image/* 读 b64（≤5MB/个，总量 ≤12MB——
-   * ext→host 方向 NM 帧限额宽松，但组帧内存与 CLI 上下文都要设防）；文本沿用
-   * 512KB/个。超限/读失败标红提示并跳过（r4-ux）：静默丢弃 = 用户不知道附件没带上 */
+  /** 附件选择（r12 支持图片；r31-sec 预算重校）：图片单张原图 ≤500KB；全部附件
+   * 按帧内实际字节（图片 = b64 长度，文本 = JSON 编码后字节）共用 768KB 预算——
+   * task-start 单帧内嵌 attachments，ext→host 同受 NM 1MB 帧限（host 侧超限即
+   * 失步自杀收割全部任务；旧「5MB/12MB + ext→host 宽松」假设是错的，r31 审计
+   * 实证）。超限/读失败标红提示并跳过（r4-ux）：静默丢弃 = 用户不知道附件没带上 */
   async function pickAttachments(files: FileList | null) {
     if (!files?.length) return
     const all = Array.from(files)
     const next: Att[] = []
     const skipped: string[] = []
-    const IMG_MAX = 5 * 1024 * 1024
-    const IMG_TOTAL = 12 * 1024 * 1024
+    const IMG_MAX = 500 * 1024
     const readB64 = (f: File) =>
       new Promise<string>((resolve, reject) => {
         const r = new FileReader()
@@ -298,7 +299,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     for (const f of all.slice(0, 5)) {
       const isImage = f.type.startsWith('image/')
       if (isImage ? f.size > IMG_MAX : f.size > 512 * 1024) {
-        skipped.push(`${f.name}（超过 ${isImage ? '5MB' : '512KB'}）`)
+        skipped.push(`${f.name}（超过 ${isImage ? '500KB' : '512KB'}）`)
         continue
       }
       try {
@@ -310,28 +311,17 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     let merged = [...attachments, ...next]
     for (const f of merged.slice(5)) skipped.push(`${f.name}（附件已达 5 个上限）`)
     merged = merged.slice(0, 5)
-    // 图片总量预算（b64 后近似 4/3 膨胀，按原始 size 计；逐个累加，超出才跳过）
-    let imgUsed = 0
-    const withinImg: Att[] = []
-    for (const a of merged) {
-      if (a.kind !== 'image') { withinImg.push(a); continue }
-      const size = Math.round((a.b64?.length ?? 0) * 0.75)
-      if (imgUsed + size > IMG_TOTAL) { skipped.push(`${a.name}（图片总量超 12MB 上限）`); continue }
-      imgUsed += size
-      withinImg.push(a)
-    }
-    // 文本总字节预算（r5-sec）：task-start 帧内嵌全量文本附件，无预算时 3×500KB
-    // 即组出 >1MB 击穿 NM 上限（host 侧超限终结兜底，此处是第一道防线）。
-    // r7-sec：按 JSON.stringify 后的字节计量（\ " 控制字符最坏 6x/字符），与
-    // host 侧 sendChunk 同口径
+    // 附件总字节预算（r5-sec / r31-sec 收紧）：图片 b64 与文本 JSON 字节同池——
+    // task-start 帧内嵌全量附件，超 1MB 即击穿 NM 帧限（host 失步自杀）。文本按
+    // JSON.stringify 后计量（\ " 控制字符最坏 6x/字符），与 host 侧 sendChunk 同口径；
+    // b64 字符集无需 JSON 转义，b64.length 即帧内字节数
     const BUDGET = 768 * 1024
     const utf8Len = (s: string) => new TextEncoder().encode(JSON.stringify(s)).length
     let used = 0
     const withinBudget: Att[] = []
-    for (const a of withinImg) {
-      if (a.kind !== 'text') { withinBudget.push(a); continue }
-      const bytes = utf8Len(a.text ?? '')
-      if (used + bytes > BUDGET) { skipped.push(`${a.name}（文本附件总量超 768KB 上限）`); continue }
+    for (const a of merged) {
+      const bytes = a.kind === 'image' ? (a.b64?.length ?? 0) : utf8Len(a.text ?? '')
+      if (used + bytes > BUDGET) { skipped.push(`${a.name}（附件总量超 768KB 上限）`); continue }
       used += bytes
       withinBudget.push(a)
     }

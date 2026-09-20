@@ -69,7 +69,16 @@ export class NmPort {
       }
       this.handlers.add(onMsg)
       this.disconnectHandlers.add(onDisc)
-      this.port!.postMessage({ t: 'ping' } as ExtToHost)
+      try {
+        this.port!.postMessage({ t: 'ping' } as ExtToHost)
+      } catch {
+        // 同 send() 的 stale-port 窗口：host 刚死但 onDisconnect 未派发（下一 tick）。
+        // 清 port 让下次 connect 重建；resolve 而非 reject——probe 抛错会把已装
+        // 用户误导向安装引导（r4-ux「不闪跳引导」）
+        unlisten()
+        this.port = null
+        resolve({ ok: false, error: this.lastDisconnectError || 'stale port' })
+      }
     })
   }
 

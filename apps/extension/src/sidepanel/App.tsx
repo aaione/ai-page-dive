@@ -278,7 +278,7 @@ export function App() {
           if ((m as any).path !== restorePathRef.current) break
           restorePathRef.current = null
           {
-            const msgs = parseHistoryTurns((m as any).body ?? '')
+            const msgs = parseHistoryTurns((m as any).content ?? '')
             if (msgs.length) {
               setStream((s) => ({
                 ...BLANK,
