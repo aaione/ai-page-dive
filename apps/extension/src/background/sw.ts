@@ -177,7 +177,8 @@ function sendToPanel(m: unknown): void {
   chrome.runtime.sendMessage(m).catch(() => {})
 }
 
-chrome.action.onClicked.addListener((tab) => {
+/** 锚定 + 开面板（onClicked 原路径，toggle 分流后复用） */
+function anchorAndOpen(tab: chrome.tabs.Tab) {
   // 换 tab 开面板 = 换锚：旧锚定 tab 解除 disable。跨窗口例外（r9-backlog）：
   // 双窗口各自开面板是合法形态，另一窗口的锚不拆台（面板不强制收起）
   if (panelTabId !== null && panelTabId !== tab.id && panelWindowId === tab.windowId) unanchorPanel(panelTabId)
@@ -192,6 +193,25 @@ chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({ tabId: tab.id! }).catch((e: unknown) => {
     console.warn('[pd] sidePanel.open failed:', e)
   })
+}
+
+chrome.action.onClicked.addListener((tab) => {
+  // r30 toggle：同 tab 再点（图标/快捷键）= 收起。sidePanel 无 SW 侧 close API，
+  // 唯一收起法是 panel 页面自 window.close()——先广播 panel-toggle 探活：
+  // 无接收端（面板未开/已被用户 X 掉，上下文已销毁）→ lastError → 落回开面板。
+  // sendMessage 往返 ms 级，回调里 open 仍在 user gesture 时窗内。
+  // 先 await restoreSession（r12 同款竞态：SW 冷启动微任务恢复不保证先于事件
+  // dispatch，panelTabId 尚为 null 时 toggle 误判首次 → 只开不关）
+  void (async () => {
+    await restoreSession()
+    if (tab.id != null && tab.id === panelTabId) {
+      chrome.runtime.sendMessage({ t: 'panel-toggle' }, () => {
+        if (chrome.runtime.lastError) anchorAndOpen(tab)
+      })
+      return
+    }
+    anchorAndOpen(tab)
+  })()
 })
 
 const isNormalPage = (u?: string) => !!u && !/^(chrome|edge|about|chrome-extension|devtools|view-source|file|data|blob):/.test(u)

@@ -249,6 +249,12 @@ export function App() {
     ping()
     const listener = (m: any) => {
       switch (m.t) {
+        case 'panel-toggle':
+          // r30：SW 探活广播（同 tab 再点图标/快捷键）——sidePanel 无 SW 侧 close
+          // API，收起只能由面板自 window.close()。会话态已在 SW/storage.session，
+          // 重开走 panel-ready 恢复链路
+          window.close()
+          break
         case 'panel-anchor':
           // r16：换锚不重载面板——收养邮戳的核验基准跟着锚走
           if (typeof m.tabId === 'number') anchorTabIdRef.current = m.tabId
