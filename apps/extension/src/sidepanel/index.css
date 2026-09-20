@@ -1107,6 +1107,16 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 正文命中片段（全文检索）：比来源行更弱一档，命中上下文一眼可辨 */
+.pd-history-item-snippet {
+  margin-top: 1px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #6E6E76;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pd-history-item-meta {
   margin-top: 2px;
   font-size: 10.5px;

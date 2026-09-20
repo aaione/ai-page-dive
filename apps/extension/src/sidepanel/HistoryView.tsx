@@ -152,7 +152,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
               debouncedRefresh(e.target.value)
             }}
             onKeyDown={(e) => e.key === 'Enter' && refresh()}
-            placeholder="搜索标题 / 网址…"
+            placeholder="搜索标题 / 网址 / 正文…"
             className="pd-history-input"
             autoFocus
           />
@@ -192,6 +192,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
                   {hostOf(it.url)}
                 </p>
               )}
+              {it.snippet && <p className="pd-history-item-snippet">…{it.snippet}…</p>}
               <p className="pd-history-item-meta">
                 {it.agent} · {new Date(it.ts).toLocaleString('zh-CN')}
               </p>
