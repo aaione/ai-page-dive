@@ -196,22 +196,17 @@ function anchorAndOpen(tab: chrome.tabs.Tab) {
 }
 
 chrome.action.onClicked.addListener((tab) => {
-  // r30 toggle：同 tab 再点（图标/快捷键）= 收起。sidePanel 无 SW 侧 close API，
-  // 唯一收起法是 panel 页面自 window.close()——先广播 panel-toggle 探活：
-  // 无接收端（面板未开/已被用户 X 掉，上下文已销毁）→ lastError → 落回开面板。
-  // sendMessage 往返 ms 级，回调里 open 仍在 user gesture 时窗内。
-  // 先 await restoreSession（r12 同款竞态：SW 冷启动微任务恢复不保证先于事件
-  // dispatch，panelTabId 尚为 null 时 toggle 误判首次 → 只开不关）
-  void (async () => {
-    await restoreSession()
-    if (tab.id != null && tab.id === panelTabId) {
-      chrome.runtime.sendMessage({ t: 'panel-toggle' }, () => {
-        if (chrome.runtime.lastError) anchorAndOpen(tab)
-      })
-      return
-    }
-    anchorAndOpen(tab)
-  })()
+  // r30-2 toggle：恒走同步锚定+open（open 只认 onClicked 的同步 user gesture，
+  // r30 v1 在 await/回调里调 open 直接抛错——面板连开都开不开，本回归实证）。
+  // 收起仲裁在 panel 侧：open 对已开面板是无害 no-op，同时广播 panel-toggle，
+  // panel 比对「点击 tab === 自己的锚 && 自身可见」才 window.close()（sidePanel
+  // 无 SW 侧 close API）。面板未开时广播无接收端，静默丢弃。SW 冷启动无需
+  // 任何状态——panel 自己记得锚，不依赖 panelTabId 恢复
+  // ⚠️ toggle 广播必须先于 anchorAndOpen：panel-anchor 帧会把 panel 的锚更新成
+  // 本次点击 tab，若 toggle 后到，换锚场景（B tab 按快捷键、锚原是 A）会误匹配
+  // 新锚把自己关掉。先发的 toggle 比对的是旧锚——只有「同 tab 再按」才匹配
+  chrome.runtime.sendMessage({ t: 'panel-toggle', tabId: tab.id ?? undefined }).catch(() => {})
+  anchorAndOpen(tab)
 })
 
 const isNormalPage = (u?: string) => !!u && !/^(chrome|edge|about|chrome-extension|devtools|view-source|file|data|blob):/.test(u)
