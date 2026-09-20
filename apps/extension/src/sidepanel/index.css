@@ -22,7 +22,7 @@
    accent 琥珀 #E2B96F 一屏一处锚点；中性灰阶承担 95% 界面。
    玻璃体系（r15 铺面，r21 提质）：结构性 blur = topbar(24)/overlay(40)/action-bar(24)，
    均带方向性 specular 亮线（r21）；表面玻璃 = 气泡/dropdown(28)/tips/搜索框/CTA/
-   onboarding 卡/设置面板（blur 20-28 + saturate 155-170，半透明叠层
+   onboarding 卡/设置面板（blur 16-28 + saturate 150-180，半透明叠层
    rgba(18,18,24,.36-.46)）——r21 起全部叠软颗粒（--pd-grain-soft 进 background
    栈）：雾(blur)+砂(grain) 双要件齐了才是磨砂。r24 修订：长文阅读面不再直坐
    壁纸——用户令「全产品磨砂」，AI 正文/历史详情正文升 L1 轻玻璃容器（内容越重
@@ -314,13 +314,13 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   font-weight: 500; /* r13 字体统一：去 mono 后补重量，保持气泡头存在感 */
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--pd-text-3);
+  color: var(--pd-text-2); /* r31 对比度：10.5px 小字从 text-3 提一档 */
 }
 /* r8-ux：气泡头 token 用量/耗时（订阅消耗可见性）。
    r14 字体统一：与 pd-chat-model 同走 sans（数字 tabular-nums 防跳动） */
 .pd-chat-usage {
   font-size: 10.5px;
-  color: var(--pd-text-3);
+  color: var(--pd-text-2);
   font-variant-numeric: tabular-nums;
 }
 .pd-chat-thinking {
@@ -1435,7 +1435,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   margin-top: 1px;
   font-size: 10.5px;
   line-height: 1.5;
-  color: #6E6E76;
+  color: #7E7E7E; /* r31 对比度：#6E6E76≈4:1 在 10.5px 档偏吃力，提亮一档 */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1862,7 +1862,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   user-select: none;
 }
 .pd-onboarding-faq summary:hover {
-  filter: brightness(1.25);
+  color: var(--pd-accent-hover); /* r31：filter brightness 是无光感信息的外语，回归 token 换色 */
 }
 .pd-onboarding-faq p {
   margin: 6px 0 0;
@@ -1889,10 +1889,10 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: filter 0.15s;
+  transition: color 0.15s;
 }
 .pd-onboarding-check:hover {
-  filter: brightness(1.25);
+  color: var(--pd-accent-hover); /* r31：同 faq summary，brightness 残留清零 */
 }
 /* 安装卡住诊断块（1 分半未生效提示）：warn 语义，与 faq 同级排版 */
 .pd-onboarding-stuck {

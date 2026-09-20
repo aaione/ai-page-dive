@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════
    Settings（4 tab 改版）—— 中性近黑 + 单一琥珀锚点
-   与 index.css 同 token（:root --pd-*）：无 blur（t3 纯 alpha 层）
+   与 index.css 同 token（:root --pd-*）：panel 为 L2 玻璃（blur 22），其余 t3 纯 alpha
    ══════════════════════════════════════════════ */
 
 .pd-set {
