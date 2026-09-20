@@ -73,7 +73,7 @@
   flex: 1;
 }
 
-/* ── tab 条：t3 纯 alpha 胶囊（无 blur） ── */
+/* ── tab 条：t3 纯 alpha 胶囊（无 blur；r22 进砂系） ── */
 .pd-set-tabs {
   display: flex;
   gap: 4px;
@@ -81,8 +81,9 @@
   margin-top: 10px;
   padding: 3px;
   border-radius: 9999px;
-  border: 1px solid rgba(255,255,255,.09);
-  background: rgba(255,255,255,.05);
+  /* r22：进砂系（t3 关键面 grain-soft 进栈，零 blur 零合成成本） */
+  background: var(--pd-grain-soft) repeat, rgba(255,255,255,.05);
+  border: 1px solid var(--pd-line-soft);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06), var(--pd-shadow-1);
 }
 .pd-set-tab {
@@ -127,11 +128,14 @@
      r21 软颗粒进栈 + 描边/顶光提亮，与 index.css 表面玻璃家族同步） ── */
 .pd-set-panel {
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: var(--pd-grain-soft) repeat, linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%), rgba(18,18,24,.42);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), var(--pd-shadow-1);
+  /* r22：L2 令牌化——与 index.css 表面玻璃家族显式同谱 + 厚度双表面 + elev-1。
+     不加 hotspot：设置页多 panel 同屏，hotspot 只给独占一屏的 onboarding 卡
+     （一屏 hotspot ≤1 红线） */
+  background: var(--pd-glass-2-bg);
+  backdrop-filter: var(--pd-glass-2-filter);
+  -webkit-backdrop-filter: var(--pd-glass-2-filter);
+  border: 1px solid var(--pd-line-glass);
+  box-shadow: var(--pd-inset-top), var(--pd-inset-bottom), var(--pd-elev-1);
   padding: 12px;
 }
 .pd-set-panel + .pd-set-panel {
@@ -159,8 +163,9 @@
   gap: 5px;
   padding: 5px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.10);
-  background: rgba(255,255,255,.05);
+  /* r22：进砂系（t3 关键面，零 blur 零合成成本） */
+  background: var(--pd-grain-soft) repeat, rgba(255,255,255,.05);
+  border: 1px solid var(--pd-line-soft);
   font-family: var(--font-sans-ui);
   font-size: 11.5px;
   color: var(--color-pd-ink);
@@ -316,8 +321,9 @@
   gap: 4px;
   padding: 2px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.09);
-  background: rgba(0,0,0,.22);
+  /* r22：与 pd-set-tabs 同谱——两个分段控件不再黑白两套隐喻 */
+  background: var(--pd-grain-soft) repeat, rgba(255,255,255,.05);
+  border: 1px solid var(--pd-line-soft);
 }
 .pd-set-lang-opt {
   padding: 3px 10px;
@@ -420,8 +426,11 @@
 .pd-set-input {
   padding: 6px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.10);
+  /* r22：凹陷井保留黑 alpha 压暗语义；描边并轨 line-soft + 显式 carve-in
+     内影（与 switch 同法），井隐喻从偶然效果改写为成文语言 */
+  border: 1px solid var(--pd-line-soft);
   background: rgba(0,0,0,.25);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.30); /* r22：凹陷从偶然黑 alpha 改写为显式 carve-in 语言（与 switch 同法） */
   font-family: var(--font-sans-ui);
   font-size: 12px;
   color: var(--color-pd-ink);
@@ -445,8 +454,10 @@
   resize: none;
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.10);
+  /* r22：与 pd-set-input 同法——井的压暗语义保留 + 显式 carve-in 内影 */
+  border: 1px solid var(--pd-line-soft);
   background: rgba(0,0,0,.25);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.30); /* r22：凹陷从偶然黑 alpha 改写为显式 carve-in 语言（与 switch 同法） */
   /* WORKFLOW.md 正文编辑器：内容是给 AI 读的 markdown，归阅读层 serif */
   font-family: var(--font-serif-read);
   font-size: 12px;
@@ -485,8 +496,10 @@
   width: 44px;
   height: 44px;
   border-radius: 10px;
-  /* 原图无透明通道：抠出深蓝渐变方块外的白边视觉——中性阴影，不发光 */
-  box-shadow: 0 4px 16px rgba(0,0,0,.40), inset 0 0 0 1px rgba(255,255,255,.08);
+  /* 原图无透明通道：抠出深蓝渐变方块外的白边视觉——中性阴影，不发光。
+     r22：一次性影收敛进体系；r22-review：44px 小图标不拿整卡级环境影
+     （浅色壁纸光斑上读成晕污）——取 elev-1-sm 两段（inset 白圈原样保留） */
+  box-shadow: var(--pd-elev-1-sm), inset 0 0 0 1px rgba(255,255,255,.08);
 }
 .pd-set-about-name {
   display: flex;
