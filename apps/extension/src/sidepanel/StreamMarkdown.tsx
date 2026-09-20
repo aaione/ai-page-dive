@@ -1,18 +1,57 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 /** 大文本降级阈值（字符）：超过后不再全量 remark parse（主线程会被秒级卡死） */
 const HEAVY = 128 * 1024
 
+/** r25 代码块复制按钮：读 pre 文本写剪贴板，1.5s 已复制态（SVG 图标，禁 emoji） */
+function PreWithCopy({ children }: { children?: ReactNode }) {
+  const ref = useRef<HTMLPreElement>(null)
+  const [copied, setCopied] = useState(false)
+  return (
+    <pre ref={ref}>
+      {children}
+      <button
+        type="button"
+        className="pd-md-copy"
+        aria-label={copied ? '已复制' : '复制代码'}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(ref.current?.textContent ?? '')
+          } catch { /* 剪贴板权限被拒：静默 */ }
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        }}
+      >
+        {copied ? (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4.5 12.75l6 6 9-13.5" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2" />
+            <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+          </svg>
+        )}
+      </button>
+    </pre>
+  )
+}
+
 /** 完成段落的 memo 化渲染：props（段落文本）不变即跳过 remark parse。
  * 流式更新只重 parse 尾部活跃段，前文 N 段零开销——长输出的全量重 parse 卡顿消除 */
 const Block = memo(function Block({ block }: { block: string }) {
-  // 链接新标签页打开（对齐 HistoryView）：面板内导航会顶掉 sidepanel 页丢全部会话态
+  // 链接新标签页打开（对齐 HistoryView）：面板内导航会顶掉 sidepanel 页丢全部会话态；
+  // pre 挂复制按钮、table 外裹横向滚动容器（r25：GFM 宽表在 360px 面板会挤压变形）
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      components={{ a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" /> }}
+      components={{
+        a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" />,
+        pre: PreWithCopy,
+        table: ({ node, ...props }) => <div className="pd-md-table-wrap"><table {...props} /></div>,
+      }}
     >
       {block}
     </ReactMarkdown>
@@ -115,7 +154,7 @@ export const StreamMarkdown = memo(function StreamMarkdown({
         <p className="mb-2 text-[11.5px] leading-[1.9] text-pd-ink-2">
           {done ? '（内容较长，已切换为纯文本显示——完整 markdown 可用下方「下载」保存）' : '（内容较长，完成后纯文本显示）'}
         </p>
-        <pre className="pd-mono whitespace-pre-wrap break-all rounded-[4px] bg-pd-code-bg p-2.5 text-[11.5px] leading-[1.6] text-pd-ink">
+        <pre className="pd-mono whitespace-pre-wrap wrap-anywhere rounded-[4px] bg-pd-code-bg p-2.5 text-[11.5px] leading-[1.6] text-pd-ink">
           {rendered.slice(-40_000)}
         </pre>
       </div>
