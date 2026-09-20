@@ -130,12 +130,14 @@ body {
      需要 5-8% 局部亮度差+色相偏移才读得出氛围光）——alpha 全面再推一档、
      暖金提纯加饱和（色相拉距），半径微收让峰值落进面板。
      r23：真机截图实锤空闲主页面光场仍低于感知线（背景是所有磨砂的取样源，
-     源平则上面全平）——主光斑再推一档（约 +40%）、半径放宽让衰减更贵气 */
+     源平则上面全平）——主光斑再推一档（约 +40%）、半径放宽让衰减更贵气。
+     r28 渐隐拉长：各斑加 .6α 中继 stop、transparent 终点外推 ~15%——峰值与
+     α 和不动（sum 通量口径不变），衰减尾带更长，边缘过渡不再生硬 */
   background:
-    radial-gradient(360px 280px at 50% -6%, rgba(210,225,255,.30) 0%, transparent 60%),
-    radial-gradient(310px 380px at -8% 28%, rgba(236,192,112,.34) 0%, transparent 68%),
-    radial-gradient(320px 380px at 104% 88%, rgba(96,130,220,.27) 0%, transparent 66%),
-    radial-gradient(220px 200px at 92% 12%, rgba(255,255,255,.16) 0%, transparent 58%),
+    radial-gradient(360px 280px at 50% -6%, rgba(210,225,255,.30) 0%, rgba(210,225,255,.18) 62%, transparent 72%),
+    radial-gradient(310px 380px at -8% 28%, rgba(236,192,112,.34) 0%, rgba(236,192,112,.20) 70%, transparent 82%),
+    radial-gradient(320px 380px at 104% 88%, rgba(96,130,220,.27) 0%, rgba(96,130,220,.16) 68%, transparent 79%),
+    radial-gradient(220px 200px at 92% 12%, rgba(255,255,255,.16) 0%, rgba(255,255,255,.10) 60%, transparent 70%),
     linear-gradient(180deg, #191922 0%, #121218 44%, #0B0B0F 100%);
   background-attachment: fixed;
 }
@@ -148,48 +150,48 @@ body {
      靛紫→钢蓝（92,128,215 → 108,150,230，贴回「冰蓝」命名）── */
 body[data-ambience='warm'] {
   background:
-    radial-gradient(360px 280px at 50% -6%, rgba(255,224,178,.26) 0%, transparent 60%),
-    radial-gradient(310px 380px at -8% 28%, rgba(242,188,102,.42) 0%, transparent 68%),
-    radial-gradient(320px 380px at 104% 88%, rgba(205,145,95,.20) 0%, transparent 66%),
-    radial-gradient(220px 200px at 92% 12%, rgba(255,235,205,.16) 0%, transparent 58%),
+    radial-gradient(360px 280px at 50% -6%, rgba(255,224,178,.26) 0%, rgba(255,224,178,.16) 62%, transparent 72%),
+    radial-gradient(310px 380px at -8% 28%, rgba(242,188,102,.42) 0%, rgba(242,188,102,.25) 70%, transparent 82%),
+    radial-gradient(320px 380px at 104% 88%, rgba(205,145,95,.20) 0%, rgba(205,145,95,.12) 68%, transparent 79%),
+    radial-gradient(220px 200px at 92% 12%, rgba(255,235,205,.16) 0%, rgba(255,235,205,.10) 60%, transparent 70%),
     linear-gradient(180deg, #1C1916 0%, #141210 44%, #0D0B09 100%);
   background-attachment: fixed;
 }
 body[data-ambience='cool'] {
   background:
-    radial-gradient(360px 280px at 50% -6%, rgba(188,214,255,.32) 0%, transparent 60%),
-    radial-gradient(310px 380px at -8% 28%, rgba(142,180,240,.30) 0%, transparent 68%),
-    radial-gradient(320px 380px at 104% 88%, rgba(108,150,230,.30) 0%, transparent 66%),
-    radial-gradient(220px 200px at 92% 12%, rgba(215,232,255,.15) 0%, transparent 58%),
+    radial-gradient(360px 280px at 50% -6%, rgba(188,214,255,.32) 0%, rgba(188,214,255,.19) 62%, transparent 72%),
+    radial-gradient(310px 380px at -8% 28%, rgba(142,180,240,.30) 0%, rgba(142,180,240,.18) 70%, transparent 82%),
+    radial-gradient(320px 380px at 104% 88%, rgba(108,150,230,.30) 0%, rgba(108,150,230,.18) 68%, transparent 79%),
+    radial-gradient(220px 200px at 92% 12%, rgba(215,232,255,.15) 0%, rgba(215,232,255,.09) 60%, transparent 70%),
     linear-gradient(180deg, #16181F 0%, #101218 44%, #090A0E 100%);
   background-attachment: fixed;
 }
 /* r26 新三档：全部低饱和暮调——过饱和即「AI 产品默认渐变」的廉价感来源 */
 body[data-ambience='dusk'] { /* 暮紫：薰衣草雾 + 深靛黄昏 */
   background:
-    radial-gradient(360px 280px at 50% -6%, rgba(226,212,255,.27) 0%, transparent 60%),
-    radial-gradient(310px 380px at -8% 28%, rgba(178,156,240,.30) 0%, transparent 68%),
-    radial-gradient(320px 380px at 104% 88%, rgba(118,96,205,.25) 0%, transparent 66%),
-    radial-gradient(220px 200px at 92% 12%, rgba(238,230,255,.15) 0%, transparent 58%),
+    radial-gradient(360px 280px at 50% -6%, rgba(226,212,255,.27) 0%, rgba(226,212,255,.16) 62%, transparent 72%),
+    radial-gradient(310px 380px at -8% 28%, rgba(178,156,240,.30) 0%, rgba(178,156,240,.18) 70%, transparent 82%),
+    radial-gradient(320px 380px at 104% 88%, rgba(118,96,205,.25) 0%, rgba(118,96,205,.15) 68%, transparent 79%),
+    radial-gradient(220px 200px at 92% 12%, rgba(238,230,255,.15) 0%, rgba(238,230,255,.09) 60%, transparent 70%),
     linear-gradient(180deg, #1A1622 0%, #12101A 44%, #0B090F 100%);
   background-attachment: fixed;
 }
 body[data-ambience='pine'] { /* 松绿：苔原雾 + 深林墨 */
   background:
-    radial-gradient(360px 280px at 50% -6%, rgba(212,238,224,.26) 0%, transparent 60%),
-    radial-gradient(310px 380px at -8% 28%, rgba(156,206,176,.30) 0%, transparent 68%),
-    radial-gradient(320px 380px at 104% 88%, rgba(96,148,124,.26) 0%, transparent 66%),
-    radial-gradient(220px 200px at 92% 12%, rgba(232,246,238,.15) 0%, transparent 58%),
+    radial-gradient(360px 280px at 50% -6%, rgba(212,238,224,.26) 0%, rgba(212,238,224,.16) 62%, transparent 72%),
+    radial-gradient(310px 380px at -8% 28%, rgba(156,206,176,.30) 0%, rgba(156,206,176,.18) 70%, transparent 82%),
+    radial-gradient(320px 380px at 104% 88%, rgba(96,148,124,.26) 0%, rgba(96,148,124,.16) 68%, transparent 79%),
+    radial-gradient(220px 200px at 92% 12%, rgba(232,246,238,.15) 0%, rgba(232,246,238,.09) 60%, transparent 70%),
     linear-gradient(180deg, #151B18 0%, #0F1310 44%, #090B0A 100%);
   background-attachment: fixed;
 }
 body[data-ambience='rose'] { /* 绯樱：樱粉雾 + 干玫瑰。r26 视觉复审：首版收光过狠
      （sum .92）与暮紫撞脸读作暗紫灰——主/深斑提饱和拉色相存在感，sum 回 1.03 仍最低档 */
   background:
-    radial-gradient(360px 280px at 50% -6%, rgba(255,214,224,.27) 0%, transparent 60%),
-    radial-gradient(310px 380px at -8% 28%, rgba(242,168,186,.34) 0%, transparent 68%),
-    radial-gradient(320px 380px at 104% 88%, rgba(202,118,140,.27) 0%, transparent 66%),
-    radial-gradient(220px 200px at 92% 12%, rgba(255,236,242,.15) 0%, transparent 58%),
+    radial-gradient(360px 280px at 50% -6%, rgba(255,214,224,.27) 0%, rgba(255,214,224,.16) 62%, transparent 72%),
+    radial-gradient(310px 380px at -8% 28%, rgba(242,168,186,.34) 0%, rgba(242,168,186,.20) 70%, transparent 82%),
+    radial-gradient(320px 380px at 104% 88%, rgba(202,118,140,.27) 0%, rgba(202,118,140,.13) 68%, transparent 79%),
+    radial-gradient(220px 200px at 92% 12%, rgba(255,236,242,.15) 0%, rgba(255,236,242,.09) 60%, transparent 70%),
     linear-gradient(180deg, #1D1517 0%, #150F11 44%, #0C0809 100%);
   background-attachment: fixed;
 }
