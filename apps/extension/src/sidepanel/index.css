@@ -266,7 +266,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
    ══════════════════════════════════════════════ */
 .pd-chat-user {
   display: flex;
-  justify-content: flex-end;
+  /* r31-fix：row 会让附件 chip 与文本气泡并排（chip 左、文字右），与 r12 注释
+     「chip 嵌在用户消息上方」的设计意图相悖——column 堆叠：chip 一行在上、
+     气泡在下，右对齐保持（align-items 接管原 justify-content 的职责） */
+  flex-direction: column;
+  align-items: flex-end;
   margin: 18px 0 14px;
 }
 .pd-chat-user p {
