@@ -6,6 +6,8 @@ const extId = chrome.runtime.id
 const installCmd = `curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- ${extId}`
 /** forbidden：host 已装但本扩展 ID 不在白名单（只差补登记，无需再装） */
 const registerCmd = `ai-page-dive install --ext-id ${extId}`
+/** curl 走不通时的 npm 手动备选（r33-ux：与主命令同享点击复制） */
+const npmCmd = `npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id ${extId}`
 /** r16（3-agent P0）：v1 仅 macOS——CWS 全球可见，Win/Linux 用户拿到 curl|sh 粘进
  * PowerShell 必败且面板永久停在轮询。非 darwin 整卡替换为不支持说明，不给死命令 */
 const unsupportedOs = !/mac/i.test(
@@ -16,6 +18,8 @@ const unsupportedOs = !/mac/i.test(
 
 export function Onboarding() {
   const [copied, setCopied] = useState(false)
+  // r33-ux：npm 备选命令的复制反馈（与主命令分开——两处同时闪「已复制」会误导）
+  const [copiedAlt, setCopiedAlt] = useState(false)
   // r31-a11y：剪贴板写入可能被拒（非聚焦/权限策略）——静默失败会让用户以为
   // 复制成功、去终端粘贴出旧内容。失败给可见提示 + 手动复制出路
   const [copyFail, setCopyFail] = useState(false)
@@ -63,13 +67,19 @@ export function Onboarding() {
     }
   }, [])
 
-  const copy = () => {
+  // r33-ux：参数化——npm 备选命令同享复制计时（stuck 卡装检测从任一次复制起算）
+  const copy = (text: string, alt = false) => {
     navigator.clipboard
-      .writeText(forbidden ? registerCmd : installCmd)
+      .writeText(text)
       .then(() => {
         copiedAtRef.current = Date.now() // 每次复制刷新计时（重复复制 = 用户还在折腾，stuck 重新起算）
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
+        if (alt) {
+          setCopiedAlt(true)
+          setTimeout(() => setCopiedAlt(false), 1500)
+        } else {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        }
       })
       .catch(() => {
         setCopyFail(true)
@@ -122,7 +132,7 @@ export function Onboarding() {
             ? '复制这一行到终端执行：'
             : '复制这一行到终端执行（无 Node 也会自动引导安装，需装 Node 约 5-15 分钟）：'}
         </p>
-        <button onClick={copy} className="pd-onboarding-cmd" title="点击复制">
+        <button onClick={() => copy(forbidden ? registerCmd : installCmd)} className="pd-onboarding-cmd" title="点击复制">
           <span className="pd-onboarding-cmd-text">{forbidden ? registerCmd : installCmd}</span>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <rect x="5.5" y="5.5" width="8" height="8" rx="1" />
@@ -150,7 +160,27 @@ export function Onboarding() {
         {!forbidden && (
           <p className="pd-onboarding-alt">
             curl 走不通（代理/网络受限）？直接 npm 装：
-            <code>npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id {extId}</code>
+            {/* r33-ux：备选命令也可点复制（role=button + 键盘可达）——手抄长命令易错 */}
+            <code
+              role="button"
+              tabIndex={0}
+              title="点击复制"
+              style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+              onClick={() => copy(npmCmd, true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  copy(npmCmd, true)
+                }
+              }}
+            >
+              {npmCmd}
+            </code>
+            {copiedAlt && (
+              <span className="pd-onboarding-copied" role="status">
+                {' '}已复制 ✓
+              </span>
+            )}
           </p>
         )}
         <details className="pd-onboarding-faq">

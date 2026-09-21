@@ -237,10 +237,11 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // 输入；附件-only 轮 instruction 仍发占位文本（r8-review：显示与执行一致，
     // host 侧追问轮空 user 段会凭空消失）
     // r16：空文首轮（CTA/一键总结）气泡放实际档位文案——空壳气泡既无反馈又占版面；
-    // instruction 不受影响（首轮 host 侧 `instruction || wfBody` 落默认摘要指令）
+    // instruction 不受影响（首轮 host 侧 `instruction || wfBody` 落默认摘要指令）。
+    // r33-ux：档名查 WF_LABEL——自定义 workflow（用户自建）也标对，不一律「深度总结」
     const wf = forceWf ?? (workflow === 'default' ? 'deep' : workflow)
     const bubbleText =
-      text || (hasSession || attachments.length ? '' : wf === 'quick' ? '快速摘要本页' : '深度总结本页')
+      text || (hasSession || attachments.length ? '' : `${WF_LABEL[wf] ?? '深度总结'}本页`)
     beginTurn(bubbleText, attachments.map((a) => ({ name: a.name, kind: a.kind })))
     setAttachNotice('') // 提示已在输入区即时展示（r4-ux F3），发送即消费
     setInput('')

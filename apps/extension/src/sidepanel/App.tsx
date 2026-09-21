@@ -94,6 +94,8 @@ export interface PageMeta {
 export function App() {
   const [overlay, setOverlay] = useState<Overlay>(null)
   const [hostOk, setHostOk] = useState<boolean | null>(null)
+  /** r33-ux：panel-ready 探活持续失败（SW 唤不醒/通道异常 >30s）——loading 态给手动出口 */
+  const [pingStuck, setPingStuck] = useState(false)
   const [outdated, setOutdated] = useState('')
   const [agents, setAgents] = useState<AgentStatus[]>([])
   /** host 探测结果是否已到（r14 首旅程）：区分「在途」与「真空」——空列表不该
@@ -207,8 +209,10 @@ export function App() {
         const resp = respRaw as PanelReadyResp | undefined
         if (chrome.runtime.lastError && !resp) {
           // 前 2 次 500ms/1s 退避，之后降频 5s 持续轮询（r4-ux F4：耗尽即停会让
-          // loading 成为全产品唯一无自愈出口的状态，对照 Onboarding 的自动轮询）
+          // loading 成为全产品唯一无自愈出口的状态，对照 Onboarding 的自动轮询）。
+          // r33-ux：>30s 仍失联（tries>7 ≈ 0.5+1+5×6s）置 stuck——loading 给「重新加载」出口
           tries += 1
+          if (tries > 7) setPingStuck(true)
           retry = setTimeout(ping, tries <= 2 ? 500 * tries : 5_000)
           return
         }
@@ -473,8 +477,20 @@ export function App() {
                   }
                 : msg,
             )
-            // 终局即解绑 + 记入 finished（同 task-done：拒迟到帧重开）
-            return { ...s, taskId: null, pending: false, finished: [...s.finished, m.taskId].slice(-8), done: true, activeId: null, messages }
+            // r33-ux：失败终局回填本轮问题（与看门狗/断连同式）——parse/timeout 等
+            // 可重试失败不必对着气泡手抄重敲。cancelled 不回填（用户主动放弃）
+            const lastUser = [...s.messages].reverse().find((msg) => msg.role === 'user')
+            const canRefill = m.code !== 'cancelled' && !!lastUser?.text
+            return {
+              ...s,
+              taskId: null,
+              pending: false,
+              finished: [...s.finished, m.taskId].slice(-8),
+              done: true,
+              activeId: null,
+              ...(canRefill ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lastUser!.text } } : {}),
+              messages,
+            }
           })
           break
         case '__host-disconnected':
@@ -651,8 +667,9 @@ export function App() {
       ],
     }))
     // tips 条同步为该历史条目的来源页——仅可续会话时（r7-review：CLI 不可用走全新
-    // 总结，SW 提取的是当前 tab，显示历史来源页会与执行相矛盾）
-    if (agentOk && (item.title || item.url)) setPageMeta({ title: item.title ?? '', url: item.url ?? '' })
+    // 总结，SW 提取的是当前 tab，显示历史来源页会与执行相矛盾）。
+    // r33-ux：agentOk 但条目无 title/url（罕见）时清空而非残留上一页的 meta
+    if (agentOk) setPageMeta(item.title || item.url ? { title: item.title ?? '', url: item.url ?? '' } : null)
     if (agentOk) {
       chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path }).catch(() => {})
     } else {
@@ -697,7 +714,18 @@ export function App() {
   if (hostOk === null) {
     return (
       <div className="pd-app">
-        <main className="pd-history-empty" style={{ padding: 24 }}>正在连接本机组件…</main>
+        <main className="pd-history-empty" style={{ padding: 24 }}>
+          正在连接本机组件…
+          {/* r33-ux：持续失联 >30s 时的手动出口——loading 不再是无出口的死态 */}
+          {pingStuck && (
+            <button
+              onClick={() => location.reload()}
+              style={{ display: 'block', margin: '12px auto 0', fontSize: 12, padding: '5px 14px', cursor: 'pointer' }}
+            >
+              重新加载面板
+            </button>
+          )}
+        </main>
       </div>
     )
   }
