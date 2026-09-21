@@ -1,11 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentStatus, HistoryItem, HostToExt, WorkflowItem } from '@ai-page-dive/shared'
+import { useDialogFocus } from './a11y.js'
 import { Onboarding } from './Onboarding.js'
 import { SummarizeView, useDisabledClis } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
 import { Settings } from './Settings.js'
 
 type Overlay = null | 'history' | 'settings'
+
+/** r32-a11y：模态 overlay 壳——焦点陷阱 + 打开入容器 + 关闭还原触发元素
+ *  （useDialogFocus 随本组件的条件渲染对齐生命周期） */
+function DialogLayer({ label, onClose, children }: { label: string; onClose: () => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useDialogFocus(ref)
+  return (
+    <div
+      ref={ref}
+      className="pd-overlay pd-fade-in-fast"
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      tabIndex={-1}
+      onKeyDown={(e) => e.key === 'Escape' && onClose()}
+    >
+      {children}
+    </div>
+  )
+}
 
 export interface ChatMessage {
   id: string
@@ -644,6 +665,23 @@ export function App() {
     window.addEventListener('pd-settings-changed', sync)
     return () => window.removeEventListener('pd-settings-changed', sync)
   }, [])
+  // r32-a11y：焦点还原——打开 overlay 时记触发按钮（effect 里抓 activeElement 会
+  // 晚于容器 autoFocus，抓到的是容器内元素），关闭时还焦
+  const overlayTriggerRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!overlay && overlayTriggerRef.current) {
+      overlayTriggerRef.current.focus()
+      overlayTriggerRef.current = null
+    }
+  }, [overlay])
+  const toggleOverlay = (o: 'history' | 'settings') => {
+    if (overlay === o) setOverlay(null)
+    else {
+      overlayTriggerRef.current = document.activeElement as HTMLElement | null
+      setOverlay(o)
+    }
+  }
+
   const effectiveAgent =
     (agentId && !disabledClis.has(agentId) ? agentId : '')
     || (defaultCli && !disabledClis.has(defaultCli) && agents.some((a) => a.id === defaultCli && a.available) ? defaultCli : '')
@@ -667,7 +705,7 @@ export function App() {
       {/* 浮动工具条（右上角，避开系统 header）：历史 / 设置 */}
       <div className="pd-float-tools">
         <button
-          onClick={() => setOverlay(overlay === 'history' ? null : 'history')}
+          onClick={() => toggleOverlay('history')}
           className={`pd-icon-btn ${overlay === 'history' ? 'active' : ''}`}
           title="总结历史"
           aria-label="总结历史"
@@ -678,7 +716,7 @@ export function App() {
           </svg>
         </button>
         <button
-          onClick={() => setOverlay(overlay === 'settings' ? null : 'settings')}
+          onClick={() => toggleOverlay('settings')}
           className={`pd-icon-btn ${overlay === 'settings' ? 'active' : ''}`}
           title="设置"
           aria-label="设置"
@@ -701,26 +739,14 @@ export function App() {
       </main>
 
       {overlay === 'history' && (
-        <div
-          className="pd-overlay pd-fade-in-fast"
-          role="dialog"
-          aria-modal="true"
-          aria-label="总结历史"
-          onKeyDown={(e) => e.key === 'Escape' && setOverlay(null)}
-        >
+        <DialogLayer label="总结历史" onClose={() => setOverlay(null)}>
           <HistoryView onClose={() => setOverlay(null)} onResume={resumeHistory} />
-        </div>
+        </DialogLayer>
       )}
       {overlay === 'settings' && (
-        <div
-          className="pd-overlay pd-fade-in-fast"
-          role="dialog"
-          aria-modal="true"
-          aria-label="设置"
-          onKeyDown={(e) => e.key === 'Escape' && setOverlay(null)}
-        >
+        <DialogLayer label="设置" onClose={() => setOverlay(null)}>
           <Settings agents={agents} onClose={() => setOverlay(null)} />
-        </div>
+        </DialogLayer>
       )}
     </div>
   )

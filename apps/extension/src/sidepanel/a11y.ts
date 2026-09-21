@@ -1,6 +1,37 @@
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
 
+/** r32-a11y：模态对话框焦点陷阱。Tab 在容器内循环不逃出；挂载时焦点送进容器。
+ * 关闭后的焦点还原不在此 hook（effect 里抓 activeElement 晚于容器 autoFocus，
+ * 抓不到触发元素）——由调用侧在「打开动作」里记触发元素、关闭时还原 */
+export function useDialogFocus(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const focusables = () =>
+      Array.from(
+        el.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'),
+      )
+    // 打开即入容器（autoFocus 的元素优先；容器自身 tabIndex=-1 兜底）
+    if (!el.contains(document.activeElement)) (focusables()[0] ?? el).focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      const items = focusables()
+      if (!items.length) return
+      const cur = items.indexOf(document.activeElement as HTMLElement)
+      if (e.shiftKey && cur <= 0) {
+        e.preventDefault()
+        items[items.length - 1].focus()
+      } else if (!e.shiftKey && (cur === -1 || cur === items.length - 1)) {
+        e.preventDefault()
+        items[0].focus()
+      }
+    }
+    el.addEventListener('keydown', onKey)
+    return () => el.removeEventListener('keydown', onKey)
+  }, [ref])
+}
+
 /** r32-a11y：方向键 roving 导航（tablist / radiogroup / listbox 共用）。
  * - activate=true（tab/radio 语义）：方向键移动即选中（click，automatic activation；
  *   鼠标点击同样先 focus 后 click，幂等安全）
