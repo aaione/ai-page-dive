@@ -266,7 +266,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
       </ul>
       {/* r8-ux：host 列表只回前 100 条——满额时明示，别让更早的历史像「丢了」 */}
       {items.length >= 100 && (
-        <p className="pd-history-truncated">已显示最近 100 条——更早的记录可搜索标题/网址，或在设置中打开历史目录</p>
+        <p className="pd-history-truncated">已显示最近 100 条——更早的记录可搜索标题/网址/正文，或在设置中打开历史目录</p>
       )}
     </div>
   )

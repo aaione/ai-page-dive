@@ -183,7 +183,7 @@ export function Onboarding() {
             终端看到 <code>🎉 安装完成</code> 后回本页，通常会自动进入；若超过 1 分半未进入，
             多半需完全重启 Chrome（⌘Q）。
             <br />
-            <strong>内容不经 PageDive 任何服务器；上传与否只由你的 CLI 自身决定。</strong>
+            <strong>内容不经 AI PageDive 任何服务器；上传与否只由你的 CLI 自身决定。</strong>
           </p>
         )}
         <p className="pd-onboarding-note">本页自动检测（间隔渐放缓至 15 秒），装好后自动进入。</p>

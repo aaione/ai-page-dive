@@ -208,9 +208,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         (order[a.name] ?? (9 + a.name.localeCompare(b.name))) -
         (order[b.name] ?? (9 + b.name.localeCompare(b.name))),
       )
-    // 「留空则深度研读」与发送侧对齐（workflow==='default' → 'deep'）：曾写
+    // 「留空则深度总结」与发送侧对齐（workflow==='default' → 'deep'）：曾写
     // 「留空则快速摘要」，用户按文案留空预期快速档，实际跑最慢最贵的 deep
-    return [{ name: 'default', description: '按输入框内容执行；留空则深度研读', builtin: true }, ...rest]
+    return [{ name: 'default', description: '按输入框内容执行；留空则深度总结', builtin: true }, ...rest]
   }, [workflows])
 
   /** 发送失败回填（r7-ux）：错误属于本轮时把输入/附件回填输入框（可改后重发），
@@ -905,7 +905,7 @@ function ActionBar({
         }}
         // r7-ux：不再 disabled——运行中允许预输入下一问（Enter 已有 !running 守卫，
         // 发送按钮不受影响；锁死输入框只是防重发，守卫已覆盖）
-        placeholder={hasSession ? '继续追问…（Shift+Enter 换行）' : '想了解这个网页什么？（Shift+Enter 换行）'}
+        placeholder={hasSession ? '继续追问…（Shift+Enter 换行）' : '想了解这个网页的什么？（Shift+Enter 换行）'}
         aria-label="自定义指令"
         className="pd-input"
         rows={1}
@@ -957,7 +957,7 @@ function PageTips({ meta }: { meta: PageMeta }) {
         </svg>
       )}
       <span className="pd-page-tips-text">
-        正在分享 “{meta.title || host || meta.url}”{host ? ` · ${host}` : ''}
+        正在分享「{meta.title || host || meta.url}」{host ? ` · ${host}` : ''}
       </span>
       {meta.notice && (
         <span className="pd-page-tips-notice" title={meta.notice}>
@@ -995,13 +995,13 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
             <>
               在「设置 → 本机 CLI」中开启至少一个即可使用
               <br />
-              无服务器 · 正文不经 PageDive 中转
+              无服务器 · 正文不经 AI PageDive 中转
             </>
           ) : (
             <>
               终端执行 <code>npm i -g @anthropic-ai/claude-code</code>（或 codex）并登录
               <br />
-              安装后点上方「重试检测」 · 无服务器 · 正文不经 PageDive 中转
+              安装后点上方「重试检测」 · 无服务器 · 正文不经 AI PageDive 中转
             </>
           )}
         </p>
@@ -1037,11 +1037,9 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
           </button>
         </div>
       )}
-      <p className="pd-placeholder-hint">
-        深度：全篇精读约 1-3 分钟 · 快速：抓要点秒级出稿
-        <br />
-        或在下方输入任何问题
-      </p>
+      {/* r31 文案：删「或在下方输入任何问题」——placeholder 已在输入框内引导，三重冗余；
+          「秒级出稿」是不可兑现的承诺，改约数 */}
+      <p className="pd-placeholder-hint">深度：全篇精读约 1-3 分钟 · 快速：抓要点约十几秒</p>
     </div>
   )
 }
@@ -1049,7 +1047,7 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
 const WF_LABEL: Record<string, string> = {
   default: '默认模式',
   quick: '快速摘要',
-  deep: '深度研读',
+  deep: '深度总结',
   paper: '论文模式',
   humanize: '去 AI 味改写',
 }

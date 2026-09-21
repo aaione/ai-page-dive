@@ -236,7 +236,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   function saveWorkflow() {
     if (!editor) return
     if (!WF_NAME_RE.test(editor.name)) {
-      setEditor({ ...editor, nameError: '名称仅限字母/数字/下划线/连字符，1–64 位', dirty: true })
+      setEditor({ ...editor, nameError: '名称仅限字母/数字/下划线/连字符，1-64 位', dirty: true })
       return
     }
     // 空正文一律拒绝保存（新建 + 已有模式统一）：
@@ -355,7 +355,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                   <button className="pd-set-btn primary" onClick={newWorkflow}>＋ 新建模式</button>
                 </div>
                 <p className="pd-set-hint" style={{ margin: '0 0 8px' }}>
-                  总结模式即插件：目录在 <code>~/.ai-page-dive/workflows/</code>
+                  总结模式可自定义：目录在 <code>~/.ai-page-dive/workflows/</code>
                 </p>
                 {pendingSwitch && (
                   <div className="pd-set-dirty-bar" role="alert">
@@ -393,7 +393,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                     ))}
                   </div>
                 ) : (
-                  <p className="pd-set-empty">尚未获取到模式列表（本机 host 未连接？）</p>
+                  <p className="pd-set-empty">尚未获取到模式列表（本机组件未连接？）</p>
                 )}
               </div>
 
@@ -640,7 +640,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                 <strong>不接触任何凭证、不代理流量、不额外收费</strong>；总结用量计入你的 CLI 订阅。
               </p>
               <p>
-                无服务器、零遥测：网页正文经 Chrome 直交本机 CLI，不经 PageDive 中转（CLI 与其
+                无服务器、零遥测：网页正文经 Chrome 直交本机 CLI，不经 AI PageDive 中转（CLI 与其
                 模型服务的通信遵循该 CLI 自身隐私政策）。代码全部开源，可自行审计：
                 <code>github.com/aaione/ai-page-dive</code>
               </p>
