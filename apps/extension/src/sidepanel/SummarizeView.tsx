@@ -502,7 +502,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         {attachNotice && (
           // 附件跳过即时提示（r4-ux F3）：此前只在下次发送时以伪用户气泡出现——
           // 挑选当下零反馈，被丢的附件无从归因
-          <p role="note" style={{ margin: '0 12px 6px', fontSize: 12, color: 'var(--color-pd-danger, #c0392b)' }}>
+          <p role="note" style={{ margin: '0 12px 6px', fontSize: 12, color: 'var(--color-pd-danger)' }}>
             {attachNotice}
           </p>
         )}
@@ -883,17 +883,17 @@ function ActionBar({
   return (
     <div className="pd-action-bar-inner">
       {workflowNotice && (
-        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice, #E3BE7F)' }}>
+        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
           ⚠ {workflowNotice}
         </p>
       )}
       {enterHint && (
-        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice, #E3BE7F)' }}>
+        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
           上一轮还在跑——内容已保留，完成后按 Enter 再发
         </p>
       )}
       {noFollowUpHint && (
-        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice, #E3BE7F)' }}>
+        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
           此 CLI 暂不支持追问：新提问将开始全新总结（不含以上对话）
         </p>
       )}

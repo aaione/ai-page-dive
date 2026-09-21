@@ -196,7 +196,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
       </div>
       {reading && <p className="pd-history-empty">正在读取…</p>}
       {readError && (
-        <p className="pd-history-empty" role="alert" style={{ color: 'var(--color-pd-danger, #c0392b)' }}>
+        <p className="pd-history-empty" role="alert" style={{ color: 'var(--color-pd-danger)' }}>
           该记录读取失败（文件可能已被移动或删除，或本机组件未响应）
         </p>
       )}

@@ -131,7 +131,7 @@ export function Onboarding() {
         </button>
         {copied && <p className="pd-onboarding-copied" role="status">已复制 ✓</p>}
         {copyFail && (
-          <p className="pd-onboarding-copied" role="alert" style={{ color: 'var(--color-pd-danger, #c0392b)' }}>
+          <p className="pd-onboarding-copied" role="alert" style={{ color: 'var(--color-pd-danger)' }}>
             复制失败——请手动选中上方命令行复制
           </p>
         )}
