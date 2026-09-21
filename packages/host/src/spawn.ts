@@ -9,8 +9,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { cliEnv } from './agents/registry.js'
 
-/** SIGKILL 兜底宽限。与 stdio.ts 的收割窗口构成隐式时序耦合（窗口必须 > 本值 200ms），
- * 导出单一来源防手改一处静默破坏另一处 */
+/** SIGKILL 兜底宽限。与 stdio.ts 的收割窗口构成隐式时序耦合（窗口必须 > 本值 200ms），导出单一来源防手改一处静默破坏另一处 */
 export const REAP_GRACE_MS = 3000
 
 export interface SpawnOpts {
@@ -52,13 +51,10 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
         opts.onSpawnError?.(err)
         reject(err)
       })
-      // stdin 异步 EPIPE（r5-impl：大 prompt 塞管道 + CLI 快速退出——未登录/
-      // resume 失效会话）：写 stdin 的同步 try/catch 捕不到异步 error 事件，
-      // 无监听则 uncaughtException 崩掉整个 host（连带杀死同 host 在途任务）。
-      // 空监听吞掉——CLI 死亡由 exit 路径收割
+      // stdin 异步 EPIPE（r5-impl：大 prompt 塞管道 + CLI 快速退出——未登录/resume 失效会话）：写 stdin 的同步 try/catch 捕不到异步 error 事件，
+      // 无监听则 uncaughtException 崩掉整个 host（连带杀死同 host 在途任务）。空监听吞掉——CLI 死亡由 exit 路径收割
       child.stdin!.on('error', () => {})
-      // r8-host：删除 deferStdin/writeStdin 死代码（无调用方；opencode 的 cwd 需求
-      // 已由 makeAgentCwd + cwd 选项解决），spawn 后直接写 prompt
+      // r8-host：删除 deferStdin/writeStdin 死代码（无调用方；opencode 的 cwd 需求已由 makeAgentCwd + cwd 选项解决），spawn 后直接写 prompt
       try {
         child.stdin!.write(opts.stdinData)
         child.stdin!.end()

@@ -195,8 +195,7 @@ export function runNative(): void {
     }
   }
   const { handle: rawHandle, tasks } = runStdio(send)
-  // shutdown 窗口内的新任务会被 3.2s 后的 exit(0) 带走，扩展侧只见断连——
-  // 显式拒绝并报错，把「面板突然失联」变成可理解的错误
+  // shutdown 窗口内的新任务会被 3.2s 后的 exit(0) 带走，扩展侧只见断连——显式拒绝并报错，把「面板突然失联」变成可理解的错误
   const handle = (msg: ExtToHost) => {
     if (shuttingDown && (msg as any)?.t === 'task-start') {
       // r7-review：专用 code——复用 'spawn-fail' 会让 panel 拼出「CLI 启动失败
@@ -207,17 +206,15 @@ export function runNative(): void {
     rawHandle(msg)
   }
 
-  // 任务期心跳（SW 保活）：Chrome 105+ 仅 port 上的消息活动重置 SW 30s idle 计时器，
-  // merely-open 的 port 不豁免回收——CLI 深度思考期 stdout 可 >30s 静默，若无周期帧
-  // SW 被杀 → NM port 关闭 → 本进程 stdin end → 任务静默死亡
+  // 任务期心跳（SW 保活）：Chrome 105+ 仅 port 上的消息活动重置 SW 30s idle 计时器，merely-open 的 port 不豁免回收——
+  // CLI 深度思考期 stdout 可 >30s 静默，若无周期帧 SW 被杀 → NM port 关闭 → 本进程 stdin end → 任务静默死亡
   let beat = 0
   setInterval(() => {
     if (!tasks.size) return
     send({ t: 'heartbeat', seq: beat++ })
   }, 20_000).unref()
 
-  // 收割窗口：SIGTERM 发出后给 REAP_GRACE_MS + 200ms 让进程树死透 + 在途
-  // persist('interrupted') 落盘完成，再退出。之前立即 exit 使 SIGKILL 兜底永不触发
+  // 收割窗口：SIGTERM 发出后给 REAP_GRACE_MS + 200ms 让进程树死透 + 在途 persist('interrupted') 落盘完成，再退出。之前立即 exit 使 SIGKILL 兜底永不触发
   const reapAll = () => {
     for (const t of tasks.values()) t.cancel()
   }
@@ -233,5 +230,14 @@ export function runNative(): void {
   process.stdin.on('end', shutdown)
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)
+  // r33-host：崩溃兜底——uncaughtException 下走 shutdown 收割链（否则 detached CLI
+  // 进程组逃逸成孤儿）；exit 钩子同步补刀（异步收割定时器不会再触发）
+  process.on('uncaughtException', (e) => {
+    console.error('[ai-page-dive] uncaught:', e)
+    shutdown()
+  })
+  process.on('exit', () => {
+    for (const t of tasks.values()) t.killNow()
+  })
   process.stdin.resume()
 }

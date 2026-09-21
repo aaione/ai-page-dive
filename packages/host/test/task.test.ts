@@ -251,6 +251,46 @@ describe('Task 状态机', () => {
     }
   }, 30_000)
 
+  it('stdout 尾部 result 晚于 exit 到达：终局仍按成功（exit→close 回归，r33）', async () => {
+    // 确定性复现「exit 先于 stdout 尾数据」：CLI 的工具子进程同持 stdout 写端
+    // （真实场景——claude 的 Bash/Read 工具子进程与其同组共享 stdout）。CLI 主进程
+    // 立即退出时孙进程还活着，result 随后经管道到达。旧实现监听 exit：此刻
+    // finish() 看不到 result 行 → 成功任务误判 parse 失败、历史误落 status:'error'。
+    // close 等所有 stdio 流关闭（孙进程死、EOF），result 保证已解析
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const dir = await mkdtemp(join(tmpdir(), 'pd-tail-'))
+    const script = join(dir, 'cli.mjs')
+    await writeFile(
+      script,
+      `import { spawn } from 'node:child_process'
+spawn(process.execPath, ['-e', "setTimeout(()=>{console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'完整回答'}]}}));console.log(JSON.stringify({type:'result',is_error:false,result:'完成',usage:{input_tokens:1,output_tokens:2}}))},200)"], { stdio: ['ignore','inherit','ignore'] })
+process.exit(0)`,
+      'utf8',
+    )
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const fakeHome = await mkdtemp(join(tmpdir(), 'pd-home-'))
+    const origHome = process.env.HOME
+    process.env.HOME = fakeHome
+    try {
+      const { task: mk, cbs } = makeCbs(); const task = mk('t-tail-result')
+      task.start({ taskId: 't-tail-result', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+      task.appendContent(BODY, true)
+      await task.run()
+      await new Promise(r => setTimeout(r, 500))
+      expect(cbs.errors).toEqual([])
+      expect(cbs.done?.isError).toBe(false)
+      const raw = await readFile(cbs.done.historyPath, 'utf8')
+      expect(raw).toContain('status: done')
+    } finally {
+      process.env.HOME = origHome
+      AGENTS[0].buildArgs = orig
+      await rm(fakeHome, { recursive: true, force: true })
+      await rm(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
+
   it('未知 agent → no-agent，不 spawn', async () => {
     const { task: mk, cbs } = makeCbs(); const task = mk()
     task.start({ taskId: 't3', agentId: 'nope', workflow: 'quick', page: PAGE as any })
