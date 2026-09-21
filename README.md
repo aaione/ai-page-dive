@@ -39,7 +39,7 @@
 curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- <扩展ID>
 ```
 
-**③ 即用**：任意网页点工具栏图标 → 侧边栏选模式 → 总结。
+**③ 即用**：任意网页点工具栏图标（或按快捷键 `Ctrl+Shift+D`，macOS 为 `⌘⇧D`）→ 侧边栏选模式 → 总结。快捷键若无效或想改键，去 `chrome://extensions/shortcuts` 查看/修改。
 
 <details>
 <summary>终端走不通时的手动备选（npm）</summary>
