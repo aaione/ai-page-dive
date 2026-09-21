@@ -84,7 +84,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const [disabledClis, setDisabledClis] = useState<string[]>(() => readStrList('pd-disabled-clis'))
   const [defaultCli, setDefaultCli] = useState(() => readStr('pd-default-cli'))
   const [lang, setLang] = useState(() => readStr('pd-sum-lang'))
-  /** r24 氛围档：''=中性（默认）| warm | cool——写 localStorage + body[data-ambience] */
+  /** r24 氛围档：''=中性（默认）| warm | cool | dusk | pine | rose | ink——写 localStorage + body[data-ambience] */
   const [ambience, setAmbienceState] = useState(() => readStr('pd-ambience'))
   /** r25 阅读字号档：''=标准 | sm | lg——写 localStorage + body[data-reading-size] */
   const [readSize, setReadSizeState] = useState(() => readStr('pd-reading-size'))
@@ -582,6 +582,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                     ['dusk', '暮紫', 'linear-gradient(135deg, #E2D4FF 0%, #9B82E8 100%)'],
                     ['pine', '松绿', 'linear-gradient(135deg, #D4EEDF 0%, #7FB490 100%)'],
                     ['rose', '绯樱', 'linear-gradient(135deg, #FFDEE4 0%, #D28A9C 100%)'],
+                    ['ink', '墨岩', 'linear-gradient(135deg, #E2E8F4 0%, #7888A0 100%)'],
                   ] as const).map(([v, label, dot]) => (
                     <button
                       key={v || 'neutral'}

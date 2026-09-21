@@ -209,6 +209,18 @@ body[data-ambience='rose'] { /* 绯樱：樱粉雾 + 干玫瑰。r26 视觉复�
     linear-gradient(180deg, #1D1517 0%, #150F11 44%, #0C0809 100%);
   background-attachment: fixed;
 }
+body[data-ambience='ink'] { /* r31 墨岩：近黑月光档。唯一刻意压低总通量（sum ≈.75，
+     其余档对齐 neutral 1.07 上下）：同通量彩色斑叠在近黑底上会被玻璃层放大成灰雾
+     （alpha 视觉占比在黑底上放大），低通量才保得住「黑」。色相走月光冷白微蓝，
+     无彩色倾向——底梯压到 #0A0A0E→#030304 级，磨砂颗粒（全局 ::after）承担质感 */
+  background:
+    radial-gradient(360px 280px at 50% -6%, rgba(226,232,244,.20) 0%, rgba(226,232,244,.12) 62%, transparent 72%),
+    radial-gradient(310px 380px at -8% 28%, rgba(168,182,208,.24) 0%, rgba(168,182,208,.14) 70%, transparent 82%),
+    radial-gradient(320px 380px at 104% 88%, rgba(120,136,168,.18) 0%, rgba(120,136,168,.11) 68%, transparent 79%),
+    radial-gradient(220px 200px at 92% 12%, rgba(240,244,252,.13) 0%, rgba(240,244,252,.08) 60%, transparent 70%),
+    linear-gradient(180deg, #0A0A0E 0%, #060608 44%, #030304 100%);
+  background-attachment: fixed;
+}
 
 /* ── r25 阅读字号档：localStorage pd-reading-size → body[data-reading-size]
      （main.tsx render 前同步应用，同氛围档机制）。只覆盖 --pd-read-size，

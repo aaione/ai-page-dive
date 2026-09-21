@@ -405,7 +405,7 @@
 }
 .pd-set-amb-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr); /* r31 墨岩入列共 7 档：3 列剩孤行，4+3 两行齐 */
 }
 .pd-set-amb-grid .pd-set-amb-opt {
   justify-content: center;
