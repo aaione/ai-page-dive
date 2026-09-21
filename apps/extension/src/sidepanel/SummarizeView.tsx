@@ -1034,13 +1034,13 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
             <>
               在「设置 → 本机 CLI」中开启至少一个即可使用
               <br />
-              无服务器 · 正文不经 AI PageDive 中转
+              无服务器 · 正文不经 PageDive 中转
             </>
           ) : (
             <>
               终端执行 <code>npm i -g @anthropic-ai/claude-code</code>（或 codex）并登录
               <br />
-              安装后点上方「重试检测」 · 无服务器 · 正文不经 AI PageDive 中转
+              安装后点上方「重试检测」 · 无服务器 · 正文不经 PageDive 中转
             </>
           )}
         </p>

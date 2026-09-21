@@ -1,39 +1,32 @@
 <div align="center">
 
-<img src="./apps/extension/public/icon-128.png" width="96" alt="AI PageDive logo" />
+<img src="./apps/extension/public/icon-128.png" width="96" alt="PageDive logo" />
 
 # AI PageDive
 
 **一键调用本机 AI CLI，深度总结当前网页的 Chrome 扩展。**
 
-[![npm](https://img.shields.io/npm/v/@aaione/ai-page-dive.svg)](https://www.npmjs.com/package/@aaione/ai-page-dive)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platform: macOS + Chrome](https://img.shields.io/badge/platform-macOS%20%2B%20Chrome-blue)](#)
-<!-- CWS 上线后替换为商店 badge：
-[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/<扩展ID>.svg)](https://chromewebstore.google.com/detail/<扩展ID>) -->
+<!-- CWS 上线后补商店 badge 并反转安装步骤① -->
 
 零配置 · 复用你已有的 CLI 订阅 · 无服务器、零遥测
 
-<!-- TODO: 补 demo GIF（侧边栏总结动线 3-5 秒），放此位 -->
-
 </div>
 
-## 为什么是 AI PageDive
+## 为什么是 PageDive
 
-- **零配置**——无账号、无 API key：直接用你终端里已登录的 CLI（claude / codex 全支持，opencode 实验档）
-- **无服务器、零遥测**——网页正文经 Chrome → Native Messaging 直交本机 CLI，全程不经 PageDive 中转、零遥测（CLI 与其模型服务的通信遵循该 CLI 自身的隐私政策，见 [PRIVACY.md](PRIVACY.md)）
-- **权限最小化**——只申请 5 项权限，不申请 `<all_urls>`：点哪读哪（activeTab），其余页面零访问面
-- **不只总结，还能改写**——「去 AI 味」模式把 AI 生成文本改写为自然人类口吻（竞品均无的独占档）；另有快速摘要 / 深度研读 / 论文阅读，`~/.ai-page-dive/workflows/` 可自定义新增
-- **零凭证接触**——只子进程调起官方 CLI 二进制，不碰 token、不代理流量、不额外收费
-- **流式输出**——markdown 实时渲染，正文下方继续输入即可多轮追问
-- **本地历史**——自动保存在 `~/.ai-page-dive/history/`，面板内可恢复
+- **开箱即用**——无账号、无 API key：直接复用终端里已登录的 CLI（claude / codex 全支持，opencode 实验档）
+- **只信本机**——正文经 Chrome Native Messaging 直交本机 CLI，无服务器、零遥测、不碰凭证（[PRIVACY.md](PRIVACY.md)）
+- **点到哪读到哪**——只申请 5 项权限、不申请 `<all_urls>`：activeTab 点哪读哪，其余页面零访问面
+- **持续可玩**——快速摘要 / 深度研读 / 论文阅读 / 去 AI 味多档模式（`~/.ai-page-dive/workflows/` 可自定义新增）、markdown 流式输出、多轮追问、历史本地可恢复
 
 ## 快速开始（macOS + Chrome）
 
-**① 安装扩展**（CWS 审核中，上线前先手动加载）：`chrome://extensions` 开启「开发者模式」→「加载已解压的扩展程序」→ 选本仓库 `apps/extension/dist/`（git clone 后先跑一次 `pnpm install && pnpm build` 生成）。
-<!-- CWS 上线后反转：本步改为「Chrome Web Store 搜索 AI PageDive 一键安装」并启用顶部商店 badge -->
+**⓪ 前置**：终端已装并登录 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 或 [Codex](https://developers.openai.com/codex/cli)（跑一次 `claude` 或 `codex` 确认无鉴权提示）。
 
-**② 安装本机组件**（一次性）：扩展面板会显示带扩展 ID 的完整命令，复制到终端执行；无 Node 时自动经 Homebrew 引导。
+**① 安装扩展**（CWS 审核中，上线前先手动加载）：`chrome://extensions` 开启「开发者模式」→「加载已解压的扩展程序」→ 选本仓库 `apps/extension/dist/`（git clone 后先跑一次 `pnpm install && pnpm build` 生成）。
+
+**② 安装本机组件**（一次性）：扩展面板会显示带扩展 ID 的完整命令（ID 即 Chrome 分配的扩展唯一标识，面板自动拼好），复制到终端执行；无 Node 时自动经 Homebrew 引导。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- <扩展ID>
@@ -55,7 +48,7 @@ npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id <扩展ID>
 <details>
 <summary>会不会碰我的 CLI 凭证或订阅？</summary>
 
-不会。AI PageDive 只以子进程方式调起你自己登录的官方 CLI 二进制（claude / codex），不碰 token、不代理流量、不对 CLI 用量额外收费。host 代码全开源（MIT），可自行审计。
+不会。PageDive 只以子进程方式调起你自己登录的官方 CLI 二进制（claude / codex），不碰 token、不代理流量、不对 CLI 用量额外收费。host 代码全开源（MIT），可自行审计。
 </details>
 
 <details>
@@ -74,18 +67,6 @@ npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id <扩展ID>
 <summary>支持哪些 CLI？支持 Windows 吗？</summary>
 
 v1 支持 claude 与 codex（完整支持）+ opencode（实验档，无进程级工具围栏，UI 有标注）；v1 仅支持 macOS + Chrome，Windows / Edge / Brave 在路线图上（[DECISIONS.md](DECISIONS.md)）。
-</details>
-
-<details>
-<summary>安装命令里的「扩展 ID」是什么？</summary>
-
-是 Chrome 为扩展分配的唯一 ID（`chrome://extensions` 里可见）。本机组件需用它登记 Native Messaging 白名单，扩展面板会自动显示拼好的完整命令，直接复制即可。
-</details>
-
-<details>
-<summary>模式（workflow）能自定义吗？</summary>
-
-能。模式定义存于 `~/.ai-page-dive/workflows/`，目录即插件：新建目录 + `WORKFLOW.md` 即生效，同名目录可覆盖内置模式；也可在扩展设置页编辑。
 </details>
 
 ## 开发者

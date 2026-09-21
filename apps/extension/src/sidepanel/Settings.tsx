@@ -655,11 +655,11 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                 </div>
               </div>
               <p>
-                AI PageDive 只在本机调用你自己登录的官方 CLI（claude / codex / opencode），
+                PageDive 只在本机调用你自己登录的官方 CLI（claude / codex / opencode），
                 <strong>不接触任何凭证、不代理流量、不额外收费</strong>；总结用量计入你的 CLI 订阅。
               </p>
               <p>
-                无服务器、零遥测：网页正文经 Chrome 直交本机 CLI，不经 AI PageDive 中转（CLI 与其
+                无服务器、零遥测：网页正文经 Chrome 直交本机 CLI，不经 PageDive 中转（CLI 与其
                 模型服务的通信遵循该 CLI 自身隐私政策）。代码全部开源，可自行审计：
                 <code>github.com/aaione/ai-page-dive</code>
               </p>
