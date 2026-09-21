@@ -95,8 +95,11 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
         setViewing(m as HistoryFileMsg)
       }
       // 读取失败（文件被外部删除/权限变化）：清在途 path + 一次性提示，
-      // 不再停留在「点了没反应」（r3-ux R3-m2）
-      if (m.t === 'error' && m.code === 'read-fail') failRead()
+      // 不再停留在「点了没反应」（r3-ux R3-m2）。r33：ref 匹配在途 path 才收
+      // （旧 host 无 ref 时按旧语义放行——迟到的别条失败不误伤当前等待）
+      if (m.t === 'error' && m.code === 'read-fail') {
+        if (m.ref === undefined || m.ref === pendingPathRef.current) failRead()
+      }
       // 删除结果对账：删除是乐观更新（先移出列表），失败必须回滚——
       // host 是事实源，重拉列表即恢复；成功帧也重拉对齐（host 落盘后列表序可能变）
       if (m.t === 'deleted' || (m.t === 'error' && m.code === 'delete-fail')) refresh()

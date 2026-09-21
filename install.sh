@@ -1,8 +1,8 @@
 #!/bin/sh
 # PageDive 一键安装：Node>=18 探测 → npm i -g @aaione/ai-page-dive → ai-page-dive install
 # 用法：curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- <扩展ID>
-# 托管在仓库本身（raw.githubusercontent）——零基建；内部仍走 npm（registry 自带完整性校验，
-# 脚本不下载任何二进制，无需附加 checksum 机制）。
+# 托管在仓库本身（raw.githubusercontent）——零基建；内部仍走 npm（钉版本安装，
+# 脚本不下载任何二进制）。
 set -e
 
 EXT_ID="${1:-}"
@@ -35,8 +35,12 @@ say "✅ Node $NODE_VER"
 # 「请回到扩展面板复制命令」的矛盾指引（r7-ux：两段指令曾互相拉扯）。
 # 必须 export：裸赋值只建 shell 变量不进子进程环境，npm i -g 及其 postinstall
 # 看不到（r7-review 实证：整条静默链曾是 no-op）
+# 钉住版本（r33-sec）：curl|sh 供应链防扩散——本脚本被缓存/被篡改时，固定
+# 版本号使 npm 端 integrity 与发版时一致，不追 latest。发版时同步 bump 此处。
+# npm 自身的 tarball integrity 只保证「与 registry 上该版本一致」，不背书内容——
+# 真正的完整性来自仓库代码公开可查（Onboarding 信任证据）
 export PAGEDIVE_SILENT_POSTINSTALL_HINT=1
-if ! npm i -g @aaione/ai-page-dive; then
+if ! npm i -g @aaione/ai-page-dive@0.1.3; then
   printf '\033[1;33m%s\033[0m\n' "npm 全局安装失败。常见原因：
   • EACCES 权限错误 → 改用 nvm/Homebrew 的 Node（推荐，免 sudo；勿用 sudo npm——会写坏 NM 注册属主）
   • nvm 切过版本 → 全局包按版本隔离，重装一次即可

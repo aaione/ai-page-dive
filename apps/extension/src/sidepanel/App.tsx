@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AgentStatus, HistoryItem, HostToExt, WorkflowItem } from '@ai-page-dive/shared'
+import type { AgentStatus, HistoryItem, HostToExt, PanelMsg, PanelReadyResp, WorkflowItem } from '@ai-page-dive/shared'
 import { useDialogFocus } from './a11y.js'
 import { Onboarding } from './Onboarding.js'
 import { SummarizeView, useDisabledClis } from './SummarizeView.js'
@@ -203,7 +203,8 @@ export function App() {
     let tries = 0
     let retry: ReturnType<typeof setTimeout> | undefined
     const ping = () => {
-      chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
+      chrome.runtime.sendMessage({ t: 'panel-ready' }, (respRaw) => {
+        const resp = respRaw as PanelReadyResp | undefined
         if (chrome.runtime.lastError && !resp) {
           // 前 2 次 500ms/1s 退避，之后降频 5s 持续轮询（r4-ux F4：耗尽即停会让
           // loading 成为全产品唯一无自愈出口的状态，对照 Onboarding 的自动轮询）
@@ -212,11 +213,11 @@ export function App() {
           return
         }
         setHostOk(!!resp?.ok)
-        if (typeof (resp as any).panelTabId === 'number') anchorTabIdRef.current = (resp as any).panelTabId
+        if (typeof resp?.panelTabId === 'number') anchorTabIdRef.current = resp.panelTabId
         if (resp?.outdated) setOutdated(String(resp.outdated))
         if (resp?.ok) requestLists()
         if (resp?.page) setPageMeta(resp.page)
-        setPageUnsupported(!!(resp as any).pageUnsupported)
+        setPageUnsupported(!!resp?.pageUnsupported)
         // SW 侧态对齐（r4-ux）：面板切 tab 被收起后重开，React 态已丢——活会话 →
         // 恢复 resumable（追问不再静默降级为全量重总结+抹掉 SW 会话）；在跑任务 →
         // 重建 taskId 绑定 + 占位气泡（迟到 chunk 续流，不再孤儿流；任务已死则
@@ -225,7 +226,7 @@ export function App() {
           if (typeof resp.sessionAgentId === 'string') setSessionAgent(resp.sessionAgentId)
           // r14-ux：带 historyPath 时优先还原完整对话（history-file 回帧在 listener
           // 处理）；拿不到路径/读失败再退回 reopened 提示（「此前对话已清空」）
-          const hp = typeof (resp as any).historyPath === 'string' ? (resp as any).historyPath : ''
+          const hp = typeof resp.historyPath === 'string' ? resp.historyPath : ''
           if (hp && !resp?.activeTask) {
             restorePathRef.current = hp
             chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: hp } }).catch(() => {})
@@ -268,7 +269,8 @@ export function App() {
       })
     }
     ping()
-    const listener = (m: any) => {
+    const listener = (mRaw: unknown) => {
+      const m = mRaw as PanelMsg
       switch (m.t) {
         case 'panel-toggle':
           // r30-2：SW 每次 onClicked 恒 open（已开时 no-op）+ 本广播。只有「点击的
@@ -296,10 +298,10 @@ export function App() {
         case 'history-file':
           // r14-ux：面板重开的对话还原（只收 restorePathRef 在途那条——HistoryView
           // 的详情读取由它自己的 listener 消费）。空正文退回 reopened 提示语义
-          if ((m as any).path !== restorePathRef.current) break
+          if (m.path !== restorePathRef.current) break
           restorePathRef.current = null
           {
-            const msgs = parseHistoryTurns((m as any).content ?? '')
+            const msgs = parseHistoryTurns(m.content ?? '')
             if (msgs.length) {
               setStream((s) => ({
                 ...BLANK,
@@ -527,10 +529,10 @@ export function App() {
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-workflows' } })
   }
 
-  function onStartResult(resp: { error?: string; [k: string]: unknown }) {
+  function onStartResult(resp: { error?: string; agentId?: string; taskId?: string; [k: string]: unknown }) {
     // r11：send 回调只对本轮生效（无迟到帧问题）——对齐实际执行 CLI，
     // 防跨 CLI 换会话后下拉错标（beginSession 已清，这里回填正确值）
-    if (typeof (resp as any).agentId === 'string') setSessionAgent((resp as any).agentId)
+    if (typeof resp.agentId === 'string') setSessionAgent(resp.agentId)
     if (resp?.error === 'host-not-found') {
       // r10-review：'host-not-found' 几乎只对应 NM 瞬断（host 刚死、onDisconnect
       // 未达，nmport catch 清 port 后下次调用即重 spawn 自愈）——立即切 Onboarding
@@ -553,6 +555,7 @@ export function App() {
         : resp.error === 'cancelled' ? '已取消'
         : resp.error === 'empty-instruction' ? '请输入要追问的内容（或直接点「新对话」重新总结本页）'
         : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——直接重新发送即可（将开始全新总结）'
+        : resp.error === 'frame-too-large' ? '内容过长（输入 + 附件超出单帧 1MB 上限）——精简附件或缩短输入后重试'
         : String(resp.error)
       setStream((s) => {
         // 旧轮 send 的迟到取消回调（新对话后重发，SW 提取窗口秒级）：resp.taskId 已

@@ -281,7 +281,12 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 // 注意：MV3 中 async listener 的返回值会被较新 Chrome 直接当响应回传（Promise 化），
 // 绕过 sendResponse——必须用同步壳 return true 保持 channel。
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // r33-sec：只收本扩展自家页面的消息——sender 带 tab（content script 场景）或
+  // id 非本扩展时拒收。消息面含 summarize/nm 转发等特权操作，放行外来同形帧
+  // 等于把 NM 通道暴露给任意注入脚本。本项目 content script 不发消息（提取走
+  // executeScript func 直调），拒收无副作用
+  if (sender.tab != null || sender.id !== chrome.runtime.id) return
   handleMessage(msg)
     .then((r) => {
       if (r !== undefined) sendResponse(r)
@@ -448,6 +453,13 @@ function newTaskId(): string {
   return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
+/** NM 单帧 1MB 是 Chrome 平台硬限（非包契约，本地常量）。task-start 帧内嵌
+ *  instruction 与全量附件——panel 的 768KB 附件池不含 instruction，长输入 +
+ * 满附件仍可击穿帧限（host 侧超限帧即失步自杀收割全部任务）。发送前按
+ * JSON 序列化整帧口径兜底，留 64KB 给帧头/协议字段余量 */
+const NM_FRAME_MAX = 1024 * 1024
+const frameTooLarge = (frame: unknown) => new Blob([JSON.stringify(frame)]).size > NM_FRAME_MAX - 64 * 1024
+
 // host → panel 直通
 nmPort.onMessage((m) => {
   const msg = m as any
@@ -555,13 +567,15 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
   if (currentTask) cancelCurrent() // 收割在跑任务（同 startSummarize：句柄丢失 = 进程泄漏）
   const taskId = newTaskId()
   // 追问轮也占任务位（taskId）：进行中可取消
-  const ok = nmPort.send({
-    t: 'task-start',
+  const frame = {
+    t: 'task-start' as const,
     task: {
       taskId, agentId, resumeSessionId: sessionId, historyPath, instruction, attachments,
       page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 },
     },
-  })
+  }
+  if (frameTooLarge(frame)) return { error: 'frame-too-large' }
+  const ok = nmPort.send(frame)
   if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
   currentTask = { taskId, tabId: panelTabId ?? -1, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
   // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）。
@@ -680,11 +694,16 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // 提取成功 → 下发目标页元数据（panel tips 条「正在分享 …」；notice=截断/低置信提示）
   sendToPanel({ t: 'page-meta', page: { title: tab.title ?? meta.title, url: tab.url ?? meta.url, favIconUrl: tab.favIconUrl, notice: meta.notice, approxTokens: meta.approxTokens } })
 
-  const ok = nmPort.send({
-    t: 'task-start',
+  const frame = {
+    t: 'task-start' as const,
     // skills：panel 选中的技能名，host 读 ~/.ai-page-dive/skills 正文拼进 prompt
     task: { taskId, agentId, workflow, instruction, skills, lang, attachments, page: meta },
-  })
+  }
+  if (frameTooLarge(frame)) {
+    currentTask = null
+    return { error: 'frame-too-large' }
+  }
+  const ok = nmPort.send(frame)
   if (!ok) {
     currentTask = null
     return { error: 'host-not-found', lastError: nmPort.lastError }

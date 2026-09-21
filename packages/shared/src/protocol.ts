@@ -280,6 +280,9 @@ export interface ErrorMsg {
   t: 'error'
   code: string
   message: string
+  /** 请求关联（r33）：请求侧带短 id 原样回带（如 history-read 的 path）——
+   *  并发请求时消费侧据此区分「哪次失败了」，缺失时按旧语义全局提示 */
+  ref?: string
 }
 
 export type HostToExt =
@@ -312,3 +315,39 @@ export type HostToExt =
 
 /** 单帧最大 payload（NM 限制 1MB，host→ext 的 chunk 必须分片到线下） */
 export const MAX_CHUNK = 512 * 1024
+
+// ── SW → panel 合成帧（r33：收窄消息面，panel 侧不再 as any 消费）──
+
+/** SW 合成：tips 条元数据刷新（锚定 tab 切回/导航后）。page null = 不可提取页 */
+export interface PageMetaMsg {
+  t: 'page-meta'
+  page: { title: string; url: string; favIconUrl?: string; notice?: string; approxTokens?: number } | null
+  pageUnsupported?: boolean
+}
+/** SW 合成：图标再点仲裁（panel 比对锚 + 可见性自裁 window.close） */
+export interface PanelToggleMsg {
+  t: 'panel-toggle'
+  tabId?: number
+}
+/** SW 合成：换锚广播（panel 收养任务帧的核验基准跟锚走） */
+export interface PanelAnchorMsg {
+  t: 'panel-anchor'
+  tabId: number
+}
+/** SW → panel 全消息面：host 原帧（+SW 盖 tabId 邮戳）∪ SW 合成帧 */
+export type PanelMsg = HostToExt | PageMetaMsg | PanelToggleMsg | PanelAnchorMsg
+
+/** panel-ready 响应（SW 对 {t:'panel-ready'} 的 sendResponse shape） */
+export interface PanelReadyResp {
+  ok: boolean
+  hostVersion?: string
+  nmError?: string
+  outdated?: string
+  page: PageMetaMsg['page']
+  panelTabId: number | null
+  pageUnsupported?: boolean
+  hasSession?: boolean
+  sessionAgentId?: string
+  historyPath?: string
+  activeTask?: { taskId: string; startedAt: number }
+}

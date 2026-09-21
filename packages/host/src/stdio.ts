@@ -123,7 +123,7 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
             }
             send({ t: 'history-file', path: msg.path, content })
           })
-          .catch((e) => send({ t: 'error', code: 'read-fail', message: String(e?.message ?? e) }))
+          .catch((e) => send({ t: 'error', code: 'read-fail', ref: msg.path, message: String(e?.message ?? e) }))
         break
       case 'history-delete':
         deleteHistory(msg.path)
