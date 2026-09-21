@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AgentStatus, WorkflowItem } from '@ai-page-dive/shared'
 import type { ChatMessage, PageMeta, TaskStreamState } from './App.js'
+import { useRovingNav } from './a11y.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
 interface Props {
@@ -548,6 +549,8 @@ function WorkflowDropdown({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  // r32-a11y：listbox 键盘可达——上下/四向游走（只移焦点不选，Enter/click 选中）
+  useRovingNav(ref, '.pd-dropdown-item')
 
   useEffect(() => {
     if (!open) return
@@ -555,15 +558,24 @@ function WorkflowDropdown({
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') closeMenu()
     }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
+    // r32-a11y：打开即入菜单（选中项优先，无选中落首项）——键盘用户不必先 Tab 找菜单
+    ;(ref.current?.querySelector<HTMLElement>('.pd-dropdown-item.selected')
+      ?? ref.current?.querySelector<HTMLElement>('.pd-dropdown-item'))?.focus()
     return () => {
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
+
+  /** r32-a11y：关闭并还焦 trigger——焦点悬在已卸载的菜单项上会丢到 body */
+  const closeMenu = () => {
+    setOpen(false)
+    ref.current?.querySelector<HTMLElement>('[aria-haspopup="listbox"]')?.focus()
+  }
 
   return (
     <div ref={ref} className={`pd-workflow-dropdown ${hasSession ? 'inactive' : ''}`}>
@@ -582,11 +594,19 @@ function WorkflowDropdown({
         </svg>
       </button>
       {open && (
-        <ul role="listbox" className="pd-dropdown-menu pd-workflow-menu pd-fade-in-fast">
+        <ul
+          role="listbox"
+          className="pd-dropdown-menu pd-workflow-menu pd-fade-in-fast"
+          onKeyDown={(e) => {
+            // r32-a11y：菜单内 Esc 只关菜单——stopPropagation 防冒泡连设置 overlay 一起关
+            if (e.key === 'Escape') { e.stopPropagation(); closeMenu() }
+          }}
+        >
           {workflows.map((w) => (
             <li key={w.name} role="option" aria-selected={w.name === workflow}>
               <button
                 onClick={() => { onWorkflowChange(w.name); setOpen(false) }}
+                tabIndex={w.name === workflow ? 0 : -1}
                 className={`pd-dropdown-item ${w.name === workflow ? 'selected' : ''}`}
               >
                 {w.name === workflow && <span className="pd-dropdown-check" aria-hidden="true" />}
@@ -752,9 +772,17 @@ export function ModelDropdown({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  // r32-a11y：listbox 键盘可达——四向游走（只移焦点不选，Enter/click 选中）
+  useRovingNav(ref, '.pd-dropdown-item')
 
   // 追问轮切禁用时若菜单开着必须收起（否则残留可点的过期菜单）
   useEffect(() => { if (disabled) setOpen(false) }, [disabled])
+
+  /** r32-a11y：关闭并还焦 trigger——焦点悬在已卸载的菜单项上会丢到 body */
+  const closeMenu = () => {
+    setOpen(false)
+    ref.current?.querySelector<HTMLElement>('[aria-haspopup="listbox"]')?.focus()
+  }
 
   useEffect(() => {
     if (!open) return
@@ -762,10 +790,13 @@ export function ModelDropdown({
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') closeMenu()
     }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
+    // r32-a11y：打开即入菜单（选中项优先，无选中落首项）
+    ;(ref.current?.querySelector<HTMLElement>('.pd-dropdown-item.selected')
+      ?? ref.current?.querySelector<HTMLElement>('.pd-dropdown-item'))?.focus()
     return () => {
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
@@ -795,11 +826,19 @@ export function ModelDropdown({
         )}
       </button>
   {open && items.length > 0 && (
-        <ul role="listbox" className="pd-dropdown-menu pd-fade-in-fast">
+        <ul
+          role="listbox"
+          className="pd-dropdown-menu pd-fade-in-fast"
+          onKeyDown={(e) => {
+            // r32-a11y：菜单内 Esc 只关菜单——stopPropagation 防冒泡连设置 overlay 一起关
+            if (e.key === 'Escape') { e.stopPropagation(); closeMenu() }
+          }}
+        >
           {items.map((it) => (
             <li key={it.key} role="option" aria-selected={it.key === value}>
               <button
                 onClick={() => { onChange(it.key); setOpen(false) }}
+                tabIndex={it.key === value ? 0 : -1}
                 className={`pd-dropdown-item ${it.key === value ? 'selected' : ''}`}
               >
                 {it.key === value && <span className="pd-dropdown-check" aria-hidden="true" />}

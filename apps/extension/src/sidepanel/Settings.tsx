@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentStatus, HostToExt, SkillItem, WorkflowItem } from '@ai-page-dive/shared'
+import { useRovingNav } from './a11y.js'
 import './Settings.css'
 
 /** workflow 名称合法字符（与目录名一致）：字母数字下划线连字符，≤64 */
@@ -315,6 +316,18 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
     [],
   )
 
+  // r32-a11y：键盘导航——tablist 左右/Home/End（activate：方向键即切），
+  // 三组 radiogroup 四向（radio 语义：方向键即选中）
+  const tabsRef = useRef<HTMLDivElement>(null)
+  const langRef = useRef<HTMLDivElement>(null)
+  const ambRef = useRef<HTMLDivElement>(null)
+  const sizeRef = useRef<HTMLDivElement>(null)
+  useRovingNav(tabsRef, '[role="tab"]', { horizontal: true, activate: true })
+  useRovingNav(langRef, '[role="radio"]', { activate: true })
+  // 氛围档 4 列网格：Up/Down 走下一行同列（cols），左右线性环绕
+  useRovingNav(ambRef, '[role="radio"]', { activate: true, cols: 4 })
+  useRovingNav(sizeRef, '[role="radio"]', { activate: true })
+
   return (
     <div className="pd-set">
       <div className="pd-set-top">
@@ -326,12 +339,14 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
         </button>
       </div>
 
-      <div className="pd-set-tabs" role="tablist">
+      <div className="pd-set-tabs" role="tablist" ref={tabsRef}>
         {tabs.map((t) => (
           <button
             key={t.key}
             role="tab"
             aria-selected={tab === t.key}
+            aria-controls="pd-set-pane"
+            tabIndex={tab === t.key ? 0 : -1}
             className={`pd-set-tab ${tab === t.key ? 'active' : ''}`}
             onClick={() => setTab(t.key)}
           >
@@ -346,7 +361,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
         </div>
       )}
 
-      <div className="pd-set-body" key={tab}>
+      <div className="pd-set-body" id="pd-set-pane" role="tabpanel" key={tab}>
         {tab === 'modes' && (
           <div className="pd-set-pane">
             <div className="pd-set-modes">
@@ -504,7 +519,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               )}
               <div className="pd-set-lang-row">
                 <span className="pd-set-label" style={{ margin: 0 }}>总结语言</span>
-                <div className="pd-set-lang-opts" role="radiogroup" aria-label="总结输出语言">
+                <div className="pd-set-lang-opts" role="radiogroup" aria-label="总结输出语言" ref={langRef}>
                   {([['', '自动'], ['zh', '中文'], ['en', 'English']] as const).map(([v, label]) => (
                     <button
                       key={v || 'auto'}
@@ -512,6 +527,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                       onClick={() => setSetting('pd-sum-lang', v)}
                       role="radio"
                       aria-checked={(lang || '') === v}
+                      tabIndex={(lang || '') === v ? 0 : -1}
                     >
                       {label}
                     </button>
@@ -574,7 +590,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               {/* r26：氛围档 3→6，一行放不下——标签上置 + 3 列网格（见 pd-set-amb-row-stack） */}
               <div className="pd-set-amb-row pd-set-amb-row-stack">
                 <span className="pd-set-label" style={{ margin: 0 }}>壁纸氛围</span>
-                <div className="pd-set-amb-opts pd-set-amb-grid" role="radiogroup" aria-label="壁纸氛围光">
+                <div className="pd-set-amb-opts pd-set-amb-grid" role="radiogroup" aria-label="壁纸氛围光" ref={ambRef}>
                   {([
                     ['', '中性', 'linear-gradient(135deg, #D2E1FF 0%, #ECC070 100%)'],
                     ['warm', '暖琥珀', 'linear-gradient(135deg, #FFE0B2 0%, #F0BE6E 100%)'],
@@ -594,6 +610,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                       }}
                       role="radio"
                       aria-checked={(ambience || '') === v}
+                      tabIndex={(ambience || '') === v ? 0 : -1}
                     >
                       <span className="pd-set-amb-dot" style={{ background: dot }} aria-hidden="true" />
                       {label}
@@ -604,7 +621,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               {/* r25 阅读字号档：A11y 刚需——标题用 em 相对正文，切档层级不倒挂 */}
               <div className="pd-set-amb-row" style={{ marginTop: 16 }}>
                 <span className="pd-set-label" style={{ margin: 0 }}>阅读字号</span>
-                <div className="pd-set-amb-opts" role="radiogroup" aria-label="阅读字号">
+                <div className="pd-set-amb-opts" role="radiogroup" aria-label="阅读字号" ref={sizeRef}>
                   {([['sm', '小'], ['', '标准'], ['lg', '大']] as const).map(([v, label]) => (
                     <button
                       key={v || 'md'}
@@ -616,6 +633,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                       }}
                       role="radio"
                       aria-checked={(readSize || '') === v}
+                      tabIndex={(readSize || '') === v ? 0 : -1}
                     >
                       {label}
                     </button>
