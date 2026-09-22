@@ -70,7 +70,16 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   // 「删除模式」按钮等于静默失效；3s 未二次点击自动还原
   const [confirmDelWf, setConfirmDelWf] = useState(false)
   const delWfTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  useEffect(() => () => clearTimeout(delWfTimer.current), [])
+  // r33-fix：workflow 读取超时计时器同入清理台账——快速连切模式时旧 10s 计时器
+  // 叠跑，卸载后迟到的 setReadTimeout 打在已卸载组件上
+  const readTimer = useRef<number | undefined>(undefined)
+  useEffect(
+    () => () => {
+      clearTimeout(delWfTimer.current)
+      window.clearTimeout(readTimer.current)
+    },
+    [],
+  )
 
   // ── 模式（workflow） ──
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
@@ -205,9 +214,11 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
     })
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-read', name: w.name } }, () => void chrome.runtime.lastError)
     // 10s 无 workflow-file 回包（host 忙/断连）：置只读超时态——不写 body 不标 dirty，
-    // 防超时文案被一次误保存持久化成 workflow 正文（shadow 掉真版本）
+    // 防超时文案被一次误保存持久化成 workflow 正文（shadow 掉真版本）。
+    // r33-fix：换选即清旧计时器（连切时旧计时器对不上 cur.name 有守卫，但不再白跑）
     setReadTimeout(null)
-    window.setTimeout(() => {
+    window.clearTimeout(readTimer.current)
+    readTimer.current = window.setTimeout(() => {
       const cur = editorRef.current
       if (cur && cur.name === w.name && !cur.body) setReadTimeout(w.name)
     }, 10_000)
