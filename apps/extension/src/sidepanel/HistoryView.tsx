@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { HistoryFileMsg, HistoryItem, HistoryListResultMsg, HostToExt } from '@ai-page-dive/shared'
+import { useExitValue } from './motion.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
 /** URL → 站点名（favicon 不可用时的来源提示） */
@@ -20,6 +21,8 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
   const queryRef = useRef('')
   queryRef.current = query
   const [viewing, setViewing] = useState<HistoryFileMsg | null>(null)
+  // r35-motion：返回列表先播 150ms 下沉退场再卸载（期间 shown 保持旧值渲染）
+  const detail = useExitValue(viewing, 150)
   // 当前查看项对应的列表元数据（含 sessionId）
   const [viewingItem, setViewingItem] = useState<HistoryItem | null>(null)
   // 在途读取的 path（F10）：回帧 path 不符即丢——「返回后点下一条」时旧帧迟到
@@ -120,10 +123,10 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
     debounceRef.current = setTimeout(() => refresh(q), 250)
   }
 
-  if (viewing) {
-    const body = viewing.content.replace(/^---\n[\s\S]*?\n---\n/, '')
+  if (detail.shown) {
+    const body = detail.shown.content.replace(/^---\n[\s\S]*?\n---\n/, '')
     return (
-      <div className="pd-history-detail">
+      <div className={`pd-history-detail${detail.exiting ? ' pd-exiting' : ''}`}>
         <button onClick={() => { setViewing(null); pendingPathRef.current = null }} className="pd-history-back">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10 3 5 8l5 5" />

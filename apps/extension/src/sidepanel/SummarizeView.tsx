@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { AgentStatus, WorkflowItem } from '@ai-page-dive/shared'
 import type { ChatMessage, PageMeta, TaskStreamState } from './App.js'
 import { useListboxMenu, useRovingNav } from './a11y.js'
+import { useExitValue } from './motion.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
 interface Props {
@@ -91,6 +92,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const [sumLang] = useSetting('pd-sum-lang')
   const usable = agents.filter((a) => a.available && !disabledClis.has(a.id))
   const messages = stream.messages
+  // r35-motion：发送后 hero 下沉淡出让位聊天（退场 180ms 再卸载）
+  const hero = useExitValue(messages.length === 0, 180)
   // r16（3-agent P1）：workflow 落 localStorage——面板收起即文档重载（锚定模型），
   // 组件态每次切页签回来都重置 default→deep：快捷用户的「快速」误发成最贵档。
   // 与 pd-default-cli 同款模式：mount 读回 + 选中即写
@@ -420,12 +423,13 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             <span>面板重开：此前对话已清空——完整内容可在「总结历史」中查看；继续提问将接续原会话。</span>
           </div>
         )}
-        {messages.length === 0 && (
+        {hero.shown && (
           <Placeholder
             clis={usable.map((a) => a.id)}
             anyInstalled={agents.some((a) => a.available)}
             pageUnsupported={pageUnsupported}
             agentsLoaded={agentsLoaded}
+            exiting={hero.exiting}
             /* r16（3-agent P1）：活会话（重开兜底/追问中）不给一键 CTA——CTA 走首轮
                总结分支会拆会话，走追问分支又必吃 empty-instruction；空态请用户输入 */
             onSummarize={hasSession ? undefined : (wf) => send(wf)}
@@ -553,6 +557,8 @@ function WorkflowDropdown({
   useRovingNav(ref, '.pd-dropdown-item')
   // r33-refactor：开态/即入菜单/外点/Esc 还焦收敛进共用 hook（原与 ModelDropdown 重复 ~30 行）
   const { open, setOpen, close: closeMenu } = useListboxMenu(ref)
+  // r35-motion：关闭播 130ms 收回动画再卸载
+  const menu = useExitValue(open || null, 130)
 
   return (
     <div ref={ref} className={`pd-workflow-dropdown ${hasSession ? 'inactive' : ''}`}>
@@ -570,10 +576,10 @@ function WorkflowDropdown({
           <path d="m4 6.5 4 4 4-4" />
         </svg>
       </button>
-      {open && (
+      {menu.shown && (
         <ul
           role="listbox"
-          className="pd-dropdown-menu pd-workflow-menu pd-fade-in-fast"
+          className={`pd-dropdown-menu pd-workflow-menu pd-fade-in-fast${menu.exiting ? ' pd-exiting' : ''}`}
           onKeyDown={(e) => {
             // r32-a11y：菜单内 Esc 只关菜单——stopPropagation 防冒泡连设置 overlay 一起关
             if (e.key === 'Escape') { e.stopPropagation(); closeMenu() }
@@ -752,6 +758,8 @@ export function ModelDropdown({
   useRovingNav(ref, '.pd-dropdown-item')
   // r33-refactor：开态/即入菜单/外点/Esc 还焦收敛进共用 hook（原与 WorkflowDropdown 重复 ~30 行）
   const { open, setOpen, close: closeMenu } = useListboxMenu(ref)
+  // r35-motion：关闭播 130ms 收回动画再卸载
+  const menu = useExitValue(open || null, 130)
 
   // 追问轮切禁用时若菜单开着必须收起（否则残留可点的过期菜单）
   useEffect(() => { if (disabled) setOpen(false) }, [disabled])
@@ -778,10 +786,10 @@ export function ModelDropdown({
           </svg>
         )}
       </button>
-  {open && items.length > 0 && (
+  {menu.shown && items.length > 0 && (
         <ul
           role="listbox"
-          className="pd-dropdown-menu pd-fade-in-fast"
+          className={`pd-dropdown-menu pd-fade-in-fast${menu.exiting ? ' pd-exiting' : ''}`}
           onKeyDown={(e) => {
             // r32-a11y：菜单内 Esc 只关菜单——stopPropagation 防冒泡连设置 overlay 一起关
             if (e.key === 'Escape') { e.stopPropagation(); closeMenu() }
@@ -965,12 +973,12 @@ function PageTips({ meta }: { meta: PageMeta }) {
   )
 }
 
-function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSummarize }: { clis: string[]; anyInstalled?: boolean; pageUnsupported?: boolean; agentsLoaded?: boolean; onSummarize?: (wf: 'deep' | 'quick') => void }) {
+function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSummarize, exiting }: { clis: string[]; anyInstalled?: boolean; pageUnsupported?: boolean; agentsLoaded?: boolean; onSummarize?: (wf: 'deep' | 'quick') => void; exiting?: boolean }) {
   // r14 首旅程：探测在途（host spawn + 逐 CLI --version 秒级）——agents 未回帧前
   // 显示中性等待，抢跑「未检测到」假告示会误导已装用户去重装
   if (!clis.length && !agentsLoaded) {
     return (
-      <div className="pd-placeholder">
+      <div className={`pd-placeholder${exiting ? ' pd-exiting' : ''}`}>
         <p className="pd-placeholder-title">正在检测本机 CLI…</p>
         <p className="pd-placeholder-hint">首次检测需唤起本机组件，稍等片刻</p>
       </div>
@@ -980,7 +988,7 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
   // 区分「未安装」与「已装但全被停用」（r5-ux：文案曾把后者引向重装排查）
   if (!clis.length) {
     return (
-      <div className="pd-placeholder">
+      <div className={`pd-placeholder${exiting ? ' pd-exiting' : ''}`}>
         <p className="pd-placeholder-title">{anyInstalled ? '本机 CLI 已全部停用' : '未检测到本机 AI CLI'}</p>
         <p className="pd-placeholder-hint">
           {anyInstalled ? (
@@ -1004,7 +1012,7 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
   // r8-ux：chrome:// 等受限页无法提取正文——前置说明，别让用户输入后才发现发不出去
   if (pageUnsupported) {
     return (
-      <div className="pd-placeholder">
+      <div className={`pd-placeholder${exiting ? ' pd-exiting' : ''}`}>
         <p className="pd-placeholder-title">当前页面无法提取正文</p>
         <p className="pd-placeholder-hint">
           浏览器内置页（chrome:// 等）不允许扩展读取内容

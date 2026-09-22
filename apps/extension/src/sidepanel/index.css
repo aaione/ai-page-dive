@@ -281,6 +281,23 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   from { opacity: 0; transform: translate3d(0, 16px, 0) scale(.94); }
   to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
+/* r35-motion 三轮：退场族——React 条件渲染只卸不退，「进得柔和、走得生硬」是
+   不丝滑感的主体来源（useExitValue 延迟卸载期间挂 .pd-exiting 播以下动画）。
+   方向与各自进场镜像：菜单收回锚点 / hero 与详情下沉 / 弹层淡出 */
+@keyframes pd-fade-out { to { opacity: 0 } }
+@keyframes pd-pop-out {
+  from { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  to { opacity: 0; transform: translate3d(0, -4px, 0) scale(.96); }
+}
+@keyframes pd-sink-out {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, 10px, 0); }
+}
+.pd-exiting { pointer-events: none; }
+.pd-dropdown-menu.pd-exiting { animation: pd-pop-out 130ms var(--pd-ease-out) both; }
+.pd-overlay.pd-exiting { animation: pd-fade-out 160ms ease-out both; }
+.pd-placeholder.pd-exiting { animation: pd-sink-out 180ms var(--pd-ease-out) both; }
+.pd-history-detail.pd-exiting { animation: pd-sink-out 150ms var(--pd-ease-out) both; }
 /* r34-motion：可点件按压反馈——active 微缩 scale(.96) 给实体感；过渡交各家
    原有 transition（多为 all .15s 已含 transform，无则瞬时缩放与原生按钮一致） */
 .pd-cta-primary:active, .pd-cta-ghost:active, .pd-set-btn:active, .pd-new-chat-btn:active,
@@ -293,6 +310,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   .pd-fade-in, .pd-fade-in-fast, .pd-placeholder, .pd-placeholder-title,
   .pd-placeholder-cta, .pd-placeholder-hint, .pd-chat-user, .pd-chat-assistant,
   .pd-dropdown-menu, .pd-history-detail, .pd-history-item, .pd-overlay { animation: none; }
+  .pd-exiting { animation: none !important; }
   .pd-cta-primary:active, .pd-cta-ghost:active, .pd-set-btn:active, .pd-new-chat-btn:active,
   .pd-chat-action-btn:active, .pd-history-item-action:active, .pd-dropdown-item:active,
   .pd-dropdown-trigger:active { transform: none; }

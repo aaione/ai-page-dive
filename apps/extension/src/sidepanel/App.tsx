@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentStatus, HistoryItem, HostToExt, PanelMsg, PanelReadyResp, WorkflowItem } from '@ai-page-dive/shared'
 import { useDialogFocus } from './a11y.js'
 import { parseHistoryTurns } from './historyTurns.js'
+import { useExitValue } from './motion.js'
 import { Onboarding } from './Onboarding.js'
 import { SummarizeView, useDisabledClis } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
@@ -11,13 +12,13 @@ type Overlay = null | 'history' | 'settings'
 
 /** r32-a11y：模态 overlay 壳——焦点陷阱 + 打开入容器 + 关闭还原触发元素
  *  （useDialogFocus 随本组件的条件渲染对齐生命周期） */
-function DialogLayer({ label, onClose, children }: { label: string; onClose: () => void; children: React.ReactNode }) {
+function DialogLayer({ label, onClose, exiting, children }: { label: string; onClose: () => void; exiting?: boolean; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   useDialogFocus(ref)
   return (
     <div
       ref={ref}
-      className="pd-overlay pd-fade-in-fast"
+      className={`pd-overlay pd-fade-in-fast${exiting ? ' pd-exiting' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-label={label}
@@ -94,6 +95,7 @@ export interface PageMeta {
 
 export function App() {
   const [overlay, setOverlay] = useState<Overlay>(null)
+  const ov = useExitValue(overlay, 160)
   const [hostOk, setHostOk] = useState<boolean | null>(null)
   /** r33-ux：panel-ready 探活持续失败（SW 唤不醒/通道异常 >30s）——loading 态给手动出口 */
   const [pingStuck, setPingStuck] = useState(false)
@@ -770,13 +772,14 @@ export function App() {
         <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} resumable={stream.resumable} sessionAgentId={sessionAgent} pageUnsupported={pageUnsupported} agentsLoaded={agentsLoaded} />
       </main>
 
-      {overlay === 'history' && (
-        <DialogLayer label="总结历史" onClose={() => setOverlay(null)}>
+      {/* r35-motion：overlay 关闭先播 160ms 退场再卸载（useExitValue 期间保持旧值渲染） */}
+      {ov.shown === 'history' && (
+        <DialogLayer label="总结历史" onClose={() => setOverlay(null)} exiting={ov.exiting}>
           <HistoryView onClose={() => setOverlay(null)} onResume={resumeHistory} />
         </DialogLayer>
       )}
-      {overlay === 'settings' && (
-        <DialogLayer label="设置" onClose={() => setOverlay(null)}>
+      {ov.shown === 'settings' && (
+        <DialogLayer label="设置" onClose={() => setOverlay(null)} exiting={ov.exiting}>
           <Settings agents={agents} onClose={() => setOverlay(null)} />
         </DialogLayer>
       )}
