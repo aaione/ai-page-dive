@@ -256,6 +256,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 @keyframes pd-fade-in { from { opacity: 0 } to { opacity: 1 } }
 .pd-fade-in { animation: pd-fade-in 200ms ease-out both; }
 .pd-fade-in-fast { animation: pd-fade-in 120ms ease-out both; }
+.pd-rise-in { animation: pd-rise-in 240ms var(--pd-ease-out) both; }
 
 /* r34-motion 二轮（animate.style 设计语言）：① translate3d 强制合成层不掉帧；
    ② 方向性变体（用户气泡右进=fadeInRight 语义「从输入框发出」）；③ 回弹曲线族
@@ -277,6 +278,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   from { opacity: 0; transform: translate3d(0, -4px, 0) scale(.96); }
   to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
+/* r38-motion：chip 弹入——scale 从 .72 起跳配 ease-back 过冲，纯位移版（pop-in）实测不可感 */
+@keyframes pd-chip-in {
+  from { opacity: 0; transform: scale(.72); }
+  to { opacity: 1; transform: scale(1); }
+}
 @keyframes pd-hero-in {
   from { opacity: 0; transform: translate3d(0, 16px, 0) scale(.94); }
   to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
@@ -295,6 +301,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 }
 .pd-exiting { pointer-events: none; }
 .pd-dropdown-menu.pd-exiting { animation: pd-pop-out 130ms var(--pd-ease-out) both; }
+.pd-attach-chips.pd-exiting { animation: pd-sink-out 180ms var(--pd-ease-out) both; }
 .pd-overlay.pd-exiting { animation: pd-fade-out 160ms ease-out both; }
 .pd-placeholder.pd-exiting { animation: pd-sink-out 180ms var(--pd-ease-out) both; }
 .pd-history-detail.pd-exiting { animation: pd-sink-out 150ms var(--pd-ease-out) both; }
@@ -307,10 +314,10 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 /* 前庭保护（WCAG 2.3.3）：系统「减少动态」偏好下进场动效与按压反馈全退场——
    直接命中各应用点（应用点写的是 animation 简写而非通用类） */
 @media (prefers-reduced-motion: reduce) {
-  .pd-fade-in, .pd-fade-in-fast, .pd-placeholder, .pd-placeholder-title,
+  .pd-fade-in, .pd-fade-in-fast, .pd-rise-in, .pd-placeholder, .pd-placeholder-title,
   .pd-placeholder-cta, .pd-placeholder-hint, .pd-chat-user, .pd-chat-assistant,
   .pd-dropdown-menu, .pd-history-detail, .pd-history-item, .pd-overlay,
-  .pd-page-tips, .pd-attach-chip { animation: none; }
+  .pd-page-tips, .pd-attach-chips, .pd-attach-chip { animation: none; }
   .pd-exiting { animation: none !important; }
   .pd-cta-primary:active, .pd-cta-ghost:active, .pd-set-btn:active, .pd-new-chat-btn:active,
   .pd-chat-action-btn:active, .pd-history-item-action:active, .pd-dropdown-item:active,
@@ -865,6 +872,8 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   -webkit-backdrop-filter: var(--pd-glass-1-filter);
   backdrop-filter: var(--pd-glass-1-filter);
   border: 1px solid var(--pd-line-glass);
+  /* r38-motion：专属入场（挂载/切页重挂载时播）——从输入区方向浮上，260ms 可感 */
+  animation: pd-rise-in 260ms var(--pd-ease-out) both;
 }
 .pd-page-tips-favicon {
   width: 16px;
@@ -996,8 +1005,8 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   font-family: var(--font-sans-ui);
   font-size: 10.5px;
   color: var(--pd-text-2);
-  /* r37-motion：加附件即时回弹长出（keyframes 与气泡 pop-in 同源） */
-  animation: pd-pop-in 200ms var(--pd-ease-back) both;
+  /* r38-motion：scale 幅度加大到 .72 + ease-back 过冲——回弹可感 */
+  animation: pd-chip-in 240ms var(--pd-ease-back) both;
 }
 .pd-attach-chip svg {
   width: 11px;

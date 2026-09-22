@@ -112,6 +112,9 @@
   min-height: 0;
   margin-top: 12px;
   overflow-y: auto;
+  /* r38-fix：tab 滑移动画期间 pane 偏移 ±18px 溢出右缘，overflow-y:auto 隐式
+     开出 overflow-x:auto → 横向滚动条闪现。裁掉横向（纵向滚动不受影响） */
+  overflow-x: hidden;
   padding-bottom: 8px;
 }
 @keyframes pd-set-fade-in {

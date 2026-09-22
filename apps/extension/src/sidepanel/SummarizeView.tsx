@@ -117,6 +117,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const [input, setInput] = useState('')
   /** 待发送附件（文本 ≤512KB/个、图片 ≤500KB/个，总量见 pickAttachments 预算）：随下一次 send 走 task-start，发完即清 */
   const [attachments, setAttachments] = useState<Att[]>([])
+  // r38-motion：chips 退场——发送清空后旧列表下沉淡出 180ms 再卸载（空数组是 truthy，
+  // 需归一成 null 才能触发 useExitValue 的退场分支）
+  const chips = useExitValue(attachments.length ? attachments : null, 180)
   /** 附件跳过提示（超限/读失败）：下一条 notice 类消息展示后清除 */
   const [attachNotice, setAttachNotice] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -485,10 +488,11 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       </div>
 
       <div className="pd-action-bar">
-        {pageMeta && <PageTips meta={pageMeta} />}
-        {attachments.length > 0 && (
-          <div className="pd-attach-chips">
-            {attachments.map((a, i) => (
+        {/* r38-motion：key=锚定页——切页时重挂载重播入场动画（此前恒挂载，标题/tokens 瞬跳是「不丝滑」主源） */}
+        {pageMeta && <PageTips key={pageMeta.url} meta={pageMeta} />}
+        {chips.shown && chips.shown.length > 0 && (
+          <div className={`pd-attach-chips${chips.exiting ? ' pd-exiting' : ''}`}>
+            {chips.shown.map((a, i) => (
               <span key={a.name + i} className="pd-attach-chip" title={a.name}>
                 {a.kind === 'image' ? (
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -511,7 +515,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         {attachNotice && (
           // 附件跳过即时提示（r4-ux F3）：此前只在下次发送时以伪用户气泡出现——
           // 挑选当下零反馈，被丢的附件无从归因
-          <p role="note" className="pd-fade-in-fast" style={{ margin: '0 12px 6px', fontSize: 12, color: 'var(--color-pd-danger)' }}>
+          <p role="note" className="pd-rise-in" style={{ margin: '0 12px 6px', fontSize: 12, color: 'var(--color-pd-danger)' }}>
             {attachNotice}
           </p>
         )}
@@ -848,17 +852,17 @@ function ActionBar({
   return (
     <div className="pd-action-bar-inner">
       {workflowNotice && (
-        <p role="note" className="pd-fade-in-fast" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
+        <p role="note" className="pd-rise-in" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
           ⚠ {workflowNotice}
         </p>
       )}
       {enterHint && (
-        <p role="note" className="pd-fade-in-fast" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
+        <p role="note" className="pd-rise-in" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
           上一轮还在跑——内容已保留，完成后按 Enter 再发
         </p>
       )}
       {noFollowUpHint && (
-        <p role="note" className="pd-fade-in-fast" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
+        <p role="note" className="pd-rise-in" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
           此 CLI 暂不支持追问：新提问将开始全新总结（不含以上对话）
         </p>
       )}
@@ -946,7 +950,7 @@ function PageTips({ meta }: { meta: PageMeta }) {
     }
   })()
   return (
-    <div className="pd-page-tips pd-fade-in-fast" role="status">
+    <div className="pd-page-tips" role="status">
       {meta.favIconUrl ? (
         <img
           src={meta.favIconUrl}
