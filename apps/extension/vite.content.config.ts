@@ -19,8 +19,6 @@ export default defineConfig({
       formats: ['iife'],
       fileName: () => 'content.js',
     },
-    rollupOptions: {
-      output: { inlineDynamicImports: true },
-    },
+    // r33-chore：lib+iife 本就强制单文件（原 inlineDynamicImports 是冗余项，v8 起 WARN）
   },
 })
