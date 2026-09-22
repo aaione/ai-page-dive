@@ -6,7 +6,7 @@ import './Settings.css'
 /** workflow 名称合法字符（与目录名一致）：字母数字下划线连字符，≤64 */
 const WF_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/
 
-type Tab = 'modes' | 'clis' | 'skills' | 'look' | 'history' | 'about'
+type Tab = 'modes' | 'clis' | 'skills' | 'look' | 'data' | 'about'
 
 interface EditorState {
   /** 原始名（保存时定位）；新建未保存时为 null */
@@ -332,11 +332,13 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const tabs: { key: Tab; label: string }[] = useMemo(
     () => [
       { key: 'modes', label: '模式' },
-      // r41-ux：新增「历史」tab（6 tab 需收窄，「本机 CLI」→「CLI」，tab 语境下语义无损）
+      // r41-ux：新增「数据」tab（6 tab 需收窄，「本机 CLI」→「CLI」，tab 语境下语义无损）
       { key: 'clis', label: 'CLI' },
       { key: 'skills', label: '技能' },
       { key: 'look', label: '外观' },
-      { key: 'history', label: '历史' },
+      // r41-review：名「数据」不名「历史」——比历史高一层，未来的保留/清理/导出/存储
+      // 设置自然归位；且与「内容不出本机、零遥测」的产品隐私叙事同调（你的数据在你手里）
+      { key: 'data', label: '数据' },
       { key: 'about', label: '关于' },
     ],
     [],
@@ -678,13 +680,13 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
           </div>
         )}
 
-        {tab === 'history' && (
+        {tab === 'data' && (
           <div className="pd-set-pane">
             <div className="pd-set-panel">
               <p className="pd-set-hint">
                 总结历史按 年/月/日 落盘在 <code>~/.ai-page-dive/history/</code>——目录即备份，拖走即导出。
               </p>
-              {/* r41-ux：历史独立成 tab——数据行为设置与「关于」（版本/隐私/分享）分家
+              {/* r41-ux：历史设置独立成 tab——数据行为设置与「关于」（版本/隐私/分享）分家
                   （r39 误入外观、r40 暂放关于，用户两连点名）；host 侧 listHistory(limit)
                   链路本就支持，列表满额时 HistoryView 底部有「更早可搜索」提示 */}
               <div className="pd-set-amb-row">
