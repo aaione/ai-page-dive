@@ -204,8 +204,9 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
         </p>
       )}
       <ul className="pd-history-list">
-        {items.map((it) => (
-          <li key={it.path} className="pd-history-item">
+        {items.map((it, i) => (
+          // r34-motion：条目交错浮现——delay 40ms 递进、8 条封顶（长列表尾部不再叠加等待）
+          <li key={it.path} className="pd-history-item" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
             <button
               onClick={() => {
                 setViewingItem(it)

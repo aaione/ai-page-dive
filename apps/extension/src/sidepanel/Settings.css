@@ -115,13 +115,14 @@
   padding-bottom: 8px;
 }
 @keyframes pd-set-fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 .pd-set-pane {
   display: flex;
   flex-direction: column;
-  animation: pd-set-fade-in 200ms ease-out both;
+  /* r34-motion 二轮：接入 index.css 曲线族（--pd-ease-out=easeOutExpo 近似）+ translate3d 合成层 */
+  animation: pd-set-fade-in 220ms var(--pd-ease-out) both;
 }
 
 /* ── 面板（列表/表单容器通用，r15 表面玻璃：叠层微光 + blur 磨砂；
