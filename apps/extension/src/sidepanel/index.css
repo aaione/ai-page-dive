@@ -257,6 +257,25 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 .pd-fade-in { animation: pd-fade-in 200ms ease-out both; }
 .pd-fade-in-fast { animation: pd-fade-in 120ms ease-out both; }
 
+/* r34-motion：进场动效族——rise（上浮淡入：hero/气泡/面板/视图）与 pop（缩放淡入：
+   dropdown 菜单）。cubic-bezier(.2,.7,.3,1) 快出慢收，只做「内容向你走来」的方向感，
+   不做回弹/大位移——360px 窄幅内大幅移动会晕；both 保证延迟 stagger 的元素不闪初态 */
+@keyframes pd-rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pd-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* 前庭保护（WCAG 2.3.3）：系统「减少动态」偏好下进场动效全退场——直接命中
+   各应用点（应用点写的是 animation 简写而非 .pd-rise-in 类） */
+@media (prefers-reduced-motion: reduce) {
+  .pd-fade-in, .pd-fade-in-fast, .pd-placeholder, .pd-placeholder-title,
+  .pd-placeholder-cta, .pd-placeholder-hint, .pd-chat-user, .pd-chat-assistant,
+  .pd-dropdown-menu, .pd-history-detail, .pd-overlay { animation: none; }
+}
+
 @keyframes pd-breathe { 0%,100% { opacity:.3 } 50% { opacity:1 } }
 @keyframes pd-pulse { 0%,100% { transform: scale(.7); opacity:.25 } 50% { transform: scale(1); opacity:1 } }
 .pd-dot { animation: pd-breathe 1.2s ease-in-out infinite; }
@@ -272,6 +291,8 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   flex-direction: column;
   align-items: flex-end;
   margin: 18px 0 14px;
+  /* r34-motion：气泡进场（历史恢复时多条同播=整页浮现，流式轮只新条播） */
+  animation: pd-rise-in 260ms cubic-bezier(.2,.7,.3,1) both;
 }
 .pd-chat-user p {
   max-width: 85%;
@@ -306,6 +327,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   backdrop-filter: var(--pd-glass-1-filter);
   border: 1px solid var(--pd-line-glass);
   box-shadow: var(--pd-inset-top), var(--pd-inset-bottom), var(--pd-elev-1-sm);
+  animation: pd-rise-in 260ms cubic-bezier(.2,.7,.3,1) both; /* r34-motion：同用户气泡 */
 }
 /* r25（修订 r24）：字肩微影收窄到标题/strong——serif 细笔画全文柔影是长文疲劳
    源，微影只给粗笔画提厚度；首段/首标题 margin 归零保持（容器自带 padding） */
@@ -595,6 +617,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   background: var(--pd-grain-soft) repeat, rgba(16,16,22,.58); /* r22：最重的雾补上砂——结构性三兄弟雾+砂双要件齐（零 ::before、零新面板） */
   -webkit-backdrop-filter: blur(40px) saturate(200%);
   backdrop-filter: blur(40px) saturate(200%);
+  animation: pd-fade-in 180ms ease-out both; /* r34-motion：弹层浮现 */
 }
 
 /* ══════════════════════════════════════════════
@@ -654,7 +677,15 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   backdrop-filter: var(--pd-glass-2-filter);
   border: 1px solid var(--pd-line-glass);
   box-shadow: var(--pd-inset-top), var(--pd-inset-bottom), var(--pd-elev-1);
+  /* r34-motion：新对话/打开面板时 hero 整卡浮现；内部元素只 fade 错峰（80/140ms
+     递进）不位移——与卡的 rise 叠加会 10+10px 位移过量 */
+  animation: pd-rise-in 340ms cubic-bezier(.2,.7,.3,1) both;
 }
+.pd-placeholder-title, .pd-placeholder-cta, .pd-placeholder-hint {
+  animation: pd-fade-in 340ms ease-out both;
+}
+.pd-placeholder-cta { animation-delay: 80ms; }
+.pd-placeholder-hint { animation-delay: 140ms; }
 .pd-placeholder-title {
   font-family: var(--font-serif-read);
   font-size: 22px;
@@ -1062,7 +1093,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   transform: rotate(180deg);
 }
 
-/* 菜单：完全不透明实底（可读性优先），细边框 + 深阴影 */
+/* 菜单：近实底玻璃（可读性优先），细边框 + 深阴影 */
 .pd-dropdown-menu {
   position: absolute;
   z-index: 100;
@@ -1072,17 +1103,18 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   margin-top: 6px;
   border-radius: 12px;
   list-style: none;
+  animation: pd-pop-in 160ms cubic-bezier(.2,.7,.3,1) both; /* r34-motion：开合浮现（条件渲染挂载即播） */
   /* r15 整体玻璃：菜单悬浮在滚动内容之上——backdrop 磨的是真实内容流，
      全站最显眼的玻璃时刻（原不透明 #1F1F1F）。r21：越浮越糊（24→28，
      层次差：menu > 气泡 > 搜索框）+ 软颗粒 + 描边提亮。
      r22：L3 令牌化 + 厚度双表面 + elev-2 三段影 + ::before 方向性受光描边环
-     r34：alpha .46→.88 提实——L3 半透明时菜单项与底下滚动正文叠字可读性塌方
-     （用户实证），磨砂质感由 blur+grain 承担、不靠透明度 */
+     r34：alpha .46→.88→.96 两轮提实——深色底上漏光可感阈值在 ~.9，半透明时
+     菜单项与底下滚动正文叠字可读性塌方（用户实证）；磨砂质感由 blur+grain 承担 */
   background:
     var(--pd-grain-soft) repeat,
     linear-gradient(105deg, rgba(255,255,255,.05) 0%, transparent 32%),
     linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%),
-    rgba(18,18,24,.88);
+    rgba(18,18,24,.96);
   -webkit-backdrop-filter: var(--pd-glass-3-filter);
   backdrop-filter: var(--pd-glass-3-filter);
   /* r22 修正：border 改 transparent 让 ::before 方向性描边环独占边缘——
@@ -1527,6 +1559,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   display: flex;
   flex-direction: column;
   height: 100%;
+  animation: pd-rise-in 240ms cubic-bezier(.2,.7,.3,1) both; /* r34-motion：详情二级页浮现 */
 }
 .pd-history-back {
   display: flex;
