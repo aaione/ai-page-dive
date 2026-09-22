@@ -6,7 +6,7 @@ import './Settings.css'
 /** workflow 名称合法字符（与目录名一致）：字母数字下划线连字符，≤64 */
 const WF_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/
 
-type Tab = 'modes' | 'clis' | 'skills' | 'look' | 'about'
+type Tab = 'modes' | 'clis' | 'skills' | 'look' | 'history' | 'about'
 
 interface EditorState {
   /** 原始名（保存时定位）；新建未保存时为 null */
@@ -332,9 +332,11 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const tabs: { key: Tab; label: string }[] = useMemo(
     () => [
       { key: 'modes', label: '模式' },
-      { key: 'clis', label: '本机 CLI' },
+      // r41-ux：新增「历史」tab（6 tab 需收窄，「本机 CLI」→「CLI」，tab 语境下语义无损）
+      { key: 'clis', label: 'CLI' },
       { key: 'skills', label: '技能' },
       { key: 'look', label: '外观' },
+      { key: 'history', label: '历史' },
       { key: 'about', label: '关于' },
     ],
     [],
@@ -676,6 +678,45 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
           </div>
         )}
 
+        {tab === 'history' && (
+          <div className="pd-set-pane">
+            <div className="pd-set-panel">
+              <p className="pd-set-hint">
+                总结历史按 年/月/日 落盘在 <code>~/.ai-page-dive/history/</code>——目录即备份，拖走即导出。
+              </p>
+              {/* r41-ux：历史独立成 tab——数据行为设置与「关于」（版本/隐私/分享）分家
+                  （r39 误入外观、r40 暂放关于，用户两连点名）；host 侧 listHistory(limit)
+                  链路本就支持，列表满额时 HistoryView 底部有「更早可搜索」提示 */}
+              <div className="pd-set-amb-row">
+                <span className="pd-set-label" style={{ margin: 0 }}>历史列表条数</span>
+                <div className="pd-set-amb-opts" role="radiogroup" aria-label="历史列表条数" ref={histLimitRef}>
+                  {(['50', '100', '200', '500'] as const).map((v) => (
+                    <button
+                      key={v}
+                      className={`pd-set-amb-opt ${histLimit === v ? 'active' : ''}`}
+                      onClick={() => {
+                        setSetting('pd-history-limit', v === '100' ? '' : v)
+                        setHistLimit(v)
+                      }}
+                      role="radio"
+                      aria-checked={histLimit === v}
+                      tabIndex={histLimit === v ? 0 : -1}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="pd-set-hint" style={{ marginTop: 8 }}>
+                仅限制历史页列表的展示条数，磁盘文件不删——更早的记录仍可在历史页搜索标题/网址/正文。
+              </p>
+              <div className="pd-set-actions" style={{ marginTop: 14 }}>
+                <button className="pd-set-btn" onClick={revealHistoryDir}>打开历史目录</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {tab === 'about' && (
           <div className="pd-set-pane">
             <div className="pd-set-panel pd-set-about">
@@ -698,34 +739,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               <p>
                 付费墙站点会尽力提取当前已渲染内容（等价于你手动复制），不会绕过访问控制。
               </p>
-              <p>
-                历史记录保存在 <code>~/.ai-page-dive/history/</code>。
-              </p>
-              {/* r40-ux：历史条数从「外观」搬来——数据行为设置，与保存路径/打开目录在
-                  关于页成组（r39 引入时误入外观 tab，用户点名）；host 侧 listHistory(limit)
-                  链路本就支持，列表满额时 HistoryView 底部有「更早可搜索」提示 */}
-              <div className="pd-set-amb-row" style={{ marginTop: 10 }}>
-                <span className="pd-set-label" style={{ margin: 0 }}>历史列表条数</span>
-                <div className="pd-set-amb-opts" role="radiogroup" aria-label="历史列表条数" ref={histLimitRef}>
-                  {(['50', '100', '200', '500'] as const).map((v) => (
-                    <button
-                      key={v}
-                      className={`pd-set-amb-opt ${histLimit === v ? 'active' : ''}`}
-                      onClick={() => {
-                        setSetting('pd-history-limit', v === '100' ? '' : v)
-                        setHistLimit(v)
-                      }}
-                      role="radio"
-                      aria-checked={histLimit === v}
-                      tabIndex={histLimit === v ? 0 : -1}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
               <div className="pd-set-actions" style={{ marginTop: 14, flexWrap: 'wrap' }}>
-                <button className="pd-set-btn" onClick={revealHistoryDir}>打开历史目录</button>
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'https://github.com/aaione/ai-page-dive/blob/main/PRIVACY.md' })}>
                   隐私政策
                 </button>
