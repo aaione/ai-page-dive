@@ -48,6 +48,7 @@
 
 ### 已知限制（opencode 的 Gatekeeper 弹框，v1 接受）
 
+- **2026-09-22 修订：opencode 入口暂时下架（registry 注释，适配器保留）**——弹框非「偶发一次」而是**每次必弹且拦杀**（SIGKILL），加上开发者工具豁免指引亦实测无效，已从「可接受的实验档」退化为「基本不可用」；v1 以 claude + codex 双适配器交付。恢复条件：上游改 bundle 方式（固定提取路径 pre-sign / 不再运行时提取）或 macOS 提供进程级 quarantine 清除 API。
 - **症状**：从 Chrome 派生的 host 调起 opencode 时，它内嵌 Bun 1.3.14 每启动把 adhoc 签名的运行时 dylib（随机名 hash）提取到临时目录再 dlopen。macOS 的 quarantine 是「进程树级传播」——Chrome 调用 `qtn_proc_apply_to_self` 让其子树新建的所有文件带 `com.apple.quarantine`（与签名、Chrome 盘上 xattr 均无关）。文件名每次随机 → Gatekeeper 每次重新弹「无法验证是否含恶意软件」。
 - **已证伪的 host 侧方案**（勿回退）：
   - xattr 竞态轮询剥 `com.apple.quarantine`（spawn 后 120ms×4s）——Gatekeeper 在 dlopen 瞬间即评估，外部轮询追不上，实测无效。
@@ -57,7 +58,7 @@
 ## v1 范围（MVP）
 
 1. Side Panel 一键总结当前页（提取 → 本地临时文件 → CLI agent → 流式渲染）
-2. claude + codex 双适配器（opencode 实验档默认探测，2026-09-16 修订，见 D5）
+2. claude + codex 双适配器（opencode 实验档默认探测，2026-09-16 修订，见 D5；2026-09-22 起 opencode 入口暂时下架，见「已知限制」节）
 3. 内置 3-4 个 workflow（快速摘要 / 深度研读多步 / 论文模式）
 4. `npm i -g @aaione/ai-page-dive && ai-page-dive install`（自动注册 NM + 探测已装 CLI）
 5. 历史 B+ 档

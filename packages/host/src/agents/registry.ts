@@ -6,11 +6,14 @@ import { promisify } from 'node:util'
 import type { AgentDef } from '@ai-page-dive/shared'
 import { claudeDef } from './claude.js'
 import { codexDef } from './codex.js'
-import { opencodeDef } from './opencode.js'
+// r40：opencode 暂时下架（见 DECISIONS.md D5 2026-09-22 修订）——Bun 单文件可执行
+// 运行时释放的 JSC dylib 每次新名，被 macOS Gatekeeper 按 Chrome quarantine 链
+// 拦杀，xattr/「仍要打开」/开发者工具豁免均实测无效；适配器代码全保留待上游修复打包形态
+// import { opencodeDef } from './opencode.js'
 
 const execFileP = promisify(execFile)
 
-export const AGENTS: AgentDef[] = [claudeDef, codexDef, opencodeDef]
+export const AGENTS: AgentDef[] = [claudeDef, codexDef /* r40: , opencodeDef */]
 
 /** r11：HOME 残缺（空串/缺失）时从 passwd 推导——homedir() 仅 HOME 完全缺失才走
  *  passwd、空串原样返回空（实测），故先删再取；取完还原不动全局状态 */

@@ -63,7 +63,8 @@ describe('stdio 路由', () => {
       await new Promise(r => setTimeout(r, 100))
     }
     const agentsMsg = sent.find(m => m.t === 'agents')
-    expect(agentsMsg.agents.map((a: any) => a.id)).toEqual(['claude', 'codex', 'opencode'])
+    // r40：opencode 入口暂时下架（Gatekeeper 死结，registry 注释）——断言同步
+    expect(agentsMsg.agents.map((a: any) => a.id)).toEqual(['claude', 'codex'])
   }, 15_000)
 
   it('同 taskId 重入：旧任务 superseded 静默终局，tasks 只剩新实例（r8 修复回归）', async () => {
