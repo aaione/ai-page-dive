@@ -317,6 +317,16 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-reveal-root' } }, () => void chrome.runtime.lastError)
   }
 
+  /** r34：一键分享产品到微博/X——intent 页新 tab 打开，无需任何 host 权限 */
+  function shareTo(kind: 'weibo' | 'x') {
+    const url = 'https://github.com/aaione/ai-page-dive'
+    const text = 'AI PageDive——一键调用本机 AI CLI 深度总结当前网页的 Chrome 扩展：零配置、复用已有订阅、内容不出本机。'
+    const target = kind === 'weibo'
+      ? `https://service.weibo.com/share/share.php?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`
+      : `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`
+    chrome.tabs.create({ url: target })
+  }
+
   const tabs: { key: Tab; label: string }[] = useMemo(
     () => [
       { key: 'modes', label: '模式' },
@@ -689,6 +699,8 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })}>
                   自定义快捷键
                 </button>
+                <button className="pd-set-btn" onClick={() => shareTo('weibo')}>分享到微博</button>
+                <button className="pd-set-btn" onClick={() => shareTo('x')}>分享到 𝕏</button>
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'https://github.com/aaione/ai-page-dive' })}>
                   点赞 👍
                 </button>
