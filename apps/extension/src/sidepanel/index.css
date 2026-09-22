@@ -732,6 +732,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 .pd-content:has(> .pd-placeholder) {
   display: flex;
   flex-direction: column;
+  /* hero 态底部 158px 避让 padding 不参与 margin:auto 均分（实测视觉偏上 ~57px）——
+     无消息流时不存在磨砂遮挡，对称回归 */
+  padding-bottom: 44px;
 }
 .pd-placeholder {
   margin: auto;
@@ -1600,10 +1603,10 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   white-space: nowrap;
 }
 .pd-history-item-action {
-  /* r44-audit I2：display:none 键盘不可聚焦（Tab 永远跳过 = 删除功能对纯键盘用户
-      断链，能进不能删）——visibility 保留焦点链，hover/focus-within 双通道开启 */
+  /* r44-audit I2 + r45 自验修正：display:none / visibility:hidden 元素浏览器均拒绝聚焦
+      （focus() 静默失败、Tab 跳过）——opacity 视觉隐藏但保持可聚焦，hover/focus-within 双通道开启 */
   display: flex;
-  visibility: hidden;
+  opacity: 0;
   align-items: center;
   justify-content: center;
   width: 28px;
@@ -1617,7 +1620,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 }
 .pd-history-item:hover .pd-history-item-action,
 .pd-history-item:focus-within .pd-history-item-action {
-  visibility: visible;
+  opacity: 1;
 }
 .pd-history-item-action:hover {
   background: rgba(255,255,255,.08);
@@ -1630,7 +1633,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 /* r8-ux：两步删除的确认态——鼠标移出条目也保持可见（3s 窗口内等待二次点击） */
 .pd-history-item-action.confirming {
   display: flex;
-  visibility: visible;
+  opacity: 1;
   width: auto;
   padding: 0 8px;
   font-size: 11px;
