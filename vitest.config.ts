@@ -3,7 +3,8 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['packages/*/test/**/*.test.ts'],
+    // r33：apps 源码内单测（extension 纯函数）与 packages 测试同场收集
+    include: ['packages/*/test/**/*.test.ts', 'apps/*/src/**/*.test.ts'],
     passWithNoTests: true,
   },
   resolve: {
