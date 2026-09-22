@@ -76,7 +76,7 @@ v1 支持 claude 与 codex（完整支持）+ opencode（实验档，无进程�
 
 - pnpm monorepo：`apps/extension`（Vite + React + TS + Tailwind v4）/ `packages/host`（纯 Node ≥18，运行时零依赖）/ `packages/shared`（类型与 NM 协议）
 - 必读：[DECISIONS.md](DECISIONS.md)（已拍板决策）· [research/product-architecture-report.md](research/product-architecture-report.md)（架构报告）· [AGENTS.md](AGENTS.md)（贡献规范）
-- 测试：vitest 覆盖 host 流解析器 + buildArgs 纯函数
+- 测试：vitest 覆盖 host 流解析器 / buildArgs / 历史轮切分（host + extension 源码内单测）
 
 ```bash
 pnpm install && pnpm build   # 构建后在 chrome://extensions 加载 apps/extension/dist/

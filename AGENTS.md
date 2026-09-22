@@ -22,7 +22,7 @@ pnpm monorepo：
 - `packages/host` — 纯 Node >=18 + TS，运行时零依赖
 - `packages/shared` — AgentDef 类型 / NM 消息协议
 
-测试 vitest（host 流解析器 + buildArgs 纯函数）。
+测试 vitest（host 流解析器 + buildArgs + extension 历史轮切分等纯函数单测，108 用例）。
 
 ## Hard Constraints（违反即 bug）
 
