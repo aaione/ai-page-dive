@@ -9,7 +9,7 @@ import { createCodexParser } from './agents/codex.js'
 import { createOpencodeParser } from './agents/opencode.js'
 import { getAgent } from './agents/registry.js'
 import { getSkillBodies } from './skills.js'
-import { appendHistoryTurn, buildHistoryPath, escapePd, saveHistory } from './history.js'
+import { appendHistoryTurn, buildHistoryPath, escapePd, pruneHistory, saveHistory } from './history.js'
 import { makeAgentCwd, spawnCli, type SpawnedProc } from './spawn.js'
 import { scheduleCleanup, writeContentFile } from './tmpfile.js'
 import { getWorkflow } from './workflows.js'
@@ -480,6 +480,9 @@ export class Task {
         this.persistOk = true
       })
       .catch(logFail)
+    // r42：保留策略——首轮落盘后清理超出 historyLimit 的最旧历史（追问轮 append 不新增
+    // 文件、无需清理；失败静默——清理失败不影响主流程，下次保存再清）
+    await pruneHistory(this.input.historyLimit ?? 200).catch(() => {})
   }
 }
 

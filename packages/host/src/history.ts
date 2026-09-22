@@ -1,6 +1,6 @@
 /** 历史落盘：~/.ai-page-dive/history/年/月/日/时间戳-slug.md（frontmatter 元数据）。
  * 多轮对话 append 首轮文件、pd:user/pd:assistant 注释分段；伪造标记注入由 escapePd 消（r33-sec） */
-import { mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -134,7 +134,7 @@ export function extractSnippet(body: string, q: string): string | undefined {
 
 /** 扫描历史目录，按 ts 倒序，query 匹配 title/url/正文（r8-perf：32 并发批读）。
  * 年/月/日/文件名零填充天然可排序——倒序遍历即近似时间倒序；readdir 兜底 []：单目录 EACCES 只跳过不崩 */
-export async function listHistory(query?: string, limit = 100): Promise<HistoryItem[]> {
+export async function listHistory(query?: string, limit = 200): Promise<HistoryItem[]> {
   const desc = (a: string | { name: string }, b: string | { name: string }) =>
     (typeof b === 'string' ? b : b.name).localeCompare(typeof a === 'string' ? a : a.name)
   const paths: string[] = []
@@ -178,6 +178,28 @@ export async function listHistory(query?: string, limit = 100): Promise<HistoryI
     if (items.length >= limit) return items.slice(0, limit)
   }
   return items.sort((a, b) => b.ts - a.ts)
+}
+
+/** r42：历史保留策略——删除超出 limit 的最旧文件（保存新历史后调用）。按路径序
+ * 排（年/月/日/时间戳零填充天然可排序），不读 frontmatter（快）；返回删除数。
+ * ponytail: 空出的 年/月/日 目录留着不删——无害且省一次递归；root 可注入供测试 */
+export async function pruneHistory(limit: number, root: string = ROOT): Promise<number> {
+  if (!(limit >= 10)) return 0
+  const paths: string[] = []
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    const entries = (await readdir(dir, { withFileTypes: true }).catch(() => [] as any[]))
+    for (const e of entries) {
+      if (depth === 3) { if (e.isFile() && e.name.endsWith('.md')) paths.push(join(dir, e.name)) }
+      else if (e.isDirectory() && (depth === 0 ? /^\d{4}$/ : /^\d{2}$/).test(e.name)) await walk(join(dir, e.name), depth + 1)
+    }
+  }
+  await walk(root, 0)
+  paths.sort() // 升序 = 最旧在前
+  let removed = 0
+  for (const p of paths.slice(0, Math.max(0, paths.length - limit))) {
+    try { await unlink(p); removed++ } catch { /* 并发写入等：跳过，下次保存再清 */ }
+  }
+  return removed
 }
 
 async function readFrontmatter(path: string): Promise<Omit<HistoryItem, 'path'> | undefined> {

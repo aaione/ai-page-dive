@@ -12,11 +12,11 @@ const hostOf = (u: string) => {
   }
 }
 
-/** r39-ux：历史列表展示条数——设置页「外观」可调（默认 100），host listHistory(limit) 透传；
- *  只限列表展示上限，磁盘文件不删（更早记录仍可搜索/打开历史目录） */
+/** r42-ux：历史保留条数（默认 200；保存语义）——设置页「数据」可调，host 落盘后
+ *  清理超限旧文件 + listHistory(limit) 透传列表上限，两处同谱 */
 const historyLimit = () => {
   const v = Number(localStorage.getItem('pd-history-limit'))
-  return v >= 10 ? v : 100
+  return v >= 10 ? v : 200
 }
 
 export function HistoryView({ onClose, onResume }: { onClose: () => void; onResume: (item: HistoryItem, body: string) => void }) {
@@ -278,9 +278,9 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
           : <p className="pd-history-empty">加载中…</p>
         )}
       </ul>
-      {/* r8-ux：host 列表只回设置条数（r39 起可调，默认 100）——满额时明示，别让更早的历史像「丢了」 */}
+      {/* r42：保存语义——满额 = 触达保留上限，更早的已被清理（不再是「可搜索」） */}
       {items.length >= historyLimit() && (
-        <p className="pd-history-truncated">已显示最近 {historyLimit()} 条——更早的记录可搜索标题/网址/正文，或在设置中打开历史目录</p>
+        <p className="pd-history-truncated">仅保留最近 {historyLimit()} 条总结——更早的已按保留策略自动清理；需要完整留存时可在 设置·数据 调大</p>
       )}
     </div>
   )

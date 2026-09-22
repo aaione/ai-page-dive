@@ -317,7 +317,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   .pd-fade-in, .pd-fade-in-fast, .pd-rise-in, .pd-placeholder, .pd-placeholder-title,
   .pd-placeholder-cta, .pd-placeholder-hint, .pd-chat-user, .pd-chat-assistant,
   .pd-dropdown-menu, .pd-history-detail, .pd-history-item, .pd-overlay,
-  .pd-page-tips, .pd-attach-chips, .pd-attach-chip { animation: none; }
+  .pd-page-tips, .pd-attach-chips, .pd-attach-chip, .pd-action-bar-inner { animation: none; }
   .pd-exiting { animation: none !important; }
   .pd-cta-primary:active, .pd-cta-ghost:active, .pd-set-btn:active, .pd-new-chat-btn:active,
   .pd-chat-action-btn:active, .pd-history-item-action:active, .pd-dropdown-item:active,
@@ -487,9 +487,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 .pd-msg-skills {
   margin: 4px 2px 0 0;
   font-family: var(--font-sans-ui);
-  font-size: 10.5px;
-  color: var(--pd-text-2);
-  opacity: .85;
+  font-size: 10px;
+  color: var(--pd-text-3);
+  opacity: .9;
 }
 .pd-msg-attach {
   display: inline-flex;
@@ -902,6 +902,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   gap: 8px;
   padding: 8px 10px;
   border-radius: var(--pd-r-lg);
+  /* r42-motion：输入胶囊本体入场（面板打开时播一次）——tips（260ms 无 delay）先浮入、
+     胶囊延迟 40ms 跟上，底部两件交错成组；此前 r38 只动了 tips/chips/notice，胶囊静态出现 */
+  animation: pd-rise-in 260ms var(--pd-ease-out) 40ms both;
   /* 输入胶囊：磨砂交由外层 pd-action-bar（双层 backdrop-filter 嵌套只费 GPU 不增层次），
      此处保留 alpha 渐变 + 描边 + 内光做出「层压在磨砂上」的体积感。
      r21：软颗粒进栈——常驻视觉焦点也要有「砂」，托盘感才立得住 */

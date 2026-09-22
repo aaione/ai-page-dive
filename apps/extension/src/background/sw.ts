@@ -373,7 +373,7 @@ async function handleMessage(msg: any): Promise<unknown> {
         const r = startFollowUp(sess.agentId, sess.sessionId, instruction ?? '', sess.historyPath, attachments)
         return { ...r, agentId: sess.agentId }
       }
-      return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills, lang, attachments)
+      return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills, lang, attachments, msg.historyLimit as number | undefined)
     }
     case 'resume-history': {
       // 历史详情「继续对话」：装载历史会话到当前页签（SW 记 sessions），后续 followUp 走 --resume。
@@ -617,7 +617,7 @@ function pageMeta(): { title: string; url: string; favIconUrl?: string; approxTo
   return null
 }
 
-async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string, attachments?: AttachMsg[]) {
+async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string, attachments?: AttachMsg[], historyLimit?: number) {
   // 入口先收割在跑任务（提取/注入可能 await 数秒，期间旧任务继续烧额度）——
   // 对称于 resume-history/new-session 的既有守卫
   if (currentTask) cancelCurrent()
@@ -697,7 +697,8 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   const frame = {
     t: 'task-start' as const,
     // skills：panel 选中的技能名，host 读 ~/.ai-page-dive/skills 正文拼进 prompt
-    task: { taskId, agentId, workflow, instruction, skills, lang, attachments, page: meta },
+    // historyLimit：保留策略（r42）——host 首轮落盘后清理超出部分的最旧历史
+    task: { taskId, agentId, workflow, instruction, skills, lang, attachments, historyLimit, page: meta },
   }
   if (frameTooLarge(frame)) {
     currentTask = null

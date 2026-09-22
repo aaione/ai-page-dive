@@ -99,8 +99,8 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const [ambience, setAmbienceState] = useState(() => readStr('pd-ambience'))
   /** r25 阅读字号档：''=标准 | sm | lg——写 localStorage + body[data-reading-size] */
   const [readSize, setReadSizeState] = useState(() => readStr('pd-reading-size'))
-  /** r39-ux：历史列表展示条数（默认 100；只限列表展示，磁盘文件不删） */
-  const [histLimit, setHistLimit] = useState(() => readStr('pd-history-limit') || '100')
+  /** r42-ux：历史保留条数（默认 200；保存语义——host 落盘后清理超限旧文件） */
+  const [histLimit, setHistLimit] = useState(() => readStr('pd-history-limit') || '200')
 
   /** 单值设置写入 + 广播（App/SummarizeView 监听 pd-settings-changed 联动） */
   function setSetting(key: string, v: string) {
@@ -684,20 +684,21 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
           <div className="pd-set-pane">
             <div className="pd-set-panel">
               <p className="pd-set-hint">
-                总结历史按 年/月/日 落盘在 <code>~/.ai-page-dive/history/</code>——目录即备份，拖走即导出。
+                总结历史按 年/月/日 落盘在 <code>~/.ai-page-dive/history/</code>——需要备份/导出时整个目录拖走即可。
               </p>
               {/* r41-ux：历史设置独立成 tab——数据行为设置与「关于」（版本/隐私/分享）分家
-                  （r39 误入外观、r40 暂放关于，用户两连点名）；host 侧 listHistory(limit)
-                  链路本就支持，列表满额时 HistoryView 底部有「更早可搜索」提示 */}
+                  （r39 误入外观、r40 暂放关于，用户两连点名）。
+                  r42：语义升级「展示条数」→「保留条数」（用户原话：这是仅保存多少条的设置）——
+                  host 首轮落盘后按此值清理最旧文件，默认 200 */}
               <div className="pd-set-amb-row">
-                <span className="pd-set-label" style={{ margin: 0 }}>历史列表条数</span>
-                <div className="pd-set-amb-opts" role="radiogroup" aria-label="历史列表条数" ref={histLimitRef}>
+                <span className="pd-set-label" style={{ margin: 0 }}>历史保留条数</span>
+                <div className="pd-set-amb-opts" role="radiogroup" aria-label="历史保留条数" ref={histLimitRef}>
                   {(['50', '100', '200', '500'] as const).map((v) => (
                     <button
                       key={v}
                       className={`pd-set-amb-opt ${histLimit === v ? 'active' : ''}`}
                       onClick={() => {
-                        setSetting('pd-history-limit', v === '100' ? '' : v)
+                        setSetting('pd-history-limit', v === '200' ? '' : v)
                         setHistLimit(v)
                       }}
                       role="radio"
@@ -710,7 +711,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                 </div>
               </div>
               <p className="pd-set-hint" style={{ marginTop: 8 }}>
-                仅限制历史页列表的展示条数，磁盘文件不删——更早的记录仍可在历史页搜索标题/网址/正文。
+                仅保留最近 {histLimit} 条总结，超出时自动清理最旧的记录——调整后下次保存生效，亦可随时打开历史目录先行备份。
               </p>
               <div className="pd-set-actions" style={{ marginTop: 14 }}>
                 <button className="pd-set-btn" onClick={revealHistoryDir}>打开历史目录</button>

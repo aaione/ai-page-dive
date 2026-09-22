@@ -64,6 +64,12 @@ function useEnabledSkills(): () => string[] {
   return useCallback(() => ref.current, [])
 }
 
+/** r42：历史保留条数（发送时取即时值；首轮带上，host 落盘后清理超限旧文件）——与 HistoryView 同谱 */
+const historyKeep = (): number => {
+  const v = Number(localStorage.getItem('pd-history-limit'))
+  return v >= 10 ? v : 200
+}
+
 /** 设置项 hook：localStorage 单值 + pd-settings-changed 事件同步 */
 export function useSetting(key: string): [string, (v: string) => void] {
   const [v, setV] = useState(() => {
@@ -249,7 +255,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     const bubbleText =
       text || (hasSession || attachments.length ? '' : `${WF_LABEL[wf] ?? '深度总结'}本页`)
     const skills = getEnabledSkills()
-    beginTurn(bubbleText, attachments.map((a) => ({ name: a.name, kind: a.kind })), skills)
+    // r42：技能只随首轮 prompt 注入（host !isResume 才读技能正文）——追问轮不带，
+    // 气泡徽标也只标实际注入的轮次（此前追问轮也亮徽标 = 虚假标注）
+    beginTurn(bubbleText, attachments.map((a) => ({ name: a.name, kind: a.kind })), hasSession ? undefined : skills)
     setAttachNotice('') // 提示已在输入区即时展示（r4-ux F3），发送即消费
     setInput('')
     const atts = attachments
@@ -260,7 +268,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     if (hasSession) {
       // 追问轮：agentId 由 SW 按会话归属决定，响应回带实际值——头部展示同步
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, instruction, followUp: true, skills, attachments: atts },
+        { t: 'summarize', agentId: effectiveAgent, instruction, followUp: true, attachments: atts },
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             if (resp.agentId) setFollowAgent(resp.agentId)
@@ -275,7 +283,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       // default→deep 的静默映射显式化，用户看到的按钮名 = 实际跑的档（wf 已在
       // beginTurn 前算好，r16）
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined, attachments: atts },
+        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined, attachments: atts, historyLimit: historyKeep() },
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             onStartResult(resp)
@@ -466,9 +474,11 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
                 </div>
               )}
               {!!m.text && <p>{m.text}</p>}
-              {/* r37-ux：技能开启此前在对话中零体现——气泡下徽标行标出本轮注入的技能（与执行一致） */}
+              {/* r37-ux：技能开启此前在对话中零体现——徽标行标出本轮注入的技能。
+                  r42：缩小形态（去前缀只留 ⚡+名）且只标首轮（host !isResume 才注入，
+                  追问轮带徽标曾是虚假标注） */}
               {!!m.skills?.length && (
-                <p className="pd-msg-skills" title="本轮已将以下技能的增强指令注入 prompt">⚡ 已启用技能 · {m.skills.join('、')}</p>
+                <p className="pd-msg-skills" title="本轮总结的 prompt 已注入该技能的增强指令">⚡ {m.skills.join('、')}</p>
               )}
             </div>
           ) : (

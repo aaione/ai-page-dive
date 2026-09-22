@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { appendHistoryTurn, buildHistoryPath, escapePd, escapeYamlForTest, extractSnippet, saveHistory, slugify } from '../src/history.js'
+import { appendHistoryTurn, buildHistoryPath, escapePd, escapeYamlForTest, extractSnippet, pruneHistory, saveHistory, slugify } from '../src/history.js'
 
 // history ROOT 指向 ~/.ai-page-dive——测试隔离：monkeypatch homedir 不可行（模块级常量），
 // 故本组只测纯函数与写入格式；listHistory 的扫描逻辑由 M3 冒烟覆盖。
@@ -46,6 +46,35 @@ describe('history 纯函数', () => {
     expect(extractSnippet('完全无关的正文', '关键词')).toBeUndefined()
     // 命中在开头：不越界、不产生前导空格
     expect(extractSnippet('开头就是关键词', '开头')).toBe('开头就是关键词'.slice(0, 44))
+  })
+})
+
+describe('pruneHistory 保留策略（r42：root 可注入）', () => {
+  let dir = ''
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'pd-prune-'))
+  })
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('超出 limit 删最旧、保留最新；limit 内不动', async () => {
+    // 12 个文件跨两天：路径序 = 时间序（年/月/日/时间戳零填充）；limit≥10 才有效（同 HistoryView 守卫）
+    const days = ['2026/09/20', '2026/09/21']
+    for (let i = 0; i < 12; i++) {
+      const day = days[i < 2 ? 0 : 1]
+      await mkdir(join(dir, day), { recursive: true })
+      await writeFile(join(dir, day, `${String(i).padStart(6, '0')}-t.md`), '---\ntitle: t\n---\nbody', 'utf8')
+    }
+    expect(await pruneHistory(10, dir)).toBe(2)
+    expect(await readdir(join(dir, '2026/09/20')).catch(() => [])).toEqual([]) // 最旧一天全清
+    expect((await readdir(join(dir, '2026/09/21'))).filter(f => f.endsWith('.md')).length).toBe(10)
+  })
+
+  it('limit <10 视为无效配置不动任何文件', async () => {
+    await mkdir(join(dir, '2026/09/20'), { recursive: true })
+    await writeFile(join(dir, '2026/09/20/000001-t.md'), 'x', 'utf8')
+    expect(await pruneHistory(0, dir)).toBe(0)
   })
 })
 
