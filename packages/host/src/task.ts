@@ -406,8 +406,8 @@ export class Task {
       this.cb.onError('cancelled', 'task cancelled')
       return
     }
-    // r35：opencode（Bun 单文件可执行）运行时释放 JIT dylib，偶被 macOS Gatekeeper 拦杀（弹「Apple 无法验证 .dylib」）——秒死场景附自救指引，别让用户对着 SIGKILL 猜
-    const gate = this.input.agentId === 'opencode' && durationMs < 15_000 ? '；若屏幕弹出「Apple 无法验证 .dylib」：到 系统设置→隐私与安全性→仍要打开，或终端执行 xattr -rd com.apple.provenance $(which opencode) 后重试' : ''
+    // r36：Chrome→host→opencode（Bun）链释放的 JSC dylib 被内核打上 Chrome quarantine 归因，Gatekeeper 按「下载文件」评估拦杀；每次 hash 皆新，xattr/「仍要打开」均无效——唯一出路是 Apple 官方的开发者工具豁免
+    const gate = this.input.agentId === 'opencode' && durationMs < 15_000 ? '；若屏幕弹出「Apple 无法验证 .dylib」：到 系统设置→隐私与安全性→开发者工具，把 Google Chrome 加入并打开开关后重试（macOS 拦截浏览器拉起的程序释放的代码，非 PageDive 故障，claude/codex 不受影响）' : ''
     if (signal === 'SIGKILL') {
       await this.persist('interrupted')
       this.cb.onError('parse', `killed by SIGKILL${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}（可能被系统或用户终止）${gate}`)
