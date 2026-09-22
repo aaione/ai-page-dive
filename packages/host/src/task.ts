@@ -241,8 +241,7 @@ export class Task {
       return
     }
 
-    // spawn 成功后又已取消（cancel 落在 await 窗口内）：立即收割。必发 onError——
-    // 否则 tasks Map 不 delete（心跳永续 SW 不回收）、panel running 永真输入锁死
+    // spawn 成功后又已取消（cancel 落在 await 窗口内）：立即收割 + 必发 onError——否则 tasks Map 不 delete、panel running 永真锁死
     if (this.cancelled) {
       this.proc.reap()
       this.cleanupCwd()
@@ -268,8 +267,7 @@ export class Task {
     }, TASK_TIMEOUT_MS)
 
     await new Promise<void>((resolve) => {
-      // close 而非 exit（r33）：exit 即刻触发时 stdout 尾部（pipe 异步）可能未派发——
-      // result 未到即 finish() 会把成功任务误判 parse 失败。close 等流冲刷关闭
+      // close 而非 exit（r33）：exit 即刻触发时 stdout 尾部（pipe 异步）未派发完，result 未到即 finish() 会误判 parse 失败
       this.proc!.child.on('close', async (code, signal) => {
         if (this.finished || this.doneSent || this.timeoutSent) return resolve() // isError/timeout/error 已发终局勿重复（r11：error 后仍可触 exit）
         this.finished = true
@@ -408,9 +406,11 @@ export class Task {
       this.cb.onError('cancelled', 'task cancelled')
       return
     }
+    // r35：opencode（Bun 单文件可执行）运行时释放 JIT dylib，偶被 macOS Gatekeeper 拦杀（弹「Apple 无法验证 .dylib」）——秒死场景附自救指引，别让用户对着 SIGKILL 猜
+    const gate = this.input.agentId === 'opencode' && durationMs < 15_000 ? '；若屏幕弹出「Apple 无法验证 .dylib」：到 系统设置→隐私与安全性→仍要打开，或终端执行 xattr -rd com.apple.provenance $(which opencode) 后重试' : ''
     if (signal === 'SIGKILL') {
       await this.persist('interrupted')
-      this.cb.onError('parse', `killed by SIGKILL${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}（可能被系统或用户终止）`)
+      this.cb.onError('parse', `killed by SIGKILL${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}（可能被系统或用户终止）${gate}`)
       return
     }
     // 终局判定（r7-blocker：条件曾写反）：delivered=成功 result 已交付。① exit≠0 无 result → parse 错误（截断文本不得标成功）；② result 交付后 exit≠0 → 仍按成功（硬约束 #4：失败语义在 is_error 不在退出码）
@@ -418,7 +418,7 @@ export class Task {
     const isError = code !== 0 ? !delivered : !this.accText
     await this.persist(isError ? 'error' : 'done')
     if (code !== 0 && !delivered) {
-      this.cb.onError('parse', `exit ${code}: ${stderrTail.slice(-500)}`)
+      this.cb.onError('parse', `exit ${code}: ${stderrTail.slice(-500)}${gate}`)
     } else if (!this.accText) {
       this.cb.onError('parse', `no output${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}`)
     } else {
