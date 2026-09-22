@@ -1075,8 +1075,14 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   /* r15 整体玻璃：菜单悬浮在滚动内容之上——backdrop 磨的是真实内容流，
      全站最显眼的玻璃时刻（原不透明 #1F1F1F）。r21：越浮越糊（24→28，
      层次差：menu > 气泡 > 搜索框）+ 软颗粒 + 描边提亮。
-     r22：L3 令牌化 + 厚度双表面 + elev-2 三段影 + ::before 方向性受光描边环 */
-  background: var(--pd-glass-3-bg);
+     r22：L3 令牌化 + 厚度双表面 + elev-2 三段影 + ::before 方向性受光描边环
+     r34：alpha .46→.88 提实——L3 半透明时菜单项与底下滚动正文叠字可读性塌方
+     （用户实证），磨砂质感由 blur+grain 承担、不靠透明度 */
+  background:
+    var(--pd-grain-soft) repeat,
+    linear-gradient(105deg, rgba(255,255,255,.05) 0%, transparent 32%),
+    linear-gradient(180deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.015) 100%),
+    rgba(18,18,24,.88);
   -webkit-backdrop-filter: var(--pd-glass-3-filter);
   backdrop-filter: var(--pd-glass-3-filter);
   /* r22 修正：border 改 transparent 让 ::before 方向性描边环独占边缘——
