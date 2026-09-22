@@ -406,8 +406,9 @@ export class Task {
       this.cb.onError('cancelled', 'task cancelled')
       return
     }
-    // r36：Chrome→host→opencode（Bun）链释放的 JSC dylib 被内核打上 Chrome quarantine 归因，Gatekeeper 按「下载文件」评估拦杀；每次 hash 皆新，xattr/「仍要打开」均无效——唯一出路是 Apple 官方的开发者工具豁免
-    const gate = this.input.agentId === 'opencode' && durationMs < 15_000 ? '；若屏幕弹出「Apple 无法验证 .dylib」：到 系统设置→隐私与安全性→开发者工具，把 Google Chrome 加入并打开开关后重试（macOS 拦截浏览器拉起的程序释放的代码，非 PageDive 故障，claude/codex 不受影响）' : ''
+    // r37：Chrome→host→opencode（Bun）链释放的 JSC dylib 被内核打上 Chrome quarantine 归因，Gatekeeper 按「下载文件」评估拦杀；每次 hash 皆新，xattr/「仍要打开」均无效。
+    // r37-ux：文案不再指挥用户去系统设置加豁免（普通用户不该被要求做系统级操作）——说明性归因 + 可行动建议=改用 claude/codex；豁免路径留给进阶用户自行检索
+    const gate = this.input.agentId === 'opencode' && durationMs < 15_000 ? '；若屏幕弹出「Apple 无法验证 .dylib」：这是 macOS 对浏览器拉起的程序所释放运行组件的已知拦截（opencode 为实验档，组件每次都换新名，无法预先放行），非 PageDive 故障——建议改用 claude / codex 总结本页（不受此限制）' : ''
     if (signal === 'SIGKILL') {
       await this.persist('interrupted')
       this.cb.onError('parse', `killed by SIGKILL${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}（可能被系统或用户终止）${gate}`)
