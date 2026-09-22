@@ -99,6 +99,8 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const [ambience, setAmbienceState] = useState(() => readStr('pd-ambience'))
   /** r25 阅读字号档：''=标准 | sm | lg——写 localStorage + body[data-reading-size] */
   const [readSize, setReadSizeState] = useState(() => readStr('pd-reading-size'))
+  /** r39-ux：历史列表展示条数（默认 100；只限列表展示，磁盘文件不删） */
+  const [histLimit, setHistLimit] = useState(() => readStr('pd-history-limit') || '100')
 
   /** 单值设置写入 + 广播（App/SummarizeView 监听 pd-settings-changed 联动） */
   function setSetting(key: string, v: string) {
@@ -344,6 +346,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const langRef = useRef<HTMLDivElement>(null)
   const ambRef = useRef<HTMLDivElement>(null)
   const sizeRef = useRef<HTMLDivElement>(null)
+  const histLimitRef = useRef<HTMLDivElement>(null)
   // r37-motion：切换方向感——后退 tab 面板从左滑入（默认从右）。索引比较走
   // ref：tab 变化当帧读旧值定方向，render 后 effect 回写（键盘切换同样覆盖）
   const prevIdx = useRef(-1)
@@ -355,6 +358,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   // 氛围档 4 列网格：Up/Down 走下一行同列（cols），左右线性环绕
   useRovingNav(ambRef, '[role="radio"]', { activate: true, cols: 4 })
   useRovingNav(sizeRef, '[role="radio"]', { activate: true })
+  useRovingNav(histLimitRef, '[role="radio"]', { activate: true })
 
   return (
     <div className="pd-set">
@@ -664,6 +668,28 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                       tabIndex={(readSize || '') === v ? 0 : -1}
                     >
                       {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* r39-ux：历史列表展示条数——host 侧 listHistory(limit) 链路本就支持，
+                  此前硬编码 100；列表满额时 HistoryView 底部有「更早可搜索」提示 */}
+              <div className="pd-set-amb-row" style={{ marginTop: 16 }}>
+                <span className="pd-set-label" style={{ margin: 0 }}>历史列表条数</span>
+                <div className="pd-set-amb-opts" role="radiogroup" aria-label="历史列表条数" ref={histLimitRef}>
+                  {(['50', '100', '200', '500'] as const).map((v) => (
+                    <button
+                      key={v}
+                      className={`pd-set-amb-opt ${histLimit === v ? 'active' : ''}`}
+                      onClick={() => {
+                        setSetting('pd-history-limit', v === '100' ? '' : v)
+                        setHistLimit(v)
+                      }}
+                      role="radio"
+                      aria-checked={histLimit === v}
+                      tabIndex={histLimit === v ? 0 : -1}
+                    >
+                      {v}
                     </button>
                   ))}
                 </div>

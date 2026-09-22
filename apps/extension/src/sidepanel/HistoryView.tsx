@@ -12,6 +12,13 @@ const hostOf = (u: string) => {
   }
 }
 
+/** r39-ux：历史列表展示条数——设置页「外观」可调（默认 100），host listHistory(limit) 透传；
+ *  只限列表展示上限，磁盘文件不删（更早记录仍可搜索/打开历史目录） */
+const historyLimit = () => {
+  const v = Number(localStorage.getItem('pd-history-limit'))
+  return v >= 10 ? v : 100
+}
+
 export function HistoryView({ onClose, onResume }: { onClose: () => void; onResume: (item: HistoryItem, body: string) => void }) {
   const [items, setItems] = useState<HistoryItem[]>([])
   const [query, setQuery] = useState('')
@@ -113,7 +120,7 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
   }, [])
 
   function refresh(q = queryRef.current) {
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-list', query: q || undefined } })
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-list', query: q || undefined, limit: historyLimit() } })
   }
 
   // 搜索防抖 250ms：host 侧每次查询全量扫盘，每键击触发会让 IO 随历史量线性恶化
@@ -271,9 +278,9 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
           : <p className="pd-history-empty">加载中…</p>
         )}
       </ul>
-      {/* r8-ux：host 列表只回前 100 条——满额时明示，别让更早的历史像「丢了」 */}
-      {items.length >= 100 && (
-        <p className="pd-history-truncated">已显示最近 100 条——更早的记录可搜索标题/网址/正文，或在设置中打开历史目录</p>
+      {/* r8-ux：host 列表只回设置条数（r39 起可调，默认 100）——满额时明示，别让更早的历史像「丢了」 */}
+      {items.length >= historyLimit() && (
+        <p className="pd-history-truncated">已显示最近 {historyLimit()} 条——更早的记录可搜索标题/网址/正文，或在设置中打开历史目录</p>
       )}
     </div>
   )

@@ -364,6 +364,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   box-shadow: var(--pd-inset-top), var(--pd-inset-bottom), var(--pd-elev-1-sm);
   text-shadow: 0 1px 1px rgba(11,11,15,.35); /* r22 字肩微影：抵消 backdrop 采样边缘软化（玻璃上正文唯一件） */
 }
+/* r39-ux：末条回答与底部 PageTips 间距过远（158px 让位余量 + 20px 底距叠出大空隙，
+   用户截图点名）——末条气泡底距收紧，与正文节奏对齐 */
+.pd-chat-assistant:last-of-type { margin-bottom: 10px; }
 .pd-chat-assistant {
   margin: 14px 0 20px;
   /* r24：AI 正文气泡化——长文上 L1 轻玻璃容器（决策修订见文件头），全套令牌
@@ -684,8 +687,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   min-height: 0;
   overflow-y: auto;
   /* 顶部留悬浮 topbar 的余量（topbar 实高约 42px + 呼吸 2px，r13-review）；
-     底部留悬浮 action-bar 的余量（bar 全高约 147px）：末条消息可完整滚出磨砂区 */
-  padding: 44px 16px 170px;
+     底部留悬浮 action-bar 的余量（bar 全高约 147px）：末条消息可完整滚出磨砂区。
+     r39-ux：170→158——回答结尾与 PageTips 的视觉间距过远（用户截图点名） */
+  padding: 44px 16px 158px;
 }
 
 /* ── Error / Warn：左直角贴文字（区别于普通卡的整圆角）── */
