@@ -672,9 +672,39 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                   ))}
                 </div>
               </div>
-              {/* r39-ux：历史列表展示条数——host 侧 listHistory(limit) 链路本就支持，
-                  此前硬编码 100；列表满额时 HistoryView 底部有「更早可搜索」提示 */}
-              <div className="pd-set-amb-row" style={{ marginTop: 16 }}>
+            </div>
+          </div>
+        )}
+
+        {tab === 'about' && (
+          <div className="pd-set-pane">
+            <div className="pd-set-panel pd-set-about">
+              <div className="pd-set-about-head">
+                <img src="icon-128.png" alt="AI PageDive logo" className="pd-set-logo" />
+                <div className="pd-set-about-name">
+                  <strong>AI PageDive</strong>
+                  <span className="pd-set-ver">v{chrome.runtime.getManifest().version}</span>
+                </div>
+              </div>
+              <p>
+                PageDive 只在本机调用你自己登录的官方 CLI（claude / codex），
+                <strong>不接触任何凭证、不代理流量、不额外收费</strong>；总结用量计入你的 CLI 订阅。
+              </p>
+              <p>
+                无服务器、零遥测：网页正文经 Chrome 直交本机 CLI，不经 PageDive 中转（CLI 与其
+                模型服务的通信遵循该 CLI 自身隐私政策）。代码全部开源，可自行审计：
+                <code>github.com/aaione/ai-page-dive</code>
+              </p>
+              <p>
+                付费墙站点会尽力提取当前已渲染内容（等价于你手动复制），不会绕过访问控制。
+              </p>
+              <p>
+                历史记录保存在 <code>~/.ai-page-dive/history/</code>。
+              </p>
+              {/* r40-ux：历史条数从「外观」搬来——数据行为设置，与保存路径/打开目录在
+                  关于页成组（r39 引入时误入外观 tab，用户点名）；host 侧 listHistory(limit)
+                  链路本就支持，列表满额时 HistoryView 底部有「更早可搜索」提示 */}
+              <div className="pd-set-amb-row" style={{ marginTop: 10 }}>
                 <span className="pd-set-label" style={{ margin: 0 }}>历史列表条数</span>
                 <div className="pd-set-amb-opts" role="radiogroup" aria-label="历史列表条数" ref={histLimitRef}>
                   {(['50', '100', '200', '500'] as const).map((v) => (
@@ -694,35 +724,6 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                   ))}
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {tab === 'about' && (
-          <div className="pd-set-pane">
-            <div className="pd-set-panel pd-set-about">
-              <div className="pd-set-about-head">
-                <img src="icon-128.png" alt="AI PageDive logo" className="pd-set-logo" />
-                <div className="pd-set-about-name">
-                  <strong>AI PageDive</strong>
-                  <span className="pd-set-ver">v{chrome.runtime.getManifest().version}</span>
-                </div>
-              </div>
-              <p>
-                PageDive 只在本机调用你自己登录的官方 CLI（claude / codex / opencode），
-                <strong>不接触任何凭证、不代理流量、不额外收费</strong>；总结用量计入你的 CLI 订阅。
-              </p>
-              <p>
-                无服务器、零遥测：网页正文经 Chrome 直交本机 CLI，不经 PageDive 中转（CLI 与其
-                模型服务的通信遵循该 CLI 自身隐私政策）。代码全部开源，可自行审计：
-                <code>github.com/aaione/ai-page-dive</code>
-              </p>
-              <p>
-                付费墙站点会尽力提取当前已渲染内容（等价于你手动复制），不会绕过访问控制。
-              </p>
-              <p>
-                历史记录保存在 <code>~/.ai-page-dive/history/</code>。
-              </p>
               <div className="pd-set-actions" style={{ marginTop: 14, flexWrap: 'wrap' }}>
                 <button className="pd-set-btn" onClick={revealHistoryDir}>打开历史目录</button>
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'https://github.com/aaione/ai-page-dive/blob/main/PRIVACY.md' })}>
