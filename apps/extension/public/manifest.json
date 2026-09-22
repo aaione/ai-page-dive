@@ -32,7 +32,7 @@
     "_execute_action": {
       "suggested_key": {
         "default": "Ctrl+Shift+D",
-        "mac": "Command+Shift+D"
+        "mac": "Ctrl+Shift+D"
       },
       "description": "总结当前页"
     }
