@@ -6,6 +6,15 @@ import './Settings.css'
 /** workflow 名称合法字符（与目录名一致）：字母数字下划线连字符，≤64 */
 const WF_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/
 
+/** r44-audit V3：分享平台清单——收进二级展开，关于页不再平铺 5 个分享按钮 */
+const SHARE_SITES = [
+  ['weibo', '微博'],
+  ['x', '𝕏'],
+  ['reddit', 'Reddit'],
+  ['hn', 'Hacker News'],
+  ['bsky', 'Bluesky'],
+] as const
+
 type Tab = 'modes' | 'clis' | 'skills' | 'look' | 'data' | 'about'
 
 interface EditorState {
@@ -101,6 +110,10 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const [readSize, setReadSizeState] = useState(() => readStr('pd-reading-size'))
   /** r42-ux：历史保留条数（默认 200；保存语义——host 落盘后清理超限旧文件） */
   const [histLimit, setHistLimit] = useState(() => readStr('pd-history-limit') || '200')
+  /** r44：调低时警示——清理延迟到下次保存才发生，把反悔窗口说给用户听（弹窗过重，行内足矣） */
+  const [histWarn, setHistWarn] = useState(false)
+  /** r44-audit V3：分享收二级——平铺 5 平台把低频动作做成关于页最显眼的东西 */
+  const [shareOpen, setShareOpen] = useState(false)
 
   /** 单值设置写入 + 广播（App/SummarizeView 监听 pd-settings-changed 联动） */
   function setSetting(key: string, v: string) {
@@ -319,13 +332,20 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
     chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-reveal-root' } }, () => void chrome.runtime.lastError)
   }
 
-  /** r34：一键分享产品到微博/X——intent 页新 tab 打开，无需任何 host 权限 */
-  function shareTo(kind: 'weibo' | 'x') {
+  /** r34：一键分享产品到微博/X——intent 页新 tab 打开，无需任何 host 权限
+      r44：+ Reddit / Hacker News / Bluesky——同为零权限 intent，论坛社区与开发者受众重合 */
+  function shareTo(kind: (typeof SHARE_SITES)[number][0]) {
     const url = 'https://github.com/aaione/ai-page-dive'
     const text = 'AI PageDive——一键调用本机 AI CLI 深度总结当前网页的 Chrome 扩展：零配置、复用已有订阅、内容不出本机。'
-    const target = kind === 'weibo'
-      ? `https://service.weibo.com/share/share.php?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`
-      : `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`
+    const u = encodeURIComponent(url)
+    const t = encodeURIComponent(text)
+    const target = {
+      weibo: `https://service.weibo.com/share/share.php?url=${u}&title=${t}`,
+      x: `https://twitter.com/intent/tweet?url=${u}&text=${t}`,
+      reddit: `https://www.reddit.com/submit?url=${u}&title=${t}`,
+      hn: `https://news.ycombinator.com/submitlink?u=${u}&t=${t}`,
+      bsky: `https://bsky.app/intent/compose?text=${t}%20${u}`,
+    }[kind]
     chrome.tabs.create({ url: target })
   }
 
@@ -698,6 +718,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                       key={v}
                       className={`pd-set-amb-opt ${histLimit === v ? 'active' : ''}`}
                       onClick={() => {
+                        setHistWarn(Number(v) < Number(histLimit))
                         setSetting('pd-history-limit', v === '200' ? '' : v)
                         setHistLimit(v)
                       }}
@@ -710,9 +731,15 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                   ))}
                 </div>
               </div>
-              <p className="pd-set-hint" style={{ marginTop: 8 }}>
-                仅保留最近 {histLimit} 条总结，超出时自动清理最旧的记录——调整后下次保存生效，亦可随时打开历史目录先行备份。
-              </p>
+              {histWarn ? (
+                <p className="pd-set-hint" style={{ marginTop: 8, color: 'var(--color-pd-danger-text)' }}>
+                  ⚠ 已调低为保留 {histLimit} 条——下次保存总结时会清理超出部分的最旧记录；此刻切回更高档位可避免清理，亦可先打开历史目录备份。
+                </p>
+              ) : (
+                <p className="pd-set-hint" style={{ marginTop: 8 }}>
+                  仅保留最近 {histLimit} 条总结，超出时自动清理最旧的记录——调整后下次保存生效，亦可随时打开历史目录先行备份。
+                </p>
+              )}
               <div className="pd-set-actions" style={{ marginTop: 14 }}>
                 <button className="pd-set-btn" onClick={revealHistoryDir}>打开历史目录</button>
               </div>
@@ -749,13 +776,23 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })}>
                   自定义快捷键
                 </button>
-                <button className="pd-set-btn" onClick={() => shareTo('weibo')}>分享到微博</button>
-                <button className="pd-set-btn" onClick={() => shareTo('x')}>分享到 𝕏</button>
+                <button className="pd-set-btn" onClick={() => setShareOpen((v) => !v)} aria-expanded={shareOpen}>
+                  分享给朋友
+                </button>
+                {shareOpen && (
+                  <div className="pd-set-share-opts">
+                    {SHARE_SITES.map(([k, label]) => (
+                      <button key={k} className="pd-set-btn" onClick={() => { shareTo(k); setShareOpen(false) }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'https://github.com/aaione/ai-page-dive' })}>
-                  点赞 👍
+                  GitHub 点赞
                 </button>
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'https://github.com/aaione/ai-page-dive/issues' })}>
-                  吐槽 💬
+                  反馈吐槽
                 </button>
               </div>
             </div>

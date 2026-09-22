@@ -251,7 +251,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // r16：空文首轮（CTA/一键总结）气泡放实际档位文案——空壳气泡既无反馈又占版面；
     // instruction 不受影响（首轮 host 侧 `instruction || wfBody` 落默认摘要指令）。
     // r33-ux：档名查 WF_LABEL——自定义 workflow（用户自建）也标对，不一律「深度总结」
-    const wf = forceWf ?? (workflow === 'default' ? 'deep' : workflow)
+    // r44-audit F2：空输入+无附件+无会话 = 一键总结路径——与 hero CTA 同语义强制
+    // deep，不吃 localStorage 记忆档（CTA 写「深度总结本页」而 Enter 跑论文档 = 名实分裂；
+    // 有自定义输入 = 用户主动表达，按所选档执行）
+    const wf = forceWf ?? (!text && !attachments.length && !hasSession ? 'deep' : workflow === 'default' ? 'deep' : workflow)
     const bubbleText =
       text || (hasSession || attachments.length ? '' : `${WF_LABEL[wf] ?? '深度总结'}本页`)
     const skills = getEnabledSkills()
@@ -364,17 +367,39 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     chrome.runtime.sendMessage({ t: 'new-session' }).catch(() => {})
   }, [beginSession])
 
+  // r44-audit I3：running 中一键「新对话」静默取消烧 token 的任务 + 清空全部对话——
+  // 破坏面大于历史删除（后者有两步确认）却零确认；running 态改两步，3.5s 窗口同删除谱
+  const [confirmNew, setConfirmNew] = useState(false)
+  useEffect(() => {
+    if (!confirmNew) return
+    const t = setTimeout(() => setConfirmNew(false), 3500)
+    return () => clearTimeout(t)
+  }, [confirmNew])
+  const handleNewChat = useCallback(() => {
+    if (running && !confirmNew) {
+      setConfirmNew(true)
+      return
+    }
+    setConfirmNew(false)
+    newChat()
+  }, [running, confirmNew, newChat])
+
   return (
     <div className="pd-view">
       {/* 顶栏：新对话 / CLI 下拉 / 模式下拉（右上角浮层工具条让位） */}
       <div className="pd-topbar">
-        <button onClick={newChat} className="pd-new-chat-btn" title="开始新对话" aria-label="开始新对话">
+        <button
+          onClick={handleNewChat}
+          className={`pd-new-chat-btn${confirmNew ? ' confirming' : ''}`}
+          title={confirmNew ? '再次点击确认：结束进行中的总结并清空对话' : '开始新对话'}
+          aria-label={confirmNew ? '确认结束当前对话' : '开始新对话'}
+        >
           {/* chat 气泡 + 加号：与消息底部「新对话」icon 同造型 */}
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M13.5 7.5a5.5 5.5 0 0 1-8.2 4.8L2.5 13.5l1.2-2.8A5.5 5.5 0 1 1 13.5 7.5Z" />
             <path d="M8 5.4v4.2M5.9 7.5h4.2" />
           </svg>
-          <span>新对话</span>
+          <span>{confirmNew ? '确认结束？' : '新对话'}</span>
         </button>
         <ModelDropdown
           // sessionAgentId 兜底（r7-review）：重开面板后首问尚未发生（followAgent
@@ -493,7 +518,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
 
       <div className="pd-action-bar">
         {/* r38-motion：key=锚定页——切页时重挂载重播入场动画（此前恒挂载，标题/tokens 瞬跳是「不丝滑」主源） */}
-        {pageMeta && <PageTips key={pageMeta.url} meta={pageMeta} />}
+        {pageMeta && <PageTips key={pageMeta.url} meta={pageMeta} idle={!messages.length} dimmed={hasSession} />}
         {chips.shown && chips.shown.length > 0 && (
           <div className={`pd-attach-chips${chips.exiting ? ' pd-exiting' : ''}`}>
             {chips.shown.map((a, i) => (
@@ -519,7 +544,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         {attachNotice && (
           // 附件跳过即时提示（r4-ux F3）：此前只在下次发送时以伪用户气泡出现——
           // 挑选当下零反馈，被丢的附件无从归因
-          <p role="note" className="pd-rise-in" style={{ margin: '0 12px 6px', fontSize: 12, color: 'var(--color-pd-danger)' }}>
+          // r44-audit I4：第四条 notice 归队 .pd-bar-note（danger 变体）——原 inline
+          // style / 12px 缩进 / rise-in 旧谱 / danger 背景色四重破格
+          <p role="note" className="pd-bar-note danger">
             {attachNotice}
           </p>
         )}
@@ -543,6 +570,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           running={running}
           usableCount={usable.length}
           hasSession={hasSession}
+          pageUnsupported={pageUnsupported}
           onStart={send}
           onCancel={cancel}
           onAttach={() => fileRef.current?.click()}
@@ -831,7 +859,7 @@ export function ModelDropdown({
 
 function ActionBar({
   input, workflowNotice, noFollowUpHint, onInputChange, inputRef,
-  running, usableCount, hasSession,
+  running, usableCount, hasSession, pageUnsupported,
   onStart, onCancel, onAttach, attachCount, attachRef, onPickFiles,
 }: {
   input: string
@@ -844,6 +872,8 @@ function ActionBar({
   running: boolean
   usableCount: number
   hasSession: boolean
+  /** r44-audit F4：受限页（chrome:// 等）——输入区联动置灰，防御前移不只做内容区一半 */
+  pageUnsupported?: boolean
   onStart: () => void
   onCancel: () => void
   onAttach: () => void
@@ -854,7 +884,10 @@ function ActionBar({
   // r16（3-agent P1）：运行中 Enter 的轻提示（本地态自包含——草稿保干净 + 有反馈）
   const [enterHint, setEnterHint] = useState(false)
   return (
-    <div className="pd-action-bar-inner">
+    <>
+      {/* r44-audit I5：notice 移出输入胶囊 flex——原 flex:100% 换行使出现/消失时
+          输入行内部撕裂跳位（光标视觉跳变）；独立层让胶囊整体平移。
+          轻提示允许裸卸载无退场（r44 规范：瞬态 note 不值得 useExitValue 的复杂度） */}
       {workflowNotice && (
         <p role="note" className="pd-bar-note">
           ⚠ {workflowNotice}
@@ -870,6 +903,7 @@ function ActionBar({
           此 CLI 暂不支持追问：新提问将开始全新总结（不含以上对话）
         </p>
       )}
+      <div className="pd-action-bar-inner">
       <button
         onClick={onAttach}
         // r7-review：与输入框同放开——附件仅暂存不触发任务，运行中预备下一问
@@ -917,7 +951,7 @@ function ActionBar({
         }}
         // r7-ux：不再 disabled——运行中允许预输入下一问（Enter 已有 !running 守卫，
         // 发送按钮不受影响；锁死输入框只是防重发，守卫已覆盖）
-        placeholder={hasSession ? '继续追问…（Shift+Enter 换行）' : '想了解这个网页的什么？（Shift+Enter 换行）'}
+        placeholder={pageUnsupported ? '此页面无法提取——切换到普通网页后可用' : hasSession ? '继续追问…（Shift+Enter 换行）' : '想了解这个网页的什么？（Shift+Enter 换行）'}
         aria-label="自定义指令"
         className="pd-input"
         rows={1}
@@ -925,7 +959,7 @@ function ActionBar({
 
       <button
         onClick={running ? onCancel : onStart}
-        disabled={!running && !usableCount && !input.trim() && !attachCount}
+        disabled={pageUnsupported || (!running && !usableCount && !input.trim() && !attachCount)}
         aria-label={running ? '停止' : '发送'}
         title={running ? '停止' : '发送'}
         className={`pd-primary-btn ${running ? 'running' : ''}`}
@@ -940,14 +974,15 @@ function ActionBar({
           </svg>
         )}
       </button>
-    </div>
+      </div>
+    </>
   )
 }
 
 /** 输入框上方 tips 条：「正在分享 "页面标题"」（参考 Gemini 插件，上下文透明化）。
  *  r43：启用中的技能以常驻微标在此展示——技能是「设置里开的全局状态」，归属输入区
  *  状态指示而非每条消息的属性（r37 气泡下独立徽标行形态退役：占版面且追问轮虚假标注） */
-function PageTips({ meta }: { meta: PageMeta }) {
+function PageTips({ meta, idle, dimmed }: { meta: PageMeta; idle?: boolean; dimmed?: boolean }) {
   const [skills, setSkills] = useState<string[]>(() => readList('pd-enabled-skills'))
   useEffect(() => {
     const sync = () => setSkills(readList('pd-enabled-skills'))
@@ -977,7 +1012,8 @@ function PageTips({ meta }: { meta: PageMeta }) {
         </svg>
       )}
       <span className="pd-page-tips-text">
-        正在分享「{meta.title || host || meta.url}」{host ? ` · ${host}` : ''}
+        {/* r44-audit F3：hero 空闲态无分享行为——「正在分享」是进行时谎言 */}
+        {idle ? '已就绪' : '正在分享'}「{meta.title || host || meta.url}」{host ? ` · ${host}` : ''}
       </span>
       {meta.notice && (
         <span className="pd-page-tips-notice" title={meta.notice}>
@@ -990,7 +1026,13 @@ function PageTips({ meta }: { meta: PageMeta }) {
         </span>
       )}
       {!!skills.length && (
-        <span className="pd-page-tips-notice" title={`已启用技能（总结时注入增强指令）：${skills.join('、')}——在 设置·技能 管理`}>
+        // r44-audit F1：技能只随首轮注入——追问轮常驻照亮 = 虚假标注复发（r42 同款
+        // 问题的形态转移）；降透明 + title 改口，把轮次语义显式接上
+        <span
+          className="pd-page-tips-notice"
+          style={dimmed ? { opacity: 0.45 } : undefined}
+          title={`${dimmed ? '追问轮不注入技能（新对话后生效）' : '已启用技能（总结时注入增强指令）'}：${skills.join('、')}——在 设置·技能 管理`}
+        >
           ⚡ {skills.length > 1 ? `技能 ×${skills.length}` : skills[0]}
         </span>
       )}

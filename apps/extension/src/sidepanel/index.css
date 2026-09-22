@@ -551,7 +551,8 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 10px 48px 6px 12px; /* 右侧留白避让 pd-float-tools；略加高拉宽磨砂过渡带 */
+  /* r44-audit V6：10→12——贴顶过紧有裁切感（macOS 惯例主操作距容器顶 ≥12px） */
+  padding: 12px 48px 6px 12px; /* 右侧留白避让 pd-float-tools；略加高拉宽磨砂过渡带 */
   /* r15 磨砂二轮：渐变与 action-bar 同源镜像（d1 锚顶缘→52→透明）——r14 的
      .42/.22/.06 淡出罩与 action-bar 的 #0000→52→d1 是两套语言，整机不成体系；
      锚缘加重后玻璃有了重心，穿过内容自深雾渐显（iOS 导航栏范式）；顶缘补
@@ -725,8 +726,15 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
    「玻璃只给容器」原则下聊天态有气泡/托盘，空闲态却一件玻璃都没有（真机截图
    实锤主页面无磨砂感）——占位区升 L2 玻璃卡，CLI 检测中/未装 CLI 等全部空闲
    态同享；与 onboarding 卡同家族但守 L2 档（L3 语义=悬浮在滚动内容流之上） */
+/* r44-audit V1：hero 卡顶贴 + 面板中段一整片空壁（截图实证「上下两块悬浮、中间
+   断裂」）——空闲态垂直居中；:has 只在 hero 态切换 .pd-content 布局（消息流 flex
+   化会动气泡 margin 体系，零回归路径） */
+.pd-content:has(> .pd-placeholder) {
+  display: flex;
+  flex-direction: column;
+}
 .pd-placeholder {
-  margin: 40px auto 0;
+  margin: auto;
   width: 100%;
   max-width: 320px;
   padding: 26px 22px 24px;
@@ -825,7 +833,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   right: 0;
   bottom: 0;
   z-index: 5;
-  padding: 56px 16px 16px; /* 顶 padding = 纯透明渐变过渡带（终审建议再放宽半档），输入控件不顶着边缘 */
+  padding: 16px; /* 顶 padding = 纯透明渐变过渡带（终审建议再放宽半档），输入控件不顶着边缘 */
   background: linear-gradient(180deg, transparent 0%, #14141452 48%, #141414d1 100%);
   /* r14：与 topbar 同档磨砂（24/180）——两块玻璃一致才成体系 */
   -webkit-backdrop-filter: blur(24px) saturate(180%);
@@ -927,13 +935,18 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
     0 8px 28px rgba(0,0,0,.45);
 }
 /* r43-audit：输入区 notice 行（模式替代告知/运行提示/不支持追问）——原三处
-   inline style 抽类；动画随底部滑入谱（与 tips/胶囊同语言） */
+   inline style 抽类；动画随底部滑入谱（与 tips/胶囊同语言）
+   r44-audit I4/I5：第四条 attachNotice 归队（danger 变体）；notice 移出胶囊
+   flex 成独立层——flex:100% 成死属性删除，块级 p 自然占行 */
 .pd-bar-note {
-  flex: 1 1 100%;
   margin: 0 0 4px;
   font-size: 12px;
   color: var(--color-pd-notice);
   animation: pd-slide-up-in 280ms cubic-bezier(.22, 1, .36, 1) both;
+}
+/* 附件跳过等需错误红的警示变体——文字用 danger-text（8.1:1），danger 是背景/边框色 */
+.pd-bar-note.danger {
+  color: var(--color-pd-danger-text);
 }
 
 /* r23 托盘受光环：165deg 与 dropdown 环同灯向（左上顶冷天光），暗侧保底 .05 */
@@ -1587,7 +1600,10 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   white-space: nowrap;
 }
 .pd-history-item-action {
-  display: none;
+  /* r44-audit I2：display:none 键盘不可聚焦（Tab 永远跳过 = 删除功能对纯键盘用户
+      断链，能进不能删）——visibility 保留焦点链，hover/focus-within 双通道开启 */
+  display: flex;
+  visibility: hidden;
   align-items: center;
   justify-content: center;
   width: 28px;
@@ -1599,8 +1615,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   cursor: pointer;
   transition: all 0.1s;
 }
-.pd-history-item:hover .pd-history-item-action {
-  display: flex;
+.pd-history-item:hover .pd-history-item-action,
+.pd-history-item:focus-within .pd-history-item-action {
+  visibility: visible;
 }
 .pd-history-item-action:hover {
   background: rgba(255,255,255,.08);
@@ -1613,6 +1630,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 /* r8-ux：两步删除的确认态——鼠标移出条目也保持可见（3s 窗口内等待二次点击） */
 .pd-history-item-action.confirming {
   display: flex;
+  visibility: visible;
   width: auto;
   padding: 0 8px;
   font-size: 11px;
@@ -1925,11 +1943,21 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
     var(--pd-glow);
 }
 .pd-page-tips-notice {
-  /* tips 条内的提取质量警示（截断/低置信）——琥珀色弱警示，不抢错误红 */
+  /* tips 条内的提取质量警示（截断/低置信）——琥珀色弱警示，不抢错误红
+     r44-audit V5：删 margin-left——容器 gap:8px 已有节拍，叠加成 16px 双重间距 */
   color: var(--pd-warn);
   font-size: 10.5px;
-  margin-left: 8px;
   opacity: 0.9;
+}
+/* r44-audit I1：CLI 下拉（ModelDropdown）禁用态——className 有 inactive 但全 CSS
+   无对应规则（grep 实证），追问轮看起来完全可点；与 workflow-dropdown.inactive 同语言 */
+.pd-dropdown.inactive {
+  opacity: 0.45;
+  cursor: default;
+}
+/* r44-audit I3：新对话两步确认态——与历史删除确认同语义色 */
+.pd-new-chat-btn.confirming {
+  color: var(--pd-danger);
 }
 .pd-onboarding-cmd-text {
   font-size: 11px;
