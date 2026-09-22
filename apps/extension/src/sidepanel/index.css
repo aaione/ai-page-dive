@@ -309,7 +309,8 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 @media (prefers-reduced-motion: reduce) {
   .pd-fade-in, .pd-fade-in-fast, .pd-placeholder, .pd-placeholder-title,
   .pd-placeholder-cta, .pd-placeholder-hint, .pd-chat-user, .pd-chat-assistant,
-  .pd-dropdown-menu, .pd-history-detail, .pd-history-item, .pd-overlay { animation: none; }
+  .pd-dropdown-menu, .pd-history-detail, .pd-history-item, .pd-overlay,
+  .pd-page-tips, .pd-attach-chip { animation: none; }
   .pd-exiting { animation: none !important; }
   .pd-cta-primary:active, .pd-cta-ghost:active, .pd-set-btn:active, .pd-new-chat-btn:active,
   .pd-chat-action-btn:active, .pd-history-item-action:active, .pd-dropdown-item:active,
@@ -471,6 +472,14 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 4px;
+}
+/* r37-ux：技能生效可见——气泡下小字徽标行（注入 prompt 的技能名，与附件 chip 同谱） */
+.pd-msg-skills {
+  margin: 4px 2px 0 0;
+  font-family: var(--font-sans-ui);
+  font-size: 10.5px;
+  color: var(--pd-text-2);
+  opacity: .85;
 }
 .pd-msg-attach {
   display: inline-flex;
@@ -987,6 +996,8 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   font-family: var(--font-sans-ui);
   font-size: 10.5px;
   color: var(--pd-text-2);
+  /* r37-motion：加附件即时回弹长出（keyframes 与气泡 pop-in 同源） */
+  animation: pd-pop-in 200ms var(--pd-ease-back) both;
 }
 .pd-attach-chip svg {
   width: 11px;

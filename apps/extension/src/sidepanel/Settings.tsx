@@ -344,6 +344,12 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const langRef = useRef<HTMLDivElement>(null)
   const ambRef = useRef<HTMLDivElement>(null)
   const sizeRef = useRef<HTMLDivElement>(null)
+  // r37-motion：切换方向感——后退 tab 面板从左滑入（默认从右）。索引比较走
+  // ref：tab 变化当帧读旧值定方向，render 后 effect 回写（键盘切换同样覆盖）
+  const prevIdx = useRef(-1)
+  const curIdx = tabs.findIndex((t) => t.key === tab)
+  const tabBack = prevIdx.current >= 0 && curIdx < prevIdx.current
+  useEffect(() => { prevIdx.current = curIdx })
   useRovingNav(tabsRef, '[role="tab"]', { horizontal: true, activate: true })
   useRovingNav(langRef, '[role="radio"]', { activate: true })
   // 氛围档 4 列网格：Up/Down 走下一行同列（cols），左右线性环绕
@@ -383,7 +389,7 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
         </div>
       )}
 
-      <div className="pd-set-body" id="pd-set-pane" role="tabpanel" key={tab}>
+      <div className={`pd-set-body${tabBack ? ' back' : ''}`} id="pd-set-pane" role="tabpanel" key={tab}>
         {tab === 'modes' && (
           <div className="pd-set-pane">
             <div className="pd-set-modes">

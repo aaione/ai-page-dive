@@ -12,7 +12,7 @@ interface Props {
   agentId: string
   onAgentChange: (id: string) => void
   onStartResult: (resp: { error?: string; [k: string]: unknown }) => void
-  beginTurn: (text: string, attachments?: { name: string; kind?: 'text' | 'image' }[]) => void
+  beginTurn: (text: string, attachments?: { name: string; kind?: 'text' | 'image' }[], skills?: string[]) => void
   beginSession: () => void
   pageMeta: PageMeta | null
   /** 会话是否可追问（CLI 回带过 sessionId）：codex 无 sessionId → false，关掉假追问入口 */
@@ -245,12 +245,12 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     const wf = forceWf ?? (workflow === 'default' ? 'deep' : workflow)
     const bubbleText =
       text || (hasSession || attachments.length ? '' : `${WF_LABEL[wf] ?? '深度总结'}本页`)
-    beginTurn(bubbleText, attachments.map((a) => ({ name: a.name, kind: a.kind })))
+    const skills = getEnabledSkills()
+    beginTurn(bubbleText, attachments.map((a) => ({ name: a.name, kind: a.kind })), skills)
     setAttachNotice('') // 提示已在输入区即时展示（r4-ux F3），发送即消费
     setInput('')
     const atts = attachments
     setAttachments([])
-    const skills = getEnabledSkills()
     // 追问轮无 workflow 兜底：附件-only 时 instruction 用占位文本；首轮保持空串——
     // host 侧 `instruction || wfBody` 落默认摘要指令，比占位文本更有用
     const instruction = text || (atts.length ? `（附件：${atts.map((a) => a.name).join('、')}）` : '')
@@ -463,6 +463,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
                 </div>
               )}
               {!!m.text && <p>{m.text}</p>}
+              {/* r37-ux：技能开启此前在对话中零体现——气泡下徽标行标出本轮注入的技能（与执行一致） */}
+              {!!m.skills?.length && (
+                <p className="pd-msg-skills" title="本轮已将以下技能的增强指令注入 prompt">⚡ 已启用技能 · {m.skills.join('、')}</p>
+              )}
             </div>
           ) : (
             <AssistantMessage
@@ -507,7 +511,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         {attachNotice && (
           // 附件跳过即时提示（r4-ux F3）：此前只在下次发送时以伪用户气泡出现——
           // 挑选当下零反馈，被丢的附件无从归因
-          <p role="note" style={{ margin: '0 12px 6px', fontSize: 12, color: 'var(--color-pd-danger)' }}>
+          <p role="note" className="pd-fade-in-fast" style={{ margin: '0 12px 6px', fontSize: 12, color: 'var(--color-pd-danger)' }}>
             {attachNotice}
           </p>
         )}
@@ -844,17 +848,17 @@ function ActionBar({
   return (
     <div className="pd-action-bar-inner">
       {workflowNotice && (
-        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
+        <p role="note" className="pd-fade-in-fast" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
           ⚠ {workflowNotice}
         </p>
       )}
       {enterHint && (
-        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
+        <p role="note" className="pd-fade-in-fast" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
           上一轮还在跑——内容已保留，完成后按 Enter 再发
         </p>
       )}
       {noFollowUpHint && (
-        <p role="note" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
+        <p role="note" className="pd-fade-in-fast" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
           此 CLI 暂不支持追问：新提问将开始全新总结（不含以上对话）
         </p>
       )}
@@ -942,7 +946,7 @@ function PageTips({ meta }: { meta: PageMeta }) {
     }
   })()
   return (
-    <div className="pd-page-tips" role="status">
+    <div className="pd-page-tips pd-fade-in-fast" role="status">
       {meta.favIconUrl ? (
         <img
           src={meta.favIconUrl}

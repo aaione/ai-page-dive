@@ -115,14 +115,27 @@
   padding-bottom: 8px;
 }
 @keyframes pd-set-fade-in {
-  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  from { opacity: 0; transform: translate3d(18px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes pd-set-fade-in-back {
+  from { opacity: 0; transform: translate3d(-18px, 0, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 .pd-set-pane {
   display: flex;
   flex-direction: column;
-  /* r34-motion 二轮：接入 index.css 曲线族（--pd-ease-out=easeOutExpo 近似）+ translate3d 合成层 */
-  animation: pd-set-fade-in 220ms var(--pd-ease-out) both;
+  /* r34-motion 二轮：接入 index.css 曲线族（--pd-ease-out=easeOutExpo 近似）+ translate3d 合成层。
+     r37-motion：tab 切换方向感——前进从右滑入、后退从左（.back 由 Settings.tsx 按索引比较挂载）；
+     纯淡入 220ms 实测不可感，滑移让切换有来向 */
+  animation: pd-set-fade-in 240ms var(--pd-ease-out) both;
+}
+.pd-set-body.back .pd-set-pane {
+  animation-name: pd-set-fade-in-back;
+}
+/* 前庭保护（与 index.css 全局块对称——本文件动画独立维护，需各自覆盖） */
+@media (prefers-reduced-motion: reduce) {
+  .pd-set-pane { animation: none; }
 }
 
 /* ── 面板（列表/表单容器通用，r15 表面玻璃：叠层微光 + blur 磨砂；

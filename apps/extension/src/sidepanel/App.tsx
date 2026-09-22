@@ -36,6 +36,8 @@ export interface ChatMessage {
   text: string
   /** 本轮用户消息携带的附件（r12：气泡上方 chip 展示——显示与执行一致，附件不再「看不见」） */
   attachments?: { name: string; kind?: 'text' | 'image' }[]
+  /** 本轮注入 prompt 的技能名（r37-ux：技能开启此前零反馈——气泡下徽标行让每轮生效可见） */
+  skills?: string[]
   streaming?: boolean
   model?: string
   usage?: { inputTokens?: number; outputTokens?: number }
@@ -611,7 +613,7 @@ export function App() {
    * pending=true：send 后到首个任务帧前的窗口里 running 判定靠它兜住（防双发）。
    * resumable 是会话级字段：追问轮间保留（F1——曾随 BLANK 清零，失败窗口后
    * 下一句追问静默降级全新总结 + 下拉解锁闪变） */
-  const beginTurn = useCallback((text: string, attachments?: { name: string; kind?: 'text' | 'image' }[]) => {
+  const beginTurn = useCallback((text: string, attachments?: { name: string; kind?: 'text' | 'image' }[], skills?: string[]) => {
     setStream((s) => ({
       ...BLANK,
       pending: true,
@@ -620,7 +622,7 @@ export function App() {
       // 迟到 cancelled 回调无从对账而击穿 pending 态；台账只拒同 taskId，新 id 不撞
       finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
       aliveAt: Date.now(), // 看门狗起点：发送即计时，首个 host 帧/心跳到达前靠它兜住
-      messages: [...s.messages, { id: `u${Date.now()}`, role: 'user', text, ...(attachments?.length ? { attachments } : {}) }],
+      messages: [...s.messages, { id: `u${Date.now()}`, role: 'user', text, ...(attachments?.length ? { attachments } : {}), ...(skills?.length ? { skills } : {}) }],
     }))
   }, [])
 
