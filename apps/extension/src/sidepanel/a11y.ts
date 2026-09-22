@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { RefObject } from 'react'
 
 /** r32-a11y：模态对话框焦点陷阱。Tab 在容器内循环不逃出；挂载时焦点送进容器。
@@ -74,4 +74,36 @@ export function useRovingNav(
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [ref, selector, opts?.horizontal, opts?.activate, opts?.cols])
+}
+
+/** r33-refactor：listbox 下拉菜单共用行为（WorkflowDropdown / ModelDropdown 抽出）。
+ * - 打开即入菜单（选中项优先，无选中落首项）——键盘用户不必先 Tab 找菜单
+ * - 外点关闭（只关不还焦——不抢焦点）；Esc 关闭并还焦 trigger（焦点悬在已
+ *   卸载的菜单项上会丢到 body）
+ * - 菜单内 Esc 由调用侧在 ul onKeyDown 先 stopPropagation（防冒泡连 overlay
+ *   一起关）再 close()——document 级 Esc 兜焦点不在菜单内的场景 */
+export function useListboxMenu(ref: RefObject<HTMLDivElement | null>) {
+  const [open, setOpen] = useState(false)
+  const close = useCallback(() => {
+    setOpen(false)
+    ref.current?.querySelector<HTMLElement>('[aria-haspopup="listbox"]')?.focus()
+  }, [ref])
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    ;(ref.current?.querySelector<HTMLElement>('.pd-dropdown-item.selected')
+      ?? ref.current?.querySelector<HTMLElement>('.pd-dropdown-item'))?.focus()
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open, close, ref])
+  return { open, setOpen, close }
 }

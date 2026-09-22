@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AgentStatus, WorkflowItem } from '@ai-page-dive/shared'
 import type { ChatMessage, PageMeta, TaskStreamState } from './App.js'
-import { useRovingNav } from './a11y.js'
+import { useListboxMenu, useRovingNav } from './a11y.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
 interface Props {
@@ -548,35 +548,11 @@ function WorkflowDropdown({
   workflows: { name: string; description: string; builtin: boolean }[]
   hasSession: boolean
 }) {
-  const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   // r32-a11y：listbox 键盘可达——上下/四向游走（只移焦点不选，Enter/click 选中）
   useRovingNav(ref, '.pd-dropdown-item')
-
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeMenu()
-    }
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
-    // r32-a11y：打开即入菜单（选中项优先，无选中落首项）——键盘用户不必先 Tab 找菜单
-    ;(ref.current?.querySelector<HTMLElement>('.pd-dropdown-item.selected')
-      ?? ref.current?.querySelector<HTMLElement>('.pd-dropdown-item'))?.focus()
-    return () => {
-      document.removeEventListener('mousedown', onDoc)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  /** r32-a11y：关闭并还焦 trigger——焦点悬在已卸载的菜单项上会丢到 body */
-  const closeMenu = () => {
-    setOpen(false)
-    ref.current?.querySelector<HTMLElement>('[aria-haspopup="listbox"]')?.focus()
-  }
+  // r33-refactor：开态/即入菜单/外点/Esc 还焦收敛进共用 hook（原与 ModelDropdown 重复 ~30 行）
+  const { open, setOpen, close: closeMenu } = useListboxMenu(ref)
 
   return (
     <div ref={ref} className={`pd-workflow-dropdown ${hasSession ? 'inactive' : ''}`}>
@@ -771,38 +747,14 @@ export function ModelDropdown({
   disabled?: boolean
   disabledTitle?: string
 }) {
-  const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   // r32-a11y：listbox 键盘可达——四向游走（只移焦点不选，Enter/click 选中）
   useRovingNav(ref, '.pd-dropdown-item')
+  // r33-refactor：开态/即入菜单/外点/Esc 还焦收敛进共用 hook（原与 WorkflowDropdown 重复 ~30 行）
+  const { open, setOpen, close: closeMenu } = useListboxMenu(ref)
 
   // 追问轮切禁用时若菜单开着必须收起（否则残留可点的过期菜单）
   useEffect(() => { if (disabled) setOpen(false) }, [disabled])
-
-  /** r32-a11y：关闭并还焦 trigger——焦点悬在已卸载的菜单项上会丢到 body */
-  const closeMenu = () => {
-    setOpen(false)
-    ref.current?.querySelector<HTMLElement>('[aria-haspopup="listbox"]')?.focus()
-  }
-
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeMenu()
-    }
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
-    // r32-a11y：打开即入菜单（选中项优先，无选中落首项）
-    ;(ref.current?.querySelector<HTMLElement>('.pd-dropdown-item.selected')
-      ?? ref.current?.querySelector<HTMLElement>('.pd-dropdown-item'))?.focus()
-    return () => {
-      document.removeEventListener('mousedown', onDoc)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
 
   const selected = items.find((it) => it.key === value)
 
