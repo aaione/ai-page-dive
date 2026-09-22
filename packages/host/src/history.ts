@@ -1,6 +1,5 @@
-/** 历史落盘：~/.ai-page-dive/history/年/月/日/时间戳-slug.md（frontmatter 元数据）
- * 多轮对话：追问轮 append 到首轮文件，pd:user/pd:assistant HTML 注释分段——markdown
- * 渲染不可见、解析简单、正文伪造的标记只影响显示分层无安全面 */
+/** 历史落盘：~/.ai-page-dive/history/年/月/日/时间戳-slug.md（frontmatter 元数据）。
+ * 多轮对话 append 首轮文件、pd:user/pd:assistant 注释分段；伪造标记注入由 escapePd 消（r33-sec） */
 import { mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -111,20 +110,22 @@ async function writeNew(path: string, meta: HistoryMeta, body: string): Promise<
   await writeFile(path, frontmatter + body + '\n', { flag: 'wx', mode: 0o600 })
 }
 
+/** 轮正文分段标记转义（r33-sec）：正文含标记原样落盘会被 parseHistoryTurns 误切成轮边界——实体化冒号，渲染不变，读侧还原 */
+export const escapePd = (s: string): string => s.replaceAll('<!-- pd:', '<!-- pd&#58;')
+
 /** 追问轮 append 到首轮历史文件（多轮对话完整记录） */
 export async function appendHistoryTurn(
   path: string,
   turn: { user: string; assistant: string },
 ): Promise<void> {
   assertInRoot(path)
-  await writeFile(path, `\n<!-- pd:user -->\n${turn.user}\n\n<!-- pd:assistant -->\n${turn.assistant}\n`, {
+  await writeFile(path, `\n<!-- pd:user -->\n${escapePd(turn.user)}\n\n<!-- pd:assistant -->\n${escapePd(turn.assistant)}\n`, {
     flag: 'a',
     mode: 0o600,
   })
 }
 
-/** 正文命中片段：命中点前后各 ~40 字符、空白压扁；未命中 undefined。
- * r17（高频 P1）：搜索从 title/url 扩全文——「之前总结过讲 X 的那篇」常只记得内容词 */
+/** 正文命中片段：命中点前后各 ~40 字符、空白压扁；未命中 undefined。r17：搜索从 title/url 扩全文（「之前总结过讲 X 的那篇」常只记得内容词） */
 export function extractSnippet(body: string, q: string): string | undefined {
   const idx = body.toLowerCase().indexOf(q.toLowerCase())
   if (idx < 0) return undefined
@@ -132,8 +133,7 @@ export function extractSnippet(body: string, q: string): string | undefined {
 }
 
 /** 扫描历史目录，按 ts 倒序，query 匹配 title/url/正文（r8-perf：32 并发批读）。
- * r8-host：年/月/日/文件名零填充天然可排序——各层倒序遍历即近似时间倒序，无 query
- * 时凑够 limit 提前返回；readdir 兜底 []：单目录 EACCES 只跳过该子树不崩进程 */
+ * 年/月/日/文件名零填充天然可排序——倒序遍历即近似时间倒序；readdir 兜底 []：单目录 EACCES 只跳过不崩 */
 export async function listHistory(query?: string, limit = 100): Promise<HistoryItem[]> {
   const desc = (a: string | { name: string }, b: string | { name: string }) =>
     (typeof b === 'string' ? b : b.name).localeCompare(typeof a === 'string' ? a : a.name)

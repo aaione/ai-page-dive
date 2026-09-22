@@ -9,7 +9,7 @@ import { createCodexParser } from './agents/codex.js'
 import { createOpencodeParser } from './agents/opencode.js'
 import { getAgent } from './agents/registry.js'
 import { getSkillBodies } from './skills.js'
-import { appendHistoryTurn, buildHistoryPath, saveHistory } from './history.js'
+import { appendHistoryTurn, buildHistoryPath, escapePd, saveHistory } from './history.js'
 import { makeAgentCwd, spawnCli, type SpawnedProc } from './spawn.js'
 import { scheduleCleanup, writeContentFile } from './tmpfile.js'
 import { getWorkflow } from './workflows.js'
@@ -471,8 +471,8 @@ export class Task {
         durationMs: Date.now() - this.startedAt,
         sessionId: this.meta?.sessionId,
       },
-      // r12：首轮带附件时以 pd:user 段先行落标记（恢复会话时附件轮次可还原）
-      (this.attachFiles.length ? `<!-- pd:user -->\n${attachMarkers(this.attachFiles)}\n` : '') + this.accText,
+      // r12：首轮带附件时以 pd:user 段先行落标记（恢复会话时附件轮次可还原）。r33-sec：accText 转义同 appendHistoryTurn
+      (this.attachFiles.length ? `<!-- pd:user -->\n${attachMarkers(this.attachFiles)}\n` : '') + escapePd(this.accText),
     )
       .then((actual) => { // 冲突重试换了文件名：终局回传实际路径；成功才置 persistOk
         this.historyPath = actual
