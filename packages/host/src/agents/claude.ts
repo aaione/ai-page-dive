@@ -80,11 +80,14 @@ export const claudeDef: AgentDef = {
   bin: 'claude',
   versionArgs: ['--version'],
   streamFormat: 'claude-stream-json',
-  // 探测时读 settings.json 的 model 字段（用户显式设定）；best-effort
+  // 探测时读 settings.json 的 model 字段（用户显式设定）；best-effort。
+  // r43：补 env.ANTHROPIC_MODEL——代理/自定义端点用户（如 GLM）模型配在 env 段而非
+  // 顶层 model，只读顶层会 undefined，下拉模型行就只能等任务流的 lastModels 补——
+  // 两个源一有一无即「glm/opus 摆动」；两处同读后探测即稳定
   probeModel: () => {
     try {
       const s = JSON.parse(readFileSync(join(homedir(), '.claude/settings.json'), 'utf8'))
-      return s.model || undefined
+      return s.model || s.env?.ANTHROPIC_MODEL || undefined
     } catch {
       return undefined
     }

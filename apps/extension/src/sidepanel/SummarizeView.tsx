@@ -474,12 +474,6 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
                 </div>
               )}
               {!!m.text && <p>{m.text}</p>}
-              {/* r37-ux：技能开启此前在对话中零体现——徽标行标出本轮注入的技能。
-                  r42：缩小形态（去前缀只留 ⚡+名）且只标首轮（host !isResume 才注入，
-                  追问轮带徽标曾是虚假标注） */}
-              {!!m.skills?.length && (
-                <p className="pd-msg-skills" title="本轮总结的 prompt 已注入该技能的增强指令">⚡ {m.skills.join('、')}</p>
-              )}
             </div>
           ) : (
             <AssistantMessage
@@ -862,17 +856,17 @@ function ActionBar({
   return (
     <div className="pd-action-bar-inner">
       {workflowNotice && (
-        <p role="note" className="pd-rise-in" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
+        <p role="note" className="pd-bar-note">
           ⚠ {workflowNotice}
         </p>
       )}
       {enterHint && (
-        <p role="note" className="pd-rise-in" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
+        <p role="note" className="pd-bar-note">
           上一轮还在跑——内容已保留，完成后按 Enter 再发
         </p>
       )}
       {noFollowUpHint && (
-        <p role="note" className="pd-rise-in" style={{ gridColumn: '1 / -1', margin: '0 0 4px', fontSize: 12, color: 'var(--color-pd-notice)' }}>
+        <p role="note" className="pd-bar-note">
           此 CLI 暂不支持追问：新提问将开始全新总结（不含以上对话）
         </p>
       )}
@@ -950,8 +944,16 @@ function ActionBar({
   )
 }
 
-/** 输入框上方 tips 条：「正在分享 "页面标题"」（参考 Gemini 插件，上下文透明化） */
+/** 输入框上方 tips 条：「正在分享 "页面标题"」（参考 Gemini 插件，上下文透明化）。
+ *  r43：启用中的技能以常驻微标在此展示——技能是「设置里开的全局状态」，归属输入区
+ *  状态指示而非每条消息的属性（r37 气泡下独立徽标行形态退役：占版面且追问轮虚假标注） */
 function PageTips({ meta }: { meta: PageMeta }) {
+  const [skills, setSkills] = useState<string[]>(() => readList('pd-enabled-skills'))
+  useEffect(() => {
+    const sync = () => setSkills(readList('pd-enabled-skills'))
+    window.addEventListener('pd-settings-changed', sync)
+    return () => window.removeEventListener('pd-settings-changed', sync)
+  }, [])
   const host = (() => {
     try {
       return new URL(meta.url).hostname.replace(/^www\./, '')
@@ -985,6 +987,11 @@ function PageTips({ meta }: { meta: PageMeta }) {
       {!!meta.approxTokens && (
         <span className="pd-page-tips-notice" title="正文体量估算，用量计入你的 CLI 订阅">
           ≈{meta.approxTokens >= 10000 ? `${(meta.approxTokens / 10000).toFixed(1)}万` : meta.approxTokens} tokens
+        </span>
+      )}
+      {!!skills.length && (
+        <span className="pd-page-tips-notice" title={`已启用技能（总结时注入增强指令）：${skills.join('、')}——在 设置·技能 管理`}>
+          ⚡ {skills.length > 1 ? `技能 ×${skills.length}` : skills[0]}
         </span>
       )}
     </div>
@@ -1063,7 +1070,9 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
 }
 
 const WF_LABEL: Record<string, string> = {
-  default: '默认模式',
+  // r43：default 是「未显式选档」哨兵，实际执行映射 deep——叫「默认模式」与 CTA
+  // 「深度总结本页」名实不符（用户困惑点）；直接叫执行档名
+  default: '深度总结',
   quick: '快速摘要',
   deep: '深度总结',
   paper: '论文模式',

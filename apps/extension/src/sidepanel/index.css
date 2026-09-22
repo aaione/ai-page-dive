@@ -270,6 +270,12 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   from { opacity: 0; transform: translate3d(0, 14px, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
+/* r43-motion：滑入谱——底部常驻件（tips/输入胶囊）专用：24px 大幅位移配
+   easeOutQuint（cubic-bezier(.22,1,.36,1)）丝滑收尾，区别于内容区的 14px rise-in */
+@keyframes pd-slide-up-in {
+  from { opacity: 0; transform: translate3d(0, 24px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
 @keyframes pd-slide-in-right {
   from { opacity: 0; transform: translate3d(24px, 0, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
@@ -317,7 +323,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   .pd-fade-in, .pd-fade-in-fast, .pd-rise-in, .pd-placeholder, .pd-placeholder-title,
   .pd-placeholder-cta, .pd-placeholder-hint, .pd-chat-user, .pd-chat-assistant,
   .pd-dropdown-menu, .pd-history-detail, .pd-history-item, .pd-overlay,
-  .pd-page-tips, .pd-attach-chips, .pd-attach-chip, .pd-action-bar-inner { animation: none; }
+  .pd-page-tips, .pd-attach-chips, .pd-attach-chip, .pd-action-bar-inner, .pd-bar-note { animation: none; }
   .pd-exiting { animation: none !important; }
   .pd-cta-primary:active, .pd-cta-ghost:active, .pd-set-btn:active, .pd-new-chat-btn:active,
   .pd-chat-action-btn:active, .pd-history-item-action:active, .pd-dropdown-item:active,
@@ -484,13 +490,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   margin-bottom: 4px;
 }
 /* r37-ux：技能生效可见——气泡下小字徽标行（注入 prompt 的技能名，与附件 chip 同谱） */
-.pd-msg-skills {
-  margin: 4px 2px 0 0;
-  font-family: var(--font-sans-ui);
-  font-size: 10px;
-  color: var(--pd-text-3);
-  opacity: .9;
-}
+/* r43：.pd-msg-skills 退役——技能状态移入 tips 行微标（PageTips 内），气泡区不再占行 */
 .pd-msg-attach {
   display: inline-flex;
   align-items: center;
@@ -867,7 +867,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 4px 8px;
+  margin: 0 0 8px; /* r43：与输入胶囊同缘（action-bar 16px padding 体系），此前 4px 缩进破格 */
   padding: 6px 10px;
   border-radius: var(--pd-r-md);
   /* r15 整体玻璃：页面元信息条随全表面玻璃化；r21 软颗粒 + 描边提亮。
@@ -876,8 +876,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   -webkit-backdrop-filter: var(--pd-glass-1-filter);
   backdrop-filter: var(--pd-glass-1-filter);
   border: 1px solid var(--pd-line-glass);
-  /* r38-motion：专属入场（挂载/切页重挂载时播）——从输入区方向浮上，260ms 可感 */
-  animation: pd-rise-in 260ms var(--pd-ease-out) both;
+  /* r43-motion：滑入谱（24px 大幅位移 + easeOutQuint 丝滑收尾）——rise-in 的 14px
+     上浮实测感知弱（用户报「没有动画」）；切页重挂载时重播 */
+  animation: pd-slide-up-in 300ms cubic-bezier(.22, 1, .36, 1) both;
 }
 .pd-page-tips-favicon {
   width: 16px;
@@ -898,13 +899,16 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 }
 .pd-action-bar-inner {
   display: flex;
+  /* r43-audit：wrap + 微标行占满——notice 行的 gridColumn 在 flex 里是死属性
+     （存量 bug：提示文案从未独占一行，低频出现未暴露）；改 flex-basis:100% 生效 */
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
   border-radius: var(--pd-r-lg);
-  /* r42-motion：输入胶囊本体入场（面板打开时播一次）——tips（260ms 无 delay）先浮入、
-     胶囊延迟 40ms 跟上，底部两件交错成组；此前 r38 只动了 tips/chips/notice，胶囊静态出现 */
-  animation: pd-rise-in 260ms var(--pd-ease-out) 40ms both;
+  /* r43-motion：滑入谱与 tips 同曲线——tips 先滑入、胶囊延迟 60ms 跟上成组交错
+     （24px 大幅位移可感；r42 的 14px rise-in 感知弱被用户报「缺动画」） */
+  animation: pd-slide-up-in 320ms cubic-bezier(.22, 1, .36, 1) 60ms both;
   /* 输入胶囊：磨砂交由外层 pd-action-bar（双层 backdrop-filter 嵌套只费 GPU 不增层次），
      此处保留 alpha 渐变 + 描边 + 内光做出「层压在磨砂上」的体积感。
      r21：软颗粒进栈——常驻视觉焦点也要有「砂」，托盘感才立得住 */
@@ -922,6 +926,16 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
     inset 0 -1px 0 rgba(0,0,0,.30),
     0 8px 28px rgba(0,0,0,.45);
 }
+/* r43-audit：输入区 notice 行（模式替代告知/运行提示/不支持追问）——原三处
+   inline style 抽类；动画随底部滑入谱（与 tips/胶囊同语言） */
+.pd-bar-note {
+  flex: 1 1 100%;
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--color-pd-notice);
+  animation: pd-slide-up-in 280ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
 /* r23 托盘受光环：165deg 与 dropdown 环同灯向（左上顶冷天光），暗侧保底 .05 */
 .pd-action-bar-inner::before {
   content: '';
@@ -997,7 +1011,7 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 0 2px 6px;
+  padding: 0 0 6px; /* r43：同 tips 归位 16px 缘（此前 2px 缩进破格） */
 }
 .pd-attach-chip {
   display: inline-flex;
