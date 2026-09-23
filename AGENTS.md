@@ -26,7 +26,7 @@ pnpm monorepo：
 
 ## Hard Constraints（违反即 bug）
 
-1. 权限只有 `activeTab` + `scripting` + `nativeMessaging` + `sidePanel` + `storage`，**不申请 `<all_urls>`**（`storage` 仅用 session 域——SW 30s 回收后恢复追问会话态，纯内存不落盘、零站点访问面，2026-09-08 修订加入）
+1. 权限只有 `activeTab` + `scripting` + `nativeMessaging` + `sidePanel` + `storage`，**不申请 `<all_urls>`**（`storage` 仅用 session 域——SW 30s 回收后恢复追问会话态，纯内存不落盘、零站点访问面，2026-09-08 修订加入；2026-09-23 修订：加 `optional_host_permissions` 供设置页「始终允许读取网页」开关用户主动授予，安装时零警告、默认关闭，见 DECISIONS.md D3）
 2. CLI 的 prompt/正文**一律走 stdin**（argv 有长度上限）；正文写本地临时文件，prompt 给路径
 3. **零凭证接触**：只子进程调起用户自己登录的未修改官方 CLI 二进制；不碰 token/OAuth、不代理流量、永不对 CLI 用量收费
 4. claude 的运行内失败打在 stdout（`is_error`），不能只看退出码

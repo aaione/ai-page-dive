@@ -107,4 +107,9 @@ function route(msg: any): unknown {
     getManifest: () => ({ version: '1.8.0' }),
   },
   tabs: { create: ({ url }: { url: string }) => void window.open(url, '_blank') },
+  permissions: {
+    contains: async () => false,
+    request: async () => true,
+    remove: async () => true,
+  },
 }

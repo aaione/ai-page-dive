@@ -96,6 +96,30 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
   const editorRef = useRef<EditorState | null>(null)
   editorRef.current = editor
 
+  // ── 网页读取授权（r46：optional_host_permissions——用户主动授予后免每次手势） ──
+  // null = 查询中（面板先按关渲染，回填后校正）
+  const [hostGrant, setHostGrant] = useState<boolean | null>(false)
+  useEffect(() => {
+    chrome.permissions
+      ?.contains({ origins: ['<all_urls>'] })
+      .then((g) => setHostGrant(g))
+      .catch(() => {})
+  }, [])
+  function toggleHostGrant() {
+    if (hostGrant) {
+      chrome.permissions
+        ?.remove({ origins: ['<all_urls>'] })
+        .then(() => setHostGrant(false))
+        .catch(() => {})
+    } else {
+      // request 必须在用户手势内（本点击即手势）——Chrome 弹一次全局确认
+      chrome.permissions
+        ?.request({ origins: ['<all_urls>'] })
+        .then((g) => setHostGrant(g))
+        .catch(() => {})
+    }
+  }
+
   // ── 技能 ──
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [enabledSkills, setEnabledSkills] = useState<string[]>(() => readStrList('pd-enabled-skills'))
@@ -743,6 +767,26 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               <div className="pd-set-actions" style={{ marginTop: 14 }}>
                 <button className="pd-set-btn" onClick={revealHistoryDir}>打开历史目录</button>
               </div>
+            </div>
+
+            {/* r46：换页后「尚未授权提取」是 activeTab 模型的用户痛点——optional 权限
+                让高频用户一键解除（安装时零警告，Chrome 在此弹一次全局确认） */}
+            <div className="pd-set-panel">
+              <div className="pd-set-amb-row">
+                <span className="pd-set-label" style={{ margin: 0 }}>始终允许读取网页</span>
+                <button
+                  className={`pd-set-switch ${hostGrant ? 'on' : ''}`}
+                  onClick={toggleHostGrant}
+                  role="switch"
+                  aria-checked={!!hostGrant}
+                  aria-label="始终允许读取网页"
+                />
+              </div>
+              <p className="pd-set-hint" style={{ marginTop: 8 }}>
+                {hostGrant
+                  ? '已开启——换页、切标签后无需再点工具栏图标即可总结。网页正文仍只在本机处理，可随时关闭。'
+                  : '默认（Chrome 安全模型）：每次点工具栏图标时授权当前页，换页后需重新授权。开启后免重复授权，扩展可随时读取你访问的网页——仅用于本机总结，内容不出本机。'}
+              </p>
             </div>
           </div>
         )}
