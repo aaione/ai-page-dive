@@ -63,9 +63,10 @@ function writeStrList(key: string, list: string[]) {
   window.dispatchEvent(new Event('pd-settings-changed'))
 }
 
-export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: () => void }) {
+export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[]; onClose: () => void; initialTab?: Tab }) {
   // r33-ux：默认落在「CLI」页——用户最常来设置里看/停用 CLI，模式页是低频编辑位
-  const [tab, setTab] = useState<Tab>('clis')
+  // r47-ux：历史底栏可直达「数据」tab（initialTab）
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'clis')
   /** host 错误帧提示（工作流读写/删除失败等，10s 自清）：此前 error 帧零消费，保存失败完全静默 */
   const [hostError, setHostError] = useState<string | null>(null)
   /** workflow 读取超时的名字（只读提示态，不污染 editor.body/dirty） */

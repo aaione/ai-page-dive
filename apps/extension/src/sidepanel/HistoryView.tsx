@@ -19,7 +19,16 @@ const historyLimit = () => {
   return v >= 10 ? v : 200
 }
 
-export function HistoryView({ onClose, onResume }: { onClose: () => void; onResume: (item: HistoryItem, body: string) => void }) {
+export function HistoryView({
+  onClose,
+  onResume,
+  onOpenSettings,
+}: {
+  onClose: () => void
+  onResume: (item: HistoryItem, body: string) => void
+  /** r47-ux：底栏「设置·数据」入口——跳到保留条数调节，不再等满额才看见提示 */
+  onOpenSettings?: () => void
+}) {
   const [items, setItems] = useState<HistoryItem[]>([])
   const [query, setQuery] = useState('')
   // listener 在 [] effect 里注册、捕获首渲染的 refresh（其默认参数 query 恒为 ''）：
@@ -278,9 +287,27 @@ export function HistoryView({ onClose, onResume }: { onClose: () => void; onResu
           : <p className="pd-history-empty">加载中…</p>
         )}
       </ul>
-      {/* r42：保存语义——满额 = 触达保留上限，更早的已被清理（不再是「可搜索」） */}
-      {items.length >= historyLimit() && (
-        <p className="pd-history-truncated">仅保留最近 {historyLimit()} 条总结——更早的已按保留策略自动清理；需要完整留存时可在 设置·数据 调大</p>
+      {/* r47-ux：常驻底栏——r42 起默认上限 200，满额才提示等于「几乎永不出现」；
+          数量统计 + 设置入口应始终可见（发现性），满额时再加重清理警示 */}
+      {replied && items.length > 0 && (
+        <p className={`pd-history-truncated${items.length >= historyLimit() && !query.trim() ? ' at-cap' : ''}`}>
+          {query.trim()
+            ? `匹配 ${items.length} 条`
+            : items.length >= historyLimit()
+              ? `已达保留上限 ${historyLimit()} 条——更早的已自动清理`
+              : `共 ${items.length} 条 · 保留上限 ${historyLimit()}`}
+          {onOpenSettings ? (
+            <>
+              {' · '}
+              <button type="button" className="pd-history-truncated-link" onClick={onOpenSettings}>
+                设置·数据
+              </button>
+              {items.length >= historyLimit() && !query.trim() ? '可调大' : '可调'}
+            </>
+          ) : (
+            ' · 设置·数据可调'
+          )}
+        </p>
       )}
     </div>
   )

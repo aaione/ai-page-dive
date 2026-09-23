@@ -101,6 +101,8 @@ export interface PageMeta {
 
 export function App() {
   const [overlay, setOverlay] = useState<Overlay>(null)
+  /** r47-ux：从历史底栏跳进设置时落到「数据」tab；工具栏入口仍默认 CLI */
+  const [settingsTab, setSettingsTab] = useState<'modes' | 'clis' | 'skills' | 'look' | 'data' | 'about' | undefined>()
   const ov = useExitValue(overlay, 160)
   const [hostOk, setHostOk] = useState<boolean | null>(null)
   /** r33-ux：panel-ready 探活持续失败（SW 唤不醒/通道异常 >30s）——loading 态给手动出口 */
@@ -125,6 +127,9 @@ export function App() {
   // r14-ux：panel-ready 触发的在途 history-read 路径（还原重开前的对话）——
   // listener 的 history-file 分支只收它匹配的那条，HistoryView 自己的读取互不干扰
   const restorePathRef = useRef<string | null>(null)
+  /** r47-ux：还原帧落地时的 resumable——codex 无 sessionId 只还原 UI 不可追问；
+   *  不得把 history-file 分支硬写成 resumable:true（否则追问必得 session-lost） */
+  const restoreResumableRef = useRef(true)
   // r16：本面板锚定页签（get-state 初值 + panel-anchor 帧刷新）——任务帧「未绑定
   // 收养」瞬间的邮戳核验基准：别的页签任务的流不得在本面板凭空开场（串台根修）
   const anchorTabIdRef = useRef<number | null>(null)
@@ -239,6 +244,9 @@ export function App() {
         // 看门狗 120s 收尾）
         if (resp?.hasSession) {
           if (typeof resp.sessionAgentId === 'string') setSessionAgent(resp.sessionAgentId)
+          // r47-ux：canResume=false（codex 等无 sessionId）只还原历史 UI，不开放追问
+          const canResume = resp.canResume !== false
+          restoreResumableRef.current = canResume
           // r14-ux：带 historyPath 时优先还原完整对话（history-file 回帧在 listener
           // 处理）；拿不到路径/读失败再退回 reopened 提示（「此前对话已清空」）
           const hp = typeof resp.historyPath === 'string' ? resp.historyPath : ''
@@ -252,15 +260,16 @@ export function App() {
             setTimeout(() => {
               if (restorePathRef.current === hp) {
                 restorePathRef.current = null
-                setStream((s) => ({ ...s, resumable: true, reopened: true }))
+                setStream((s) => ({ ...s, resumable: canResume, ...(canResume ? { reopened: true } : {}) }))
               }
             }, 12_000)
           } else {
             setStream((s) => ({
               ...s,
-              resumable: true,
+              resumable: canResume,
               // 无在跑任务时才提示（activeTask 在跑 = 迟到 chunk 会续流，不算丢失）
-              ...(resp?.activeTask ? {} : { reopened: true }),
+              // 可追问才标 reopened（否则文案「继续追问」与事实不符）
+              ...(resp?.activeTask || !canResume ? {} : { reopened: true }),
             }))
           }
         }
@@ -336,13 +345,18 @@ export function App() {
                 return {
                 ...BLANK,
                 done: true,
-                resumable: true,
+                // r47-ux：按 panel-ready 带出的 canResume 落 resumable（codex 只还原 UI）
+                resumable: restoreResumableRef.current,
                 finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
                 messages: msgs,
                 }
               })
             } else {
-              setStream((s) => ({ ...s, resumable: true, reopened: true }))
+              setStream((s) => ({
+                ...s,
+                resumable: restoreResumableRef.current,
+                ...(restoreResumableRef.current ? { reopened: true } : {}),
+              }))
             }
           }
           break
@@ -748,11 +762,20 @@ export function App() {
     }
   }, [overlay])
   const toggleOverlay = (o: 'history' | 'settings') => {
-    if (overlay === o) setOverlay(null)
-    else {
+    if (overlay === o) {
+      setOverlay(null)
+      setSettingsTab(undefined)
+    } else {
       overlayTriggerRef.current = document.activeElement as HTMLElement | null
+      if (o === 'settings') setSettingsTab(undefined) // 工具栏入口默认 CLI tab
       setOverlay(o)
     }
+  }
+  /** r47-ux：历史底栏 → 设置·数据（关历史、开设置并落到 data tab） */
+  const openSettingsData = () => {
+    overlayTriggerRef.current = document.activeElement as HTMLElement | null
+    setSettingsTab('data')
+    setOverlay('settings')
   }
 
   const effectiveAgent =
@@ -825,12 +848,12 @@ export function App() {
       {/* r35-motion：overlay 关闭先播 160ms 退场再卸载（useExitValue 期间保持旧值渲染） */}
       {ov.shown === 'history' && (
         <DialogLayer label="总结历史" onClose={() => setOverlay(null)} exiting={ov.exiting}>
-          <HistoryView onClose={() => setOverlay(null)} onResume={resumeHistory} />
+          <HistoryView onClose={() => setOverlay(null)} onResume={resumeHistory} onOpenSettings={openSettingsData} />
         </DialogLayer>
       )}
       {ov.shown === 'settings' && (
-        <DialogLayer label="设置" onClose={() => setOverlay(null)} exiting={ov.exiting}>
-          <Settings agents={agents} onClose={() => setOverlay(null)} />
+        <DialogLayer label="设置" onClose={() => { setOverlay(null); setSettingsTab(undefined) }} exiting={ov.exiting}>
+          <Settings agents={agents} onClose={() => { setOverlay(null); setSettingsTab(undefined) }} initialTab={settingsTab} />
         </DialogLayer>
       )}
     </div>
