@@ -148,12 +148,27 @@
   /* r22：L2 令牌化——与 index.css 表面玻璃家族显式同谱 + 厚度双表面 + elev-1。
      不加 hotspot：设置页多 panel 同屏，hotspot 只给独占一屏的 onboarding 卡
      （一屏 hotspot ≤1 红线） */
-  background: var(--pd-glass-2-bg);
-  backdrop-filter: var(--pd-glass-2-filter);
-  -webkit-backdrop-filter: var(--pd-glass-2-filter);
+  /* r47-fix：玻璃层挪 ::before——本体持有 backdrop-filter 会成为后代浮层的
+     backdrop root（Chrome：有 bf 的祖先截断后代的 backdrop 采样范围），分享
+     下拉的 blur(28) 只能采样 panel 自身近实底背景、无物可磨=平面色块感。
+     挪伪元素后菜单祖先链解锁，可磨透过 panel 的内容 + panel 内文字。
+     z-index:0（而非 isolation:isolate）锚层序——isolate 也是 backdrop root
+     trigger，会把 ::before 的采样一并截断（实测遮罩变黑） */
+  position: relative;
+  z-index: 0;
   border: 1px solid var(--pd-line-glass);
   box-shadow: var(--pd-inset-top), var(--pd-inset-bottom), var(--pd-elev-1);
   padding: 12px;
+}
+.pd-set-panel::before {
+  content: '';
+  position: absolute;
+  inset: -1px; /* 铺回 border-box——原 background 默认 clip 到 border 下 */
+  border-radius: inherit;
+  z-index: -1;
+  background: var(--pd-glass-2-bg);
+  backdrop-filter: var(--pd-glass-2-filter);
+  -webkit-backdrop-filter: var(--pd-glass-2-filter);
 }
 .pd-set-panel + .pd-set-panel {
   margin-top: 12px;
@@ -633,9 +648,16 @@
   transition: transform 160ms var(--pd-ease-out);
 }
 .pd-share-arrow.open { transform: rotate(180deg); }
-/* 菜单窄于模式菜单即可（无 hint 行），右对齐防溢出面板 */
+/* 菜单窄于模式菜单即可（无 hint 行），右对齐防溢出面板。向上展开：trigger 在
+   panel 最底 actions 行，向下展开悬在 panel 底缘 padding 区（backdrop 无物可磨）；
+   向上覆盖介绍卡片文字区，blur(28) 磨得到内容——与主视图 CLI 下拉同款玻璃时刻 */
 .pd-share-menu {
   min-width: 128px;
   left: auto;
   right: 0;
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 6px;
+  transform-origin: bottom center; /* pop-in 从锚点（下方 trigger）长出 */
 }

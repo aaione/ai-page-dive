@@ -674,10 +674,21 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   z-index: 20;
   /* r21：黑罩 → 重玻璃——alpha .72→.58 降遮黑、blur 32→40 雾更重、饱和 200%：
      透出的内容更多但更糊，「玻璃时刻」替代「遮黑时刻」（内容仍被压到不可读干扰以下） */
-  background: var(--pd-grain-soft) repeat, rgba(16,16,22,.58); /* r22：最重的雾补上砂——结构性三兄弟雾+砂双要件齐（零 ::before、零新面板） */
+  /* r47-fix：玻璃挪 ::before（同 .pd-set-panel）——本体持有 bf 是后代浮层的
+     backdrop root，settings 分享下拉的 blur 只能采样本遮罩输出、无物可磨。
+     不能用 isolation:isolate 锚 ::before——isolate 自己也是 backdrop root
+     trigger，会把 ::before 的采样一并截断（遮罩变不透明黑，实测）；z-index:20
+     本就建立 stacking context，锚层序不触发 backdrop root */
+  animation: pd-fade-in 180ms var(--pd-ease-out) both; /* r34-motion：弹层浮现 */
+}
+.pd-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--pd-grain-soft) repeat, rgba(16,16,22,.58); /* r22：最重的雾补上砂——结构性三兄弟雾+砂双要件齐（零新面板） */
   -webkit-backdrop-filter: blur(40px) saturate(200%);
   backdrop-filter: blur(40px) saturate(200%);
-  animation: pd-fade-in 180ms var(--pd-ease-out) both; /* r34-motion：弹层浮现 */
 }
 
 /* ══════════════════════════════════════════════
