@@ -317,18 +317,9 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 .pd-chat-action-btn:active, .pd-history-item-action:active, .pd-dropdown-item:active,
 .pd-dropdown-trigger:active { transform: scale(.96); }
 
-/* 前庭保护（WCAG 2.3.3）：系统「减少动态」偏好下进场动效与按压反馈全退场——
-   直接命中各应用点（应用点写的是 animation 简写而非通用类） */
-@media (prefers-reduced-motion: reduce) {
-  .pd-fade-in, .pd-fade-in-fast, .pd-rise-in, .pd-placeholder, .pd-placeholder-title,
-  .pd-placeholder-cta, .pd-placeholder-hint, .pd-chat-user, .pd-chat-assistant,
-  .pd-dropdown-menu, .pd-history-detail, .pd-history-item, .pd-overlay,
-  .pd-page-tips, .pd-attach-chips, .pd-attach-chip, .pd-action-bar-inner, .pd-bar-note { animation: none; }
-  .pd-exiting { animation: none !important; }
-  .pd-cta-primary:active, .pd-cta-ghost:active, .pd-set-btn:active, .pd-new-chat-btn:active,
-  .pd-chat-action-btn:active, .pd-history-item-action:active, .pd-dropdown-item:active,
-  .pd-dropdown-trigger:active { transform: none; }
-}
+/* r47-audit：原 prefers-reduced-motion 块在此处（多数动画声明之前）——@media 不加
+   优先级，同特异性下源顺序靠后者胜，animation:none 全被后文应用点覆盖而失效；
+   已整块移至文件末尾并加 !important，勿再挪回 */
 
 @keyframes pd-breathe { 0%,100% { opacity:.3 } 50% { opacity:1 } }
 @keyframes pd-pulse { 0%,100% { transform: scale(.7); opacity:.25 } 50% { transform: scale(1); opacity:1 } }
@@ -2130,4 +2121,24 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
 }
 .pd-onboarding-stuck strong {
   color: var(--pd-text-1);
+}
+
+/* r47-audit：前庭保护（WCAG 2.3.3）——系统「减少动态」下进场动效与按压反馈全退场。
+   本块必须置于文件末尾（所有动画声明之后）且加 !important：@media 不增加优先级，
+   同特异性时源顺序靠后者胜，早置或漏 !important 都会让降级被应用点覆盖（原块在
+   ~322 行因此全数失效）。pd-spin 豁免——loading 功能指示非装饰动效。 */
+@media (prefers-reduced-motion: reduce) {
+  .pd-fade-in, .pd-fade-in-fast, .pd-rise-in, .pd-placeholder, .pd-placeholder-title,
+  .pd-placeholder-cta, .pd-placeholder-hint, .pd-chat-user, .pd-chat-assistant,
+  .pd-dropdown-menu, .pd-history-detail, .pd-history-item, .pd-overlay,
+  .pd-page-tips, .pd-attach-chips, .pd-attach-chip, .pd-action-bar-inner,
+  .pd-bar-note, .pd-overlay::before { animation: none !important; }
+  /* r47-audit：无限脉冲光标（::before/::after 伪元素各自带动画，基类覆盖不到） */
+  .pd-chat-cursor::before, .pd-chat-cursor::after { animation: none !important; }
+  /* r47-audit：呼吸点降级为静态（keyframes 在 .3~1 间摆动，取中静态 .8 等价表达） */
+  .pd-dot { animation: none !important; opacity: .8; }
+  .pd-exiting { animation: none !important; }
+  .pd-cta-primary:active, .pd-cta-ghost:active, .pd-set-btn:active, .pd-new-chat-btn:active,
+  .pd-chat-action-btn:active, .pd-history-item-action:active, .pd-dropdown-item:active,
+  .pd-dropdown-trigger:active { transform: none !important; }
 }

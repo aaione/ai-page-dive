@@ -15,9 +15,9 @@
 
 ## 为什么是 PageDive
 
-- **开箱即用**——无账号、无 API key：直接复用终端里已登录的 CLI（claude / codex 全支持，opencode 实验档）
+- **开箱即用**——无账号、无 API key：直接复用终端里已登录的 CLI（claude / codex 双引擎；opencode 适配器已就绪，暂因 macOS 上游问题下架，见 [DECISIONS.md](DECISIONS.md)）
 - **只信本机**——正文经 Chrome Native Messaging 直交本机 CLI，无服务器、零遥测、不碰凭证（[PRIVACY.md](PRIVACY.md)）
-- **点到哪读到哪**——只申请 5 项权限、不申请 `<all_urls>`：activeTab 点哪读哪，其余页面零访问面
+- **点到哪读到哪**——安装时仅 5 项权限 + 1 项默认关闭的可选读取权限（用户主动开启），不申请 `<all_urls>`：默认 activeTab 点哪读哪，其余页面零访问面
 - **持续可玩**——快速摘要 / 深度研读 / 论文阅读 / 去 AI 味多档模式（`~/.ai-page-dive/workflows/` 可自定义新增）、markdown 流式输出、多轮追问、历史本地可恢复
 
 ## 快速开始（macOS + Chrome）
@@ -60,13 +60,13 @@ npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id <扩展ID>
 <details>
 <summary>和 Claude / ChatGPT 官方浏览器扩展有什么区别？</summary>
 
-三点：**① 厂商中立**——官方扩展只接自家模型，PageDive 是多引擎（claude / codex / opencode），哪家订阅在用哪家，随时可换；**② 无云桥中转**——官方扩展的页面数据经厂商云端桥接服务处理，PageDive 正文直交本机 CLI，不经任何桥接域名；**③ 零凭证**——PageDive 不碰 OAuth/token，只子进程调起你已登录的 CLI，host 代码开源可审计。
+三点：**① 厂商中立**——官方扩展只接自家模型，PageDive 是多引擎（claude / codex，opencode 适配器待上游修复后回归），哪家订阅在用哪家，随时可换；**② 无云桥中转**——官方扩展的页面数据经厂商云端桥接服务处理，PageDive 正文直交本机 CLI，不经任何桥接域名；**③ 零凭证**——PageDive 不碰 OAuth/token，只子进程调起你已登录的 CLI，host 代码开源可审计。
 </details>
 
 <details>
 <summary>支持哪些 CLI？支持 Windows 吗？</summary>
 
-v1 支持 claude 与 codex（完整支持）+ opencode（实验档，无进程级工具围栏，UI 有标注）；v1 仅支持 macOS + Chrome，Windows / Edge / Brave 在路线图上（[DECISIONS.md](DECISIONS.md)）。
+v1 支持 claude 与 codex 双引擎（完整支持）；opencode 适配器已就绪，暂因 macOS 上游 Gatekeeper 问题下架（详见 [DECISIONS.md](DECISIONS.md)）。v1 仅支持 macOS + Chrome，Windows / Edge / Brave 在路线图上（[DECISIONS.md](DECISIONS.md)）。
 </details>
 
 ## 开发者

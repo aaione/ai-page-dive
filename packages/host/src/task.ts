@@ -15,7 +15,8 @@ import { makeAgentCwd, spawnCli, type SpawnedProc } from './spawn.js'
 import { scheduleCleanup, writeContentFile } from './tmpfile.js'
 import { getWorkflow } from './workflows.js'
 
-const TASK_TIMEOUT_MS = 10 * 60_000
+// r47-audit：测试钩子——env 覆写任务超时（缺省/非法值兜底 10min，默认行为零变化），供短超时回归测试复现孙进程持写端场景
+const TASK_TIMEOUT_MS = Number(process.env.PAGEDIVE_TASK_TIMEOUT_MS) || 10 * 60_000
 
 /** CLI 会话 id → 首轮 spawn cwd 的映射（追问用）。r7-review 现状澄清：当前三适配器下 value 恒为 stableCwd（唯一走 mkdtemp 的 opencode 不产 meta 事件）——「未来按会话隔离 cwd 的引擎」预留，届时 resume 取回同 cwd 才承重。 */
 const sessionCwds = new Map<string, string>()
@@ -256,6 +257,29 @@ export class Task {
       this.finished = true
       this.timeoutSent = true
       this.flushDelta() // timeout 不经 finish()：终局前发完缓冲尾巴
+      // r47-audit（M4 超时误杀）：result 成功帧已解析（gotResultOk）但进程未退出——典型如
+      // CLI 工具孙进程持 stdout 写端（r33 机制）——时，到点仍走 onError('timeout') +
+      // persist('interrupted')，用户看到失败但结果已完整交付。已交付则改走成功终局
+      // （与 finish() 成功路径同款：persist('done') + onDone），收割照旧
+      if (this.gotResultOk && this.accText) {
+        if (!this.input.resumeSessionId) {
+          this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
+        }
+        void (async () => {
+          await this.persist('done') // 落盘完成再发终局（对齐 isError 路径的持久化语义）
+          this.cb.onDone({
+            historyPath: this.effectiveHistoryPath,
+            isError: false,
+            usage: this.usage,
+            durationMs: Date.now() - this.startedAt,
+            model: this.meta?.model,
+            sessionId: this.meta?.sessionId,
+          })
+        })()
+        this.cleanupCwd()
+        this.proc?.reap()
+        return
+      }
       this.cb.onError('timeout', `task exceeded ${TASK_TIMEOUT_MS / 60_000}min`)
       // 部分输出落盘（对称于 cancel 路径）；不 await——persist 在事件循环里自然完成
       if (!this.input.resumeSessionId) {
@@ -283,6 +307,10 @@ export class Task {
         if (!this.finished) {
           this.finished = true
           clearTimeout(this.timeoutTimer)
+          // r47-audit（M5 终局不对称）：其余四条终局（cancel/isError/timeout/spawn 窗口取消）均
+          // reap，error 分支此前缺失——detached 进程组泄漏烧配额；且先收割再删 cwd（对齐
+          // 上方 cancelled 分支顺序，防删正在运行进程的工作目录）
+          this.proc?.reap()
           this.cleanupCwd()
           resolve()
           this.cb.onError('spawn-fail', 'child runtime error')

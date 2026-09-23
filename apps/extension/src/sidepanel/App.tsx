@@ -38,6 +38,9 @@ export interface ChatMessage {
   attachments?: { name: string; kind?: 'text' | 'image' }[]
   /** 本轮注入 prompt 的技能名（r37-ux：技能开启此前零反馈——气泡下徽标行让每轮生效可见） */
   skills?: string[]
+  /** r47-audit M1：本轮为一键总结（空输入 CTA）时的执行档位（deep/quick）——失败回填
+   * 据此恢复档位，不把气泡标签（如「深度总结本页」）字面塞回输入框当 instruction 重发 */
+  wf?: string
   streaming?: boolean
   model?: string
   usage?: { inputTokens?: number; outputTokens?: number }
@@ -84,12 +87,23 @@ export interface TaskStreamState {
    * 「此前对话已清空」并解锁追问（接续原会话上下文）；beginTurn 展 BLANK 自然清除 */
   reopened?: boolean
   /** 终局异常（看门狗/断连）时回填输入框的文本 + 递增序号（r8-ux：发送时输入框
-   * 已清空，无回填则重试只能对着气泡手抄；n 递增使同文本两次终局也触发 effect） */
-  refill?: { n: number; text: string }
+   * 已清空，无回填则重试只能对着气泡手抄；n 递增使同文本两次终局也触发 effect）。
+   * r47-audit M1：wf = 失败轮为一键总结（空输入 CTA）时的执行档位——SummarizeView
+   * 据此恢复发送档位而非回填标签文本（text 置空） */
+  refill?: { n: number; text: string; wf?: string }
 }
 
 const BLANK: TaskStreamState = {
   taskId: null, messages: [], activeId: null, pending: false, finished: [], phase: '', done: false, resumable: false, aliveAt: 0,
+}
+
+/** r47-audit M1：失败终局回填统一构造——wf 轮（空输入 CTA）text 置空并携带档位：
+ * 曾把气泡标签「深度总结本页」字面回填输入框，重发时 instruction=标签文本、
+ * host 侧 deep 模板被整体绕过（r44 同族漏网路径）。看门狗/is_error/task-error/
+ * 断连 4 处终局共用，防单点漏改复发 */
+function refillFor(s: TaskStreamState, lu?: ChatMessage): { n: number; text: string; wf?: string } | undefined {
+  if (!lu || !(lu.text || lu.attachments?.length)) return undefined
+  return { n: (s.refill?.n ?? 0) + 1, text: lu.wf ? '' : lu.text, ...(lu.wf ? { wf: lu.wf } : {}) }
 }
 
 export interface PageMeta {
@@ -181,6 +195,8 @@ export function App() {
         if (s.activeId === null && !s.pending) return s
         // r8-ux：把本轮问题放回输入框（发送时已清空）——重发不必对着气泡手抄
         const lastUser = [...s.messages].reverse().find((m) => m.role === 'user')
+        // r47-audit M1：refill 构造收敛 refillFor（wf 轮 text 置空 + 携带档位）
+        const rf = refillFor(s, lastUser)
         return {
           ...s,
           taskId: null,
@@ -189,7 +205,7 @@ export function App() {
           activeId: null,
           // r46（review P2）：条件扩到附件-only 轮（空 text + 有附件也回填，附件由
           // SummarizeView 的 lastAttsRef 快照还原）
-          ...(lastUser && (lastUser.text || lastUser.attachments?.length) ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lastUser.text } } : {}),
+          ...(rf ? { refill: rf } : {}),
           // 记 finished：真 host 若稍后复活，迟到 chunk 不得重开矛盾气泡（R2-m3 兜底）
           finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
           messages: [
@@ -470,10 +486,9 @@ export function App() {
               // SummarizeView 的快照 ref 还原，见 lastAttsRef）
               ...(m.isError
                 ? (() => {
-                    const lu = [...s.messages].reverse().find((x) => x.role === 'user')
-                    return lu && (lu.text || lu.attachments?.length)
-                      ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lu.text } }
-                      : {}
+                    // r47-audit M1：refill 构造收敛 refillFor（wf 轮 text 置空 + 携带档位）
+                    const rf = refillFor(s, [...s.messages].reverse().find((x) => x.role === 'user'))
+                    return rf ? { refill: rf } : {}
                   })()
                 : {}),
               messages: s.messages.map((msg) =>
@@ -544,7 +559,9 @@ export function App() {
             // 可重试失败不必对着气泡手抄重敲。cancelled 不回填（用户主动放弃）。
             // r46：条件扩到附件-only 轮（text 空串 + 有附件也回填）
             const lastUser = [...s.messages].reverse().find((msg) => msg.role === 'user')
-            const canRefill = m.code !== 'cancelled' && !!(lastUser?.text || lastUser?.attachments?.length)
+            // r47-audit M1：refill 构造收敛 refillFor（wf 轮 text 置空 + 携带档位）；
+            // cancelled 不回填（用户主动放弃）保持原语义
+            const rf = m.code !== 'cancelled' ? refillFor(s, lastUser) : undefined
             return {
               ...s,
               taskId: null,
@@ -552,7 +569,7 @@ export function App() {
               finished: [...s.finished, m.taskId].slice(-8),
               done: true,
               activeId: null,
-              ...(canRefill ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lastUser!.text } } : {}),
+              ...(rf ? { refill: rf } : {}),
               messages,
             }
           })
@@ -581,6 +598,8 @@ export function App() {
             const needBubble = s.pending
             // r8-ux：断连终局同样回填本轮问题（与看门狗判死同式）
             const lastUser = [...s.messages].reverse().find((msg) => msg.role === 'user')
+            // r47-audit M1：refill 构造收敛 refillFor（wf 轮 text 置空 + 携带档位）
+            const rf = refillFor(s, lastUser)
             return {
               ...s,
               taskId: null,
@@ -589,7 +608,7 @@ export function App() {
               activeId: null,
               // r46（review P2）：条件扩到附件-only 轮（空 text + 有附件也回填，附件由
           // SummarizeView 的 lastAttsRef 快照还原）
-          ...(lastUser && (lastUser.text || lastUser.attachments?.length) ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lastUser.text } } : {}),
+          ...(rf ? { refill: rf } : {}),
               finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
               messages: needBubble
                 ? [...messages, { id: `e${Date.now()}`, role: 'assistant' as const, text: '', error: TEXT, isError: true }]
@@ -679,7 +698,7 @@ export function App() {
    * pending=true：send 后到首个任务帧前的窗口里 running 判定靠它兜住（防双发）。
    * resumable 是会话级字段：追问轮间保留（F1——曾随 BLANK 清零，失败窗口后
    * 下一句追问静默降级全新总结 + 下拉解锁闪变） */
-  const beginTurn = useCallback((text: string, attachments?: { name: string; kind?: 'text' | 'image' }[], skills?: string[]) => {
+  const beginTurn = useCallback((text: string, attachments?: { name: string; kind?: 'text' | 'image' }[], skills?: string[], wf?: string) => {
     setStream((s) => ({
       ...BLANK,
       pending: true,
@@ -688,7 +707,8 @@ export function App() {
       // 迟到 cancelled 回调无从对账而击穿 pending 态；台账只拒同 taskId，新 id 不撞
       finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
       aliveAt: Date.now(), // 看门狗起点：发送即计时，首个 host 帧/心跳到达前靠它兜住
-      messages: [...s.messages, { id: `u${Date.now()}`, role: 'user', text, ...(attachments?.length ? { attachments } : {}), ...(skills?.length ? { skills } : {}) }],
+      // r47-audit M1：wf = 一键总结（空输入 CTA）轮的执行档位——失败回填据此恢复
+      messages: [...s.messages, { id: `u${Date.now()}`, role: 'user', text, ...(attachments?.length ? { attachments } : {}), ...(skills?.length ? { skills } : {}), ...(wf ? { wf } : {}) }],
     }))
   }, [])
 

@@ -809,7 +809,7 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
                     >
                       {SHARE_SITES.map(([k, label]) => (
                         <li key={k} role="option" aria-selected={false}>
-                          <button className="pd-dropdown-item" onClick={() => { shareTo(k); setShareOpen(false) }}>
+                          <button className="pd-dropdown-item" onClick={() => { shareTo(k); closeShare() }}> {/* r47-audit M12：close() 还焦 trigger（setShareOpen(false) 焦点丢 body） */}
                             <span className="pd-dropdown-item-label">{label}</span>
                           </button>
                         </li>

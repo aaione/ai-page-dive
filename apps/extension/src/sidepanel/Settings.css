@@ -136,9 +136,11 @@
 .pd-set-body.back .pd-set-pane {
   animation-name: pd-set-fade-in-back;
 }
-/* 前庭保护（与 index.css 全局块对称——本文件动画独立维护，需各自覆盖） */
+/* 前庭保护（与 index.css 全局块对称——本文件动画独立维护，需各自覆盖）。
+   r47-audit：!important 必需——上方 .pd-set-body.back .pd-set-pane（后退切 tab）
+   特异性 0,3,0 只写 animation-name，会压过本块 0,1,0 的 animation:none 简写 */
 @media (prefers-reduced-motion: reduce) {
-  .pd-set-pane { animation: none; }
+  .pd-set-pane { animation: none !important; }
 }
 
 /* ── 面板（列表/表单容器通用，r15 表面玻璃：叠层微光 + blur 磨砂；

@@ -12,7 +12,7 @@ interface Props {
   agentId: string
   onAgentChange: (id: string) => void
   onStartResult: (resp: { error?: string; [k: string]: unknown }) => void
-  beginTurn: (text: string, attachments?: { name: string; kind?: 'text' | 'image' }[], skills?: string[]) => void
+  beginTurn: (text: string, attachments?: { name: string; kind?: 'text' | 'image' }[], skills?: string[], wf?: string) => void
   beginSession: () => void
   pageMeta: PageMeta | null
   /** 会话是否可追问（CLI 回带过 sessionId）：codex 无 sessionId → false，关掉假追问入口 */
@@ -106,7 +106,11 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const [workflow, setWorkflowState] = useState(() => {
     try { return localStorage.getItem('pd-workflow') || 'default' } catch { return 'default' }
   })
+  // r47-audit M1：CTA 轮失败回填恢复的发送档位——send() 空输入重发时优先于 r44 的
+  // 强制 deep（quick CTA 失败后 Enter 跑 deep = 同族档位漂移）；用户显式切档即失效
+  const ctaRetryWf = useRef<string | null>(null)
   const setWorkflow = (wf: string) => {
+    ctaRetryWf.current = null // 用户显式选档优先于回填恢复的档位
     setWorkflowState(wf)
     try { localStorage.setItem('pd-workflow', wf) } catch { /* quota 等 */ }
   }
@@ -153,10 +157,22 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   // 附件时不覆写（同草稿语义）
   const lastAttsRef = useRef<Att[]>([])
   const lastRefill = useRef(0)
+  // r47-audit M1：CTA 轮（refill.wf 有值、text 为空）的回填指引——「已放回输入框」
+  // 对空回填是空承诺，note 指明等效重发路径（hero CTA 已随首条气泡卸载）
+  const [retryNote, setRetryNote] = useState('')
+  const armCtaRetry = (wf: string) => {
+    setWorkflow(wf) // 选择器同步显示重试将跑的档（setWorkflow 会清 ctaRetryWf，随后再置）
+    ctaRetryWf.current = wf
+    setRetryNote(`「${WF_LABEL[wf] ?? wf}」未完成——直接按 Enter 以原档位重试`)
+  }
   useEffect(() => {
     if (stream.refill && stream.refill.n !== lastRefill.current) {
       lastRefill.current = stream.refill.n
-      setInput((cur) => cur.trim() ? cur : stream.refill!.text)
+      const r = stream.refill
+      // r47-audit M1：带 wf = 失败轮为一键总结（空输入 CTA）——不回填标签文本（曾把
+      // 「深度总结本页」字面当 instruction 重发，deep 模板被整体绕过），恢复发送档位
+      if (r.wf) armCtaRetry(r.wf)
+      setInput((cur) => cur.trim() ? cur : r.text)
       setAttachments((cur) => (cur.length ? cur : lastAttsRef.current))
       if (!input.trim()) inputRef.current?.focus()
     }
@@ -238,13 +254,16 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
    * 不回填则用户得凭记忆重敲。判据与 App 的迟到回调守卫同向（r7-review）：
    * 带 taskId 的错误与当前绑定比对（旧轮 taskId≠当前 → 新一轮运行中，旧文本
    * 不得覆写用户预输入）；无 taskId（SW 提取期即失败）要求本轮仍 pending */
-  function refillOnFailure(resp: { error?: string; taskId?: string }, text: string, atts: Att[]) {
+  function refillOnFailure(resp: { error?: string; taskId?: string }, text: string, atts: Att[], wf?: string) {
     return () => {
       const s = streamRef.current
       const mine = typeof resp.taskId === 'string' ? resp.taskId === s.taskId : s.pending
       if (!mine) return
       setInput(text)
       if (atts.length) setAttachments(atts)
+      // r47-audit M1：CTA 轮此路径 text 本就为空串（无标签泄漏），但档位恢复不能漏——
+      // 与 App 侧 4 处 refill 终局同语义（SW 提取期即失败也走这里）
+      if (wf) armCtaRetry(wf)
     }
   }
 
@@ -270,14 +289,24 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // r46-user：default 不再硬映射 deep——「默认模式」= 不套预设 prompt、用户输入
     // 即任务段（host `instruction || wfBody` 优先级保证）；附件轮 instruction 有
     // 占位文本、追问轮走 followUp 不带 workflow，均无「default 未命中兜底」路径
-    const wf = forceWf ?? (!text && !attachments.length && !hasSession ? 'deep' : workflow)
+    // r47-audit M1：isCta = 空输入+无附件+无会话的一键总结轮（气泡文本是档位标签
+    // 而非用户输入）——在用户消息上记 wf，失败回填据此恢复档位而非回填标签文本
+    const isCta = !text && !attachments.length && !hasSession
+    // r47-audit M1：空输入重发优先用回填恢复的档位（ctaRetryWf，防 quick CTA 失败后
+    // Enter 落回强制 deep 的档位漂移）；无恢复时保持 r44 F2 强制 deep 不变
+    const wf = forceWf ?? (!text && !attachments.length && !hasSession ? (ctaRetryWf.current ?? 'deep') : workflow)
+    // r47-audit：ctaRetryWf 消费即清（陈旧档位跨会话泄漏——重试成功后经「新对话」
+    // 再空输入 Enter，会静默跑旧 quick 而非 r44 F2 强制 deep）；本轮若失败，
+    // refill→armCtaRetry 会重臂，无失效风险
+    if (!forceWf) ctaRetryWf.current = null
     const bubbleText =
       text || (hasSession || attachments.length ? '' : `${WF_LABEL[wf] ?? '深度总结'}本页`)
     const skills = getEnabledSkills()
     // r42：技能只随首轮 prompt 注入（host !isResume 才读技能正文）——追问轮不带，
     // 气泡徽标也只标实际注入的轮次（此前追问轮也亮徽标 = 虚假标注）
-    beginTurn(bubbleText, attachments.map((a) => ({ name: a.name, kind: a.kind })), hasSession ? undefined : skills)
+    beginTurn(bubbleText, attachments.map((a) => ({ name: a.name, kind: a.kind })), hasSession ? undefined : skills, isCta ? wf : undefined)
     setAttachNotice('') // 提示已在输入区即时展示（r4-ux F3），发送即消费
+    setRetryNote('') // r47-audit M1：重试指引随发送消费
     setInput('')
     const atts = attachments
     lastAttsRef.current = atts // r46（review P2）：终局回填附件用的完整快照（与本轮气泡一致，空轮即空）
@@ -293,7 +322,14 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           if (!chrome.runtime.lastError && resp) {
             if (resp.agentId) setFollowAgent(resp.agentId)
             onStartResult(resp)
-            if (resp.error && resp.error !== 'cancelled') refillOnFailure(resp, text, atts)()
+            if (resp.error && resp.error !== 'cancelled') refillOnFailure(resp, text, atts, isCta ? wf : undefined)()
+          } else {
+            // r47-audit M2：SW 唤不醒（lastError 非空/resp undefined）——beginTurn 已置
+            // pending+清输入，静默只能等 120s 看门狗；立即走 host-not-found-retry 错误链
+            // （App 文案 + refillOnFailure 回填，resp 无 taskId 时守卫看 s.pending 仍过）
+            const fake = { error: 'host-not-found-retry' }
+            onStartResult(fake)
+            refillOnFailure(fake, text, atts, isCta ? wf : undefined)()
           }
         },
       )
@@ -307,7 +343,12 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             onStartResult(resp)
-            if (resp.error && resp.error !== 'cancelled') refillOnFailure(resp, text, atts)()
+            if (resp.error && resp.error !== 'cancelled') refillOnFailure(resp, text, atts, isCta ? wf : undefined)()
+          } else {
+            // r47-audit M2：同追问轮分支——SW 唤不醒时立即报错+回填，不等看门狗
+            const fake = { error: 'host-not-found-retry' }
+            onStartResult(fake)
+            refillOnFailure(fake, text, atts, isCta ? wf : undefined)()
           }
         },
       )
@@ -381,6 +422,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // followAgent 不重置会让新会话头部/下拉显示上一会话遗留的 CLI（claude 追问过后
     // 切 codex 首轮，头部仍显示 claude——显示与真实执行不符）
     setFollowAgent(null)
+    // r47-audit：新对话清 CTA 重试档与指引——跨会话残留会让全新空输入总结静默跑
+    // 上一会话失败 CTA 的旧档位（r44 F2 同族防御）
+    ctaRetryWf.current = null
+    setRetryNote('')
     chrome.runtime.sendMessage({ t: 'new-session' }).catch(() => {})
   }, [beginSession])
 
@@ -573,6 +618,13 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             {attachNotice}
           </p>
         )}
+        {retryNote && (
+          // r47-audit M1：CTA 轮失败回填不落标签文本（防重发成字面 instruction），
+          // 错误气泡的「已放回输入框」对空回填是空承诺——note 指明等效重发路径
+          <p role="note" className="pd-bar-note">
+            {retryNote}
+          </p>
+        )}
         <ActionBar
           input={input}
           workflowNotice={
@@ -651,7 +703,7 @@ function WorkflowDropdown({
           {workflows.map((w) => (
             <li key={w.name} role="option" aria-selected={w.name === workflow}>
               <button
-                onClick={() => { onWorkflowChange(w.name); setOpen(false) }}
+                onClick={() => { onWorkflowChange(w.name); closeMenu() }} // r47-audit M12：close() 还焦 trigger（setOpen(false) 焦点丢 body）
                 tabIndex={w.name === workflow ? 0 : -1}
                 className={`pd-dropdown-item ${w.name === workflow ? 'selected' : ''}`}
               >
@@ -890,7 +942,7 @@ export function ModelDropdown({
           {items.map((it) => (
             <li key={it.key} role="option" aria-selected={it.key === value}>
               <button
-                onClick={() => { onChange(it.key); setOpen(false) }}
+                onClick={() => { onChange(it.key); closeMenu() }} // r47-audit M12：close() 还焦 trigger（setOpen(false) 焦点丢 body）
                 tabIndex={it.key === value ? 0 : -1}
                 className={`pd-dropdown-item ${it.key === value ? 'selected' : ''}`}
               >
