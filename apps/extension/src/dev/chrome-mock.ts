@@ -6,6 +6,7 @@
  * 场景参数（URL query）：
  *   ?unsupported=1  受限页（F4 验证：输入区置灰）
  *   ?noskills=1     忽略 localStorage 技能预置（F1 对照组）
+ *   ?noextract=1    启动前失败（r46 验证：no-permission 气泡不得带「CLI 报告运行失败」前缀）
  * 任务流：点「深度总结本页」后 mock 广播 reading→thinking→4 段流式 chunk→done，
  * 全程 ~2.4s，可验证 running 态（I3 两步确认/I1 禁用视觉/enterHint）与完成态。
  */
@@ -83,7 +84,10 @@ function route(msg: any): unknown {
     if (m?.t === 'workflow-read') setTimeout(() => cast({ t: 'workflow-file', name: m.name, content: WORKFLOWS.find((w) => w.name === m.name)?.description ?? '' }), 30)
     return undefined
   }
-  if (msg?.t === 'summarize') return { agentId: 'claude', taskId: runFakeTask() }
+  if (msg?.t === 'summarize') {
+    if (q.get('noextract')) return { error: 'no-permission' }
+    return { agentId: 'claude', taskId: runFakeTask() }
+  }
   return undefined
 }
 

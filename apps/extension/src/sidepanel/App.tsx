@@ -47,6 +47,10 @@ export interface ChatMessage {
   isError?: boolean
   /** 用户主动停止等非故障终局：红样式保留但不带「CLI 报告运行失败」前缀（r5-ux） */
   cancelled?: boolean
+  /** 真 CLI 运行失败（task-error / task-done is_error）才带「CLI 报告运行失败」前缀——
+   *  提取授权失效/输入校验/NM 断连等启动前失败 CLI 根本没跑，不得错怪（r46：
+   *  no-permission 曾显示「CLI 报告运行失败」自相矛盾） */
+  cliFault?: boolean
   /** 本次回答观测到 chunk 丢片（host seq 跳变）：终局后提示「内容可能不完整」（r6-ux） */
   incomplete?: boolean
   agentId?: string
@@ -431,6 +435,7 @@ export function App() {
                       ...msg,
                       streaming: false,
                       isError: m.isError,
+                      cliFault: m.isError,
                       error: m.isError ? authHint(m.errorText ?? 'CLI 运行内失败') : null,
                       usage: m.usage,
                       durationMs: m.durationMs,
@@ -478,6 +483,7 @@ export function App() {
                           : '已取消'
                         : `${ERROR_LABEL[m.code] ?? m.code}: ${authHint(m.message)}`,
                     isError: true,
+                    cliFault: m.code !== 'cancelled',
                     cancelled: m.code === 'cancelled',
                   }
                 : msg,

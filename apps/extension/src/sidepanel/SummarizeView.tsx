@@ -700,7 +700,7 @@ const AssistantMessage = memo(function AssistantMessage({
             <path d="M8 11.2v.1" />
           </svg>
           <span>
-            {msg.isError && !msg.cancelled ? 'CLI 报告运行失败：' : ''}
+            {msg.cliFault ? 'CLI 报告运行失败：' : ''}
             {msg.error}
           </span>
         </div>
