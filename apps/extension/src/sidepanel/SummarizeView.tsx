@@ -222,10 +222,12 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     const order: Record<string, number> = { quick: 0, deep: 1, paper: 2 }
     // 已知名单按预设序，未知的垫底 9 附近按名称字典序微调（?? 优先级低于 +，括号显式化）
     const rest = [...(workflows.length ? workflows : [{ name: 'quick', description: '快速摘要', builtin: true }])]
-      .sort((a, b) =>
-        (order[a.name] ?? (9 + a.name.localeCompare(b.name))) -
-        (order[b.name] ?? (9 + b.name.localeCompare(b.name))),
-      )
+      .sort((a, b) => {
+        // r47-ux：曾写 b.name.localeCompare(b.name) 恒为 0——未知 workflow 排序碰巧才对
+        const ao = order[a.name] ?? 9
+        const bo = order[b.name] ?? 9
+        return ao - bo || a.name.localeCompare(b.name)
+      })
     // 「留空则深度总结」与发送侧对齐（空输入首轮 → 'deep'）：曾写
     // 「留空则快速摘要」，用户按文案留空预期快速档，实际跑最慢最贵的 deep
     // r46-user：default 文案随语义恢复——不套预设提示词，输入即指令
@@ -694,11 +696,16 @@ const AssistantMessage = memo(function AssistantMessage({
             version/model/token 数等机器量；曾用 pd-mono 与模式下拉/触发器不协调） */}
         <span className="pd-chat-model">{agentId}</span>
         {/* r8-ux：订阅用量可见性——产品核心卖点是「复用你自己的 CLI 订阅」，每轮烧多少 token 应有出口 */}
-        {!running && (msg.usage || msg.durationMs) && (
+        {!running && (msg.usage || msg.durationMs != null) && (
           <span className="pd-chat-usage">
-            {msg.usage?.inputTokens != null && `${fmtK(msg.usage.inputTokens)}↑`}
-            {msg.usage?.outputTokens != null && ` ${fmtK(msg.usage.outputTokens)}↓`}
-            {msg.durationMs != null && ` · ${(msg.durationMs / 1000).toFixed(1)}s`}
+            {/* r47-ux：无 token 只有耗时时常出现悬空「· 8.2s」——前置片段为空时不加分隔符 */}
+            {(() => {
+              const bits: string[] = []
+              if (msg.usage?.inputTokens != null) bits.push(`${fmtK(msg.usage.inputTokens)}↑`)
+              if (msg.usage?.outputTokens != null) bits.push(`${fmtK(msg.usage.outputTokens)}↓`)
+              if (msg.durationMs != null) bits.push(`${(msg.durationMs / 1000).toFixed(1)}s`)
+              return bits.join(' · ')
+            })()}
           </span>
         )}
         {running && (
