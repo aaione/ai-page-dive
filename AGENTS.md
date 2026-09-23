@@ -30,7 +30,7 @@ pnpm monorepo：
 2. CLI 的 prompt/正文**一律走 stdin**（argv 有长度上限）；正文写本地临时文件，prompt 给路径
 3. **零凭证接触**：只子进程调起用户自己登录的未修改官方 CLI 二进制；不碰 token/OAuth、不代理流量、永不对 CLI 用量收费
 4. claude 的运行内失败打在 stdout（`is_error`），不能只看退出码
-5. host 是薄壳（目标 <2k 行 Node）：per-connection spawn、幂等、pgid 收割进程树、流归一化、≤1MB chunk 分片
+5. host 是薄壳（运行时 <2.2k 行 Node，CI 断言 `scripts/check-host-lines.mjs`）：per-connection spawn、幂等、pgid 收割进程树、流归一化、≤1MB chunk 分片（2026-09-23 修订：原 <2k 被真实业务代码撑破，重校准到 2.2k 并把统计口径改成「host 进程跑的总代码量」——跨 workspace 包一并计入，拆包不再是绕过红线的后门。**再破线时删功能，不要再抬阈值**）
 6. v1 = macOS + Chrome；claude + codex 双适配器 + opencode 实验档（2026-09-16 修订，见 DECISIONS.md D5——opencode 无进程级工具围栏，UI 标注实验）
 7. 历史落盘 `~/.ai-page-dive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）；workflow 在 `~/.ai-page-dive/workflows/`、技能在 `~/.ai-page-dive/skills/`
 

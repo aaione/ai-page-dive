@@ -3,7 +3,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
-import { Task, attachSection, buildOutline, buildPrompt, expandWorkflowPlaceholders } from '../src/task.js'
+import { Task } from '../src/task.js'
+// r47-arch：prompt 组装层已从 task.ts 拆出（纯函数、无 IO、可独立单测）
+import { attachSection, buildOutline, buildPrompt, expandWorkflowPlaceholders } from '../src/prompt.js'
 import { MAX_CHUNK } from '../src/nmconst.js'
 
 // nmconst 与 shared 的 MAX_CHUNK 是同一契约的两份拷贝（shared 不随 npm 包发布），

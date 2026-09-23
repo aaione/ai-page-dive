@@ -31,7 +31,8 @@
 
 - 提取管线：Readability → DOMPurify → Turndown(GFM)；站点适配器（arXiv/YT/文档站）打样；innerText 兜底
 - 正文全量写本地临时文件，prompt 给文件路径 + 大纲 + 元数据，agent 自主分段读取
-- host：薄壳 Node（<2k 行），per-connection spawn、幂等、pgid 进程树收割、流归一化、≤1MB chunk
+- host：薄壳 Node（运行时 <2.2k 行，CI 断言），per-connection spawn、幂等、pgid 进程树收割、流归一化、≤1MB chunk
+  - 2026-09-23 重校准：阈值 2k → 2.2k。2k 是立项时拍的数，r47 被真实业务代码撑破（2039 行，CI 转红）；同时把统计口径从「packages/host/src 目录行数」改成「host 进程运行时代码总量」（ROOTS 可跨包 + 断言 host 运行时零依赖），堵掉「拆个新包就过线、而 host 该跑的代码一行没少」的后门。**阈值到此为止——下次破线的正确响应是删功能或删注释，反复上调的红线等于没有红线。**
 - CLI 运行内失败打 stdout（claude）——必须解析 `is_error`，不能只看退出码
 - workflow 机制：`~/.ai-page-dive/workflows/<name>/WORKFLOW.md`（frontmatter + 正文即 prompt），目录即插件、懒扫描，用户目录 shadow 内置同名
 - 合规红线：只子进程调起未修改官方 CLI 二进制、用户自己登录、零凭证接触、零流量代理、永不对 CLI 用量收费

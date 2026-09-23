@@ -1,4 +1,4 @@
-# 最小 CI（r6-arch blocker）：host <2000 行红线此前只靠本地自觉——
+# 最小 CI（r6-arch blocker）：host 行数红线此前只靠本地自觉——
 # scripts/ 豁免后门 + 本地可跳过 = push 无拦截。本 workflow 把
 # 「行数红线 + 类型检查 + 全量测试」变成 main/PR 的硬门禁。
 name: CI
