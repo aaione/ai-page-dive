@@ -274,10 +274,15 @@ export class Task {
         await this.finish(code, signal, stderrTail, contentFile)
         resolve()
       })
-      // spawn 成功后的运行期错误（罕见）：兜底收割
+      // spawn 成功后的运行期错误（罕见）：兜底收割。
+      // r46（review C7）：与其余终局路径（isError/timeout/cancel/finish）对称——补
+      // timer 清理与 cwd 回收，防 mkdtemp 临时目录泄漏（timeoutTimer 有 finished
+      // 守卫自无害，cwd 泄漏是真损失）
       this.proc!.child.on('error', () => {
         if (!this.finished) {
           this.finished = true
+          clearTimeout(this.timeoutTimer)
+          this.cleanupCwd()
           resolve()
           this.cb.onError('spawn-fail', 'child runtime error')
         }
@@ -331,7 +336,10 @@ export class Task {
           this.cb.onDone({
             historyPath: this.effectiveHistoryPath,
             isError: true,
-            errorText: ev.text,
+            // r46（review C9）：无上限直接进帧——>1MB 时 encodeFrame throw、终局帧
+            // 被静默丢弃、面板永久 running。截断保终局帧恒可达（历史读取路径已有
+            // 同款截断，此处补齐不对称）；诊断用途下 4000 字符绰绰有余
+            errorText: ev.text.slice(0, 4000),
             usage: this.usage,
             durationMs: Date.now() - this.startedAt,
             model: this.meta?.model,

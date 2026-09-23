@@ -409,6 +409,12 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           </svg>
           <span>{confirmNew ? '确认结束？' : '新对话'}</span>
         </button>
+        {/* r46（review C6）：读屏器不自动播报已聚焦按钮的 name 变化——两步确认
+            首击零反馈，3.5s 窗口内 SR 用户会误以为按钮失效。sr-only status 与
+            「本轮已完成」播报同谱（r31-a11y） */}
+        {confirmNew && (
+          <span className="pd-sr-only" role="status">再次点击以确认结束当前对话</span>
+        )}
         <ModelDropdown
           // sessionAgentId 兜底（r7-review）：重开面板后首问尚未发生（followAgent
           // 未回带），显示 SW 活会话真实归属的 CLI——显示与执行一致

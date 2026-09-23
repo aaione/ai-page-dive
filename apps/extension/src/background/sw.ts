@@ -276,6 +276,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     panelWindowId = null
     target = null
     persistSession()
+  } else {
+    // r46（review C1）：非锚 tab 关闭同样落盘——否则下一次 onActivated 的
+    // restoreSession 把死条目从旧持久化态灌回，清理失效且 sessions/disabledTabs
+    // 无界增长（锚分支自己的 persistSession 在上方，时机靠后含置 null 序列化）
+    persistSession()
   }
 })
 

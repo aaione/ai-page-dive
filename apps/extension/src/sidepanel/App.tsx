@@ -245,14 +245,16 @@ export function App() {
           if (hp && !resp?.activeTask) {
             restorePathRef.current = hp
             chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: hp } }).catch(() => {})
-            // 还原失败兜底（文件被删 / host 无回帧）：5s 后仍无 history-file 则退回
-            // reopened 提示语义——绝不让追问入口锁死在中间态
+            // 还原失败兜底（文件被删 / host 无回帧）：12s 后仍无 history-file 则退回
+            // reopened 提示语义——绝不让追问入口锁死在中间态。
+            // r46（review P6）：原 5s < host 冷启动可达 8s（nmport 自注释）——慢 spawn
+            // 时迟到的还原帧被丢弃且误报「对话已清空」，兜底必须宽于重 spawn 窗口
             setTimeout(() => {
               if (restorePathRef.current === hp) {
                 restorePathRef.current = null
                 setStream((s) => ({ ...s, resumable: true, reopened: true }))
               }
-            }, 5_000)
+            }, 12_000)
           } else {
             setStream((s) => ({
               ...s,
@@ -509,9 +511,14 @@ export function App() {
                         ? m.message && m.message !== '已取消'
                           ? m.message
                           : '已取消'
-                        : `${ERROR_LABEL[m.code] ?? m.code}: ${authHint(m.message)}`,
+                        // r46（activetab-analysis P3）：content-mismatch 是 NM 传输
+                        // 丢片非 CLI 故障——SW 下发的 message 已是完整文案，再拼
+                        // ERROR_LABEL 会「正文传输不完整」重复两遍；单用 message
+                        : m.code === 'content-mismatch' && m.message
+                          ? m.message
+                          : `${ERROR_LABEL[m.code] ?? m.code}: ${authHint(m.message)}`,
                     isError: true,
-                    cliFault: m.code !== 'cancelled',
+                    cliFault: m.code !== 'cancelled' && m.code !== 'content-mismatch',
                     cancelled: m.code === 'cancelled',
                   }
                 : msg,
