@@ -733,6 +733,7 @@ const AssistantMessage = memo(function AssistantMessage({
           </span>
         </div>
       )}
+      {!running && msg.grantHost && <GrantHostRow />}
       {!running && msg.incomplete && (
         // r6-ux：chunk seq 跳变（传输丢片）——任务本身成功，但正文可能缺头，
         // 弱于 error 的提示（pd-warn 黄），不阻断复制/下载
@@ -751,6 +752,29 @@ const AssistantMessage = memo(function AssistantMessage({
     </div>
   )
 })
+
+/** no-permission 气泡内嵌授权行（r47：设置页入口删除后的唯一授予出口——
+ *  出错现场情境化，点击即手势满足 permissions.request 约束） */
+function GrantHostRow() {
+  const [granted, setGranted] = useState(false)
+  if (granted) return <p className="pd-grant-ok">已开启——直接重发即可，无需点图标</p>
+  return (
+    <div className="pd-grant-row">
+      <button
+        className="pd-grant-btn"
+        onClick={() => {
+          chrome.permissions
+            ?.request({ origins: ['<all_urls>'] })
+            .then((g) => { if (g) setGranted(true) })
+            .catch(() => {})
+        }}
+      >
+        始终允许读取网页
+      </button>
+      <span className="pd-grant-scope">范围：所有网站（含敏感站点），仅本机 CLI 处理</span>
+    </div>
+  )
+}
 
 function MessageActions({ text, onNewChat, pageTitle }: { text: string; onNewChat: () => void; pageTitle?: string }) {
   const [copied, setCopied] = useState(false)

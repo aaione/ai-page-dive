@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentStatus, HostToExt, SkillItem, WorkflowItem } from '@ai-page-dive/shared'
-import { useRovingNav } from './a11y.js'
+import { useRovingNav, useListboxMenu } from './a11y.js'
 import './Settings.css'
 
 /** workflow 名称合法字符（与目录名一致）：字母数字下划线连字符，≤64 */
@@ -97,39 +97,6 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
   const editorRef = useRef<EditorState | null>(null)
   editorRef.current = editor
 
-  // ── 网页读取授权（r46：optional_host_permissions——用户主动授予后免每次手势） ──
-  // null = 查询中（面板先按关渲染，回填后校正）
-  const [hostGrant, setHostGrant] = useState<boolean | null>(false)
-  useEffect(() => {
-    chrome.permissions
-      ?.contains({ origins: ['<all_urls>'] })
-      .then((g) => setHostGrant(g))
-      .catch(() => {})
-    // r46（activetab-analysis P4）：用户在 chrome://extensions 站点权限侧收回时
-    // 开关实时同步，防设置页显示与事实脱节
-    const sync = () => chrome.permissions?.contains({ origins: ['<all_urls>'] }).then(setHostGrant).catch(() => {})
-    chrome.permissions?.onAdded?.addListener(sync)
-    chrome.permissions?.onRemoved?.addListener(sync)
-    return () => {
-      chrome.permissions?.onAdded?.removeListener(sync)
-      chrome.permissions?.onRemoved?.removeListener(sync)
-    }
-  }, [])
-  function toggleHostGrant() {
-    if (hostGrant) {
-      chrome.permissions
-        ?.remove({ origins: ['<all_urls>'] })
-        .then(() => setHostGrant(false))
-        .catch(() => {})
-    } else {
-      // request 必须在用户手势内（本点击即手势）——Chrome 弹一次全局确认
-      chrome.permissions
-        ?.request({ origins: ['<all_urls>'] })
-        .then((g) => setHostGrant(g))
-        .catch(() => {})
-    }
-  }
-
   // ── 技能 ──
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [enabledSkills, setEnabledSkills] = useState<string[]>(() => readStrList('pd-enabled-skills'))
@@ -146,8 +113,11 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
   const [histLimit, setHistLimit] = useState(() => readStr('pd-history-limit') || '200')
   /** r44：调低时警示——清理延迟到下次保存才发生，把反悔窗口说给用户听（弹窗过重，行内足矣） */
   const [histWarn, setHistWarn] = useState(false)
-  /** r44-audit V3：分享收二级——平铺 5 平台把低频动作做成关于页最显眼的东西 */
-  const [shareOpen, setShareOpen] = useState(false)
+  /** r47：分享改真下拉浮层（r44 的行内展开会把兄弟按钮挤换行）——复用
+   * useListboxMenu 基建（外点关/Esc 还焦/开即入菜单）+ pd-dropdown 谱系 */
+  const shareRef = useRef<HTMLDivElement>(null)
+  useRovingNav(shareRef, '.pd-dropdown-item')
+  const { open: shareOpen, setOpen: setShareOpen, close: closeShare } = useListboxMenu(shareRef)
 
   /** 单值设置写入 + 广播（App/SummarizeView 监听 pd-settings-changed 联动） */
   function setSetting(key: string, v: string) {
@@ -777,25 +747,10 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
               <div className="pd-set-actions" style={{ marginTop: 14 }}>
                 <button className="pd-set-btn" onClick={revealHistoryDir}>打开历史目录</button>
               </div>
-            </div>
-
-            {/* r46：换页后「尚未授权提取」是 activeTab 模型的用户痛点——optional 权限
-                让高频用户一键解除（安装时零警告，Chrome 在此弹一次全局确认） */}
-            <div className="pd-set-panel">
-              <div className="pd-set-amb-row">
-                <span className="pd-set-label" style={{ margin: 0 }}>始终允许读取网页</span>
-                <button
-                  className={`pd-set-switch ${hostGrant ? 'on' : ''}`}
-                  onClick={toggleHostGrant}
-                  role="switch"
-                  aria-checked={!!hostGrant}
-                  aria-label="始终允许读取网页"
-                />
-              </div>
-              <p className="pd-set-hint" style={{ marginTop: 8 }}>
-                {hostGrant
-                  ? '已开启——换页、切标签后无需再点工具栏图标即可总结。范围是你访问的所有网站（含网银、邮箱等敏感站点）；正文不经 PageDive 服务器，仅交你自己登录的 CLI 处理（会经该 CLI 发往其模型服务）。可随时在此关闭。'
-                  : '默认（Chrome 安全模型）：每次点工具栏图标时授权当前页，换页后需重新授权。开启后免重复授权，扩展可随时读取你访问的所有网站（含敏感站点）、无需逐次手势；正文不经 PageDive 服务器，仅交你自己登录的 CLI 处理（会经该 CLI 发往其模型服务）。可随时关闭。'}
+              {/* r47：网页读取授权入口移至 no-permission 气泡内（出错现场情境化授予）；
+                  收回走 chrome://extensions → PageDive → 网站访问权限 */}
+              <p className="pd-set-hint" style={{ marginTop: 10 }}>
+                网页读取授权：默认每次点图标时授权当前页；首次遇到授权问题时可在提示气泡里开启「始终允许」，收回则在 chrome://extensions 的站点访问权限中管理。
               </p>
             </div>
           </div>
@@ -830,18 +785,38 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })}>
                   自定义快捷键
                 </button>
-                <button className="pd-set-btn" onClick={() => setShareOpen((v) => !v)} aria-expanded={shareOpen}>
-                  分享给朋友
-                </button>
-                {shareOpen && (
-                  <div className="pd-set-share-opts">
-                    {SHARE_SITES.map(([k, label]) => (
-                      <button key={k} className="pd-set-btn" onClick={() => { shareTo(k); setShareOpen(false) }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div ref={shareRef} className="pd-set-share">
+                  <button
+                    className="pd-set-btn"
+                    onClick={() => setShareOpen(!shareOpen)}
+                    aria-haspopup="listbox"
+                    aria-expanded={shareOpen}
+                  >
+                    分享给朋友
+                    <svg viewBox="0 0 15 16" className={`pd-share-arrow ${shareOpen ? 'open' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m4 6.5 4 4 4-4" />
+                    </svg>
+                  </button>
+                  {shareOpen && (
+                    <ul
+                      role="listbox"
+                      aria-label="分享渠道"
+                      className="pd-dropdown-menu pd-share-menu pd-fade-in-fast"
+                      onKeyDown={(e) => {
+                        // 菜单内 Esc 只关菜单——防冒泡连设置页一起关（同 WorkflowDropdown）
+                        if (e.key === 'Escape') { e.stopPropagation(); closeShare() }
+                      }}
+                    >
+                      {SHARE_SITES.map(([k, label]) => (
+                        <li key={k} role="option" aria-selected={false}>
+                          <button className="pd-dropdown-item" onClick={() => { shareTo(k); setShareOpen(false) }}>
+                            <span className="pd-dropdown-item-label">{label}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
                 <button className="pd-set-btn" onClick={() => chrome.tabs.create({ url: 'https://github.com/aaione/ai-page-dive' })}>
                   GitHub 点赞
                 </button>

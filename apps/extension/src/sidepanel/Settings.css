@@ -620,11 +620,22 @@
   padding: 0.1em 0.3em;
 }
 
-/* r44-audit V3：分享平台二级展开——5 个低频分享按钮收进一格，独占行 3 列网格，
-   关于页视觉重心还给隐私/快捷键等高频信息 */
-.pd-set-share-opts {
-  flex: 1 1 100%;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+/* r47：分享改下拉浮层（r44 行内展开挤换行兄弟按钮）——菜单本体复用全局
+   .pd-dropdown-menu 谱系，此处只锚定触发钮与箭头形态 */
+.pd-set-share {
+  position: relative;
+  display: inline-flex;
+}
+.pd-share-arrow {
+  width: 12px;
+  height: 12px;
+  margin-left: 4px;
+  transition: transform 160ms var(--pd-ease-out);
+}
+.pd-share-arrow.open { transform: rotate(180deg); }
+/* 菜单窄于模式菜单即可（无 hint 行），右对齐防溢出面板 */
+.pd-share-menu {
+  min-width: 128px;
+  left: auto;
+  right: 0;
 }

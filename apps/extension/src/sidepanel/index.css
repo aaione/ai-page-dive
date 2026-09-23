@@ -722,6 +722,27 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   color: var(--pd-warn-text);
 }
 
+/* r47：no-permission 气泡内嵌授权行（设置页入口删除，出错现场情境化授予） */
+.pd-grant-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.pd-grant-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--pd-danger);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--pd-danger-text);
+  cursor: pointer;
+}
+.pd-grant-btn:hover { background: rgba(224,108,90,.12); }
+.pd-grant-scope { font-size: 11px; opacity: .7; }
+.pd-grant-ok { margin: 6px 0 0; font-size: 12px; color: var(--pd-danger-text); opacity: .85; }
+
 /* ── Placeholder：r23 空闲态玻璃主角卡 ──
    「玻璃只给容器」原则下聊天态有气泡/托盘，空闲态却一件玻璃都没有（真机截图
    实锤主页面无磨砂感）——占位区升 L2 玻璃卡，CLI 检测中/未装 CLI 等全部空闲

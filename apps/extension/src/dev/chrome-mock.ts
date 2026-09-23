@@ -36,7 +36,7 @@ const WORKFLOWS = [
   { name: 'quick', description: '抓要点，十几秒出稿', builtin: true },
   { name: 'paper', description: '论文精读：方法/实验/局限', builtin: true },
   { name: 'humanize', description: '去 AI 味改写', builtin: true },
-  { name: 'product-audit', description: '产品四维严苛审计', builtin: false },
+  { name: 'product-audit', description: '产品四维严苛审计', builtin: true },
 ]
 const SKILLS = [{ name: 'tech-audit', description: '技术审计增强指令', builtin: false }]
 const HISTORY = [1, 2, 3].map((i) => ({

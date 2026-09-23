@@ -51,6 +51,9 @@ export interface ChatMessage {
    *  提取授权失效/输入校验/NM 断连等启动前失败 CLI 根本没跑，不得错怪（r46：
    *  no-permission 曾显示「CLI 报告运行失败」自相矛盾） */
   cliFault?: boolean
+  /** no-permission 气泡专属：内嵌「始终允许读取网页」授权按钮（r47：设置页入口
+   *  删除后唯一授予出口，情境化到出错现场——点击即手势满足 request 约束） */
+  grantHost?: boolean
   /** 本次回答观测到 chunk 丢片（host seq 跳变）：终局后提示「内容可能不完整」（r6-ux） */
   incomplete?: boolean
   agentId?: string
@@ -633,7 +636,7 @@ export function App() {
         : resp.error === 'tab-closed' ? '刚看的页面已关闭——在要总结的页面上重试'
         : resp.error === 'page-not-ready' ? '页面尚未就绪（或正在显示错误页）——刷新页面后重试'
         : resp.error === 'extract-crash' ? `页面脚本冲突导致提取失败${resp.detail ? `〔${String(resp.detail).slice(0, 80)}〕` : ''}——可重试，或粘贴正文作为附件直接追问`
-        : resp.error === 'no-permission' ? `本页尚未授权提取（浏览器安全模型：换页后需重新授权）——点一下工具栏上的 PageDive 图标，回来重试即可${resp.detail ? `〔${String(resp.detail).slice(0, 120)}〕` : ''}`
+        : resp.error === 'no-permission' ? `本页尚未授权提取（换页后授权失效）——点工具栏上的 PageDive 图标后重试，或开启「始终允许」一劳永逸${resp.detail ? `〔${String(resp.detail).slice(0, 120)}〕` : ''}`
         : resp.error === 'empty-content' ? '页面没有可提取的正文——等页面加载完成（或滚动到底部触发懒加载）后重试；也可粘贴正文作为附件直接追问'
         : resp.error === 'cancelled' ? '已取消'
         : resp.error === 'empty-instruction' ? '请输入要追问的内容（或直接点「新对话」重新总结本页）'
@@ -664,7 +667,8 @@ export function App() {
           ...(resp.error === 'session-lost' ? { resumable: false } : {}),
           messages: [
             ...s.messages.filter((x) => !(x.streaming && !x.text)),
-            { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true, cancelled: resp.error === 'cancelled' },
+            { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true, cancelled: resp.error === 'cancelled',
+              ...(resp.error === 'no-permission' ? { grantHost: true } : {}) },
           ],
         }
       })
