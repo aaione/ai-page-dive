@@ -148,11 +148,16 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   // 终局异常（看门狗/断连）回填：refill.n 递增保证同文本也触发。
   // r8-review：输入框已有新草稿时不覆写——同一事故的错误回调与断连帧先后到达，
   // 用户已开始重敲时第二次 refill 会把改到一半的草稿整体冲掉
+  // r46（review P2）：附件一并回填——内容（text/b64）只在视图层内存，气泡上只有
+  // 名字，故以最近一次发送的完整快照还原（与 lastUser 气泡同轮）；用户已挂新
+  // 附件时不覆写（同草稿语义）
+  const lastAttsRef = useRef<Att[]>([])
   const lastRefill = useRef(0)
   useEffect(() => {
     if (stream.refill && stream.refill.n !== lastRefill.current) {
       lastRefill.current = stream.refill.n
       setInput((cur) => cur.trim() ? cur : stream.refill!.text)
+      setAttachments((cur) => (cur.length ? cur : lastAttsRef.current))
       if (!input.trim()) inputRef.current?.focus()
     }
   }, [stream.refill])
@@ -243,8 +248,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   function send(forceWf?: string) {
     const text = input.trim()
     // 空文本 + 空附件 + 无正文才拦：有正文时空输入 = 一键总结当前页（P0，修复
-    // 「一键总结」承诺断裂）；有输入/附件 = 追问轮（正文可能已不可用，不拦）
-    if ((!text && !attachments.length && !usable.length) || running) return
+    // 「一键总结」承诺断裂）；有输入/附件 = 追问轮（正文可能已不可用，不拦）。
+    // r46（review P1/C5/P4）：受限页与零可用 CLI 前置拦截——此前按钮 disabled 但
+    // 键盘路径照发必败请求，靠 SW 异步报错兜底；send 为全部入口的末道守卫
+    if (pageUnsupported || !usable.length || (!text && !attachments.length && !usable.length) || running) return
     // r12：附件以 chip 展示在用户气泡上方（对齐用户期望形态），气泡文本只放用户
     // 输入；附件-only 轮 instruction 仍发占位文本（r8-review：显示与执行一致，
     // host 侧追问轮空 user 段会凭空消失）
@@ -264,6 +271,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     setAttachNotice('') // 提示已在输入区即时展示（r4-ux F3），发送即消费
     setInput('')
     const atts = attachments
+    lastAttsRef.current = atts // r46（review P2）：终局回填附件用的完整快照（与本轮气泡一致，空轮即空）
     setAttachments([])
     // 追问轮无 workflow 兜底：附件-only 时 instruction 用占位文本；首轮保持空串——
     // host 侧 `instruction || wfBody` 落默认摘要指令，比占位文本更有用
@@ -881,8 +889,13 @@ function ActionBar({
   attachRef: React.RefObject<HTMLInputElement | null>
   onPickFiles: (files: FileList | null) => void
 }) {
-  // r16（3-agent P1）：运行中 Enter 的轻提示（本地态自包含——草稿保干净 + 有反馈）
-  const [enterHint, setEnterHint] = useState(false)
+  // r16（3-agent P1）：Enter 路径的轻提示（本地态自包含——草稿保干净 + 有反馈）。
+  // r46（review P1/C5）：布尔→文案字符串——受限页/零 CLI 拦截也走同一提示位
+  const [enterHint, setEnterHint] = useState('')
+  const flashHint = (text: string) => {
+    setEnterHint(text)
+    setTimeout(() => setEnterHint(''), 3500)
+  }
   return (
     <>
       {/* r44-audit I5：notice 移出输入胶囊 flex——原 flex:100% 换行使出现/消失时
@@ -895,7 +908,7 @@ function ActionBar({
       )}
       {enterHint && (
         <p role="note" className="pd-bar-note">
-          上一轮还在跑——内容已保留，完成后按 Enter 再发
+          {enterHint}
         </p>
       )}
       {noFollowUpHint && (
@@ -939,9 +952,15 @@ function ActionBar({
           if (running) {
             e.preventDefault()
             if (input.trim() || attachCount) {
-              setEnterHint(true)
-              setTimeout(() => setEnterHint(false), 3500)
+              flashHint('上一轮还在跑——内容已保留，完成后按 Enter 再发')
             }
+            return
+          }
+          // r46（review P1/C5/P4）：与按钮 disabled 同条件的前置拦截——受限页/
+          // 零 CLI 时不再发出必败请求（此前键盘路径绕过按钮禁用，SW 异步报错兜底）
+          if (pageUnsupported || !usableCount) {
+            e.preventDefault()
+            flashHint(pageUnsupported ? '此页面无法提取——切换到普通网页后再总结' : '先安装或启用一个 CLI，再开始总结')
             return
           }
           if (usableCount || input.trim() || attachCount) {
@@ -957,9 +976,11 @@ function ActionBar({
         rows={1}
       />
 
+      {/* r46（review C3）：pageUnsupported 只禁发送态——运行中导航到受限页时
+          停止按钮被连带禁用，非破坏性取消入口全失，任务只能烧满看门狗 */}
       <button
         onClick={running ? onCancel : onStart}
-        disabled={pageUnsupported || (!running && !usableCount && !input.trim() && !attachCount)}
+        disabled={!running && (pageUnsupported || (!usableCount && !input.trim() && !attachCount))}
         aria-label={running ? '停止' : '发送'}
         title={running ? '停止' : '发送'}
         className={`pd-primary-btn ${running ? 'running' : ''}`}

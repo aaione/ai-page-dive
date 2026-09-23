@@ -104,6 +104,15 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
       ?.contains({ origins: ['<all_urls>'] })
       .then((g) => setHostGrant(g))
       .catch(() => {})
+    // r46（activetab-analysis P4）：用户在 chrome://extensions 站点权限侧收回时
+    // 开关实时同步，防设置页显示与事实脱节
+    const sync = () => chrome.permissions?.contains({ origins: ['<all_urls>'] }).then(setHostGrant).catch(() => {})
+    chrome.permissions?.onAdded?.addListener(sync)
+    chrome.permissions?.onRemoved?.addListener(sync)
+    return () => {
+      chrome.permissions?.onAdded?.removeListener(sync)
+      chrome.permissions?.onRemoved?.removeListener(sync)
+    }
   }, [])
   function toggleHostGrant() {
     if (hostGrant) {
@@ -784,8 +793,8 @@ export function Settings({ agents, onClose }: { agents: AgentStatus[]; onClose: 
               </div>
               <p className="pd-set-hint" style={{ marginTop: 8 }}>
                 {hostGrant
-                  ? '已开启——换页、切标签后无需再点工具栏图标即可总结。网页正文仍只在本机处理，可随时关闭。'
-                  : '默认（Chrome 安全模型）：每次点工具栏图标时授权当前页，换页后需重新授权。开启后免重复授权，扩展可随时读取你访问的网页——仅用于本机总结，内容不出本机。'}
+                  ? '已开启——换页、切标签后无需再点工具栏图标即可总结。范围是你访问的所有网站（含网银、邮箱等敏感站点）；正文不经 PageDive 服务器，仅交你自己登录的 CLI 处理（会经该 CLI 发往其模型服务）。可随时在此关闭。'
+                  : '默认（Chrome 安全模型）：每次点工具栏图标时授权当前页，换页后需重新授权。开启后免重复授权，扩展可随时读取你访问的所有网站（含敏感站点）、无需逐次手势；正文不经 PageDive 服务器，仅交你自己登录的 CLI 处理（会经该 CLI 发往其模型服务）。可随时关闭。'}
               </p>
             </div>
           </div>

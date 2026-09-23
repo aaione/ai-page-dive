@@ -179,7 +179,9 @@ export function App() {
           pending: false,
           done: true,
           activeId: null,
-          ...(lastUser?.text ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lastUser.text } } : {}),
+          // r46（review P2）：条件扩到附件-only 轮（空 text + 有附件也回填，附件由
+          // SummarizeView 的 lastAttsRef 快照还原）
+          ...(lastUser && (lastUser.text || lastUser.attachments?.length) ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lastUser.text } } : {}),
           // 记 finished：真 host 若稍后复活，迟到 chunk 不得重开矛盾气泡（R2-m3 兜底）
           finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
           messages: [
@@ -324,13 +326,19 @@ export function App() {
           {
             const msgs = parseHistoryTurns(m.content ?? '')
             if (msgs.length) {
-              setStream((s) => ({
+              setStream((s) => {
+                // r46（review C4）：还原窗口内用户已抢先发出新轮（pending/已绑定任务）
+                // ——整体 BLANK 会抹掉刚插入的用户气泡与任务绑定，迟到 chunk 只能靠
+                // 收养逻辑凭空重建。还原让位：丢弃还原帧，保住用户主动开的新轮
+                if (s.pending || s.taskId !== null) return s
+                return {
                 ...BLANK,
                 done: true,
                 resumable: true,
                 finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
                 messages: msgs,
-              }))
+                }
+              })
             } else {
               setStream((s) => ({ ...s, resumable: true, reopened: true }))
             }
@@ -437,6 +445,18 @@ export function App() {
               finished: [...s.finished, m.taskId].slice(-8),
               done: true,
               activeId: null,
+              // r46（review P3）：is_error 终局回填本轮问题——claude 运行内失败打在
+              // done 帧（硬约束 4 不能只看退出码），此前该路径不回填，重试需对气泡
+              // 手抄；与 task-error/断连/看门狗同式（text 由 refill 携带、附件由
+              // SummarizeView 的快照 ref 还原，见 lastAttsRef）
+              ...(m.isError
+                ? (() => {
+                    const lu = [...s.messages].reverse().find((x) => x.role === 'user')
+                    return lu && (lu.text || lu.attachments?.length)
+                      ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lu.text } }
+                      : {}
+                  })()
+                : {}),
               messages: s.messages.map((msg) =>
                 msg.streaming
                   ? {
@@ -497,9 +517,10 @@ export function App() {
                 : msg,
             )
             // r33-ux：失败终局回填本轮问题（与看门狗/断连同式）——parse/timeout 等
-            // 可重试失败不必对着气泡手抄重敲。cancelled 不回填（用户主动放弃）
+            // 可重试失败不必对着气泡手抄重敲。cancelled 不回填（用户主动放弃）。
+            // r46：条件扩到附件-only 轮（text 空串 + 有附件也回填）
             const lastUser = [...s.messages].reverse().find((msg) => msg.role === 'user')
-            const canRefill = m.code !== 'cancelled' && !!lastUser?.text
+            const canRefill = m.code !== 'cancelled' && !!(lastUser?.text || lastUser?.attachments?.length)
             return {
               ...s,
               taskId: null,
@@ -542,7 +563,9 @@ export function App() {
               pending: false,
               done: true,
               activeId: null,
-              ...(lastUser?.text ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lastUser.text } } : {}),
+              // r46（review P2）：条件扩到附件-only 轮（空 text + 有附件也回填，附件由
+          // SummarizeView 的 lastAttsRef 快照还原）
+          ...(lastUser && (lastUser.text || lastUser.attachments?.length) ? { refill: { n: (s.refill?.n ?? 0) + 1, text: lastUser.text } } : {}),
               finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
               messages: needBubble
                 ? [...messages, { id: `e${Date.now()}`, role: 'assistant' as const, text: '', error: TEXT, isError: true }]
@@ -586,6 +609,9 @@ export function App() {
         : resp.error === 'no-tab' ? '没有可总结的页面（先在普通网页上点扩展图标）'
         : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
         : resp.error === 'inject-failed' ? `扩展文件加载失败（content.js 缺失——多为更新或加载不完整）${resp.detail ? `〔${String(resp.detail).slice(0, 120)}〕` : ''}——请在 chrome://extensions 刷新 PageDive 后重试`
+        : resp.error === 'tab-closed' ? '刚看的页面已关闭——在要总结的页面上重试'
+        : resp.error === 'page-not-ready' ? '页面尚未就绪（或正在显示错误页）——刷新页面后重试'
+        : resp.error === 'extract-crash' ? `页面脚本冲突导致提取失败${resp.detail ? `〔${String(resp.detail).slice(0, 80)}〕` : ''}——可重试，或粘贴正文作为附件直接追问`
         : resp.error === 'no-permission' ? `本页尚未授权提取（浏览器安全模型：换页后需重新授权）——点一下工具栏上的 PageDive 图标，回来重试即可${resp.detail ? `〔${String(resp.detail).slice(0, 120)}〕` : ''}`
         : resp.error === 'empty-content' ? '页面没有可提取的正文——等页面加载完成（或滚动到底部触发懒加载）后重试；也可粘贴正文作为附件直接追问'
         : resp.error === 'cancelled' ? '已取消'

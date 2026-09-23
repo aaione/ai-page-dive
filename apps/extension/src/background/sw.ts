@@ -303,9 +303,15 @@ async function handleMessage(msg: any): Promise<unknown> {
       // 面板打开时对齐：面板 dock 在 panelTabId 上（= 打开面板时 action 手势
       // 授权过的那个 tab）。SW 重启丢 panelTabId 态时 fallback 当前活跃普通页。
       if (!panelTabId || !target) {
-        const [active] = await chrome.tabs
-          .query({ active: true, lastFocusedWindow: true })
-          .catch(() => [])
+        // r46（activetab-analysis P2）：确定性重建优先——restoreSession 已恢复
+        // panelTabId 但 target 是纯内存态。先 tabs.get(锚) 找回锚本身；查无才退
+        // query(active) 弱重建。原实现活跃页直接覆盖存活锚，是换锚串台源头
+        const anchored =
+          panelTabId !== null ? await chrome.tabs.get(panelTabId).catch(() => null) : null
+        const [active] =
+          anchored ? [anchored] : await chrome.tabs
+            .query({ active: true, lastFocusedWindow: true })
+            .catch(() => [])
         if (active?.id && isNormalPage(active.url)) {
           // r12-fix：panelWindowId 必须同步补——缺它时 onActivated 的
           // 「windowId === panelWindowId」恒 false，切 tab 永不 unanchor
@@ -421,9 +427,17 @@ async function handleMessage(msg: any): Promise<unknown> {
   return undefined
 }
 
+/** 最近取消的 taskId 台账（r46 review C2）：cancelCurrent 置 currentTask=null 后，
+ *  管道内迟到的 task-meta/task-done 仍会走兜底归档把旧 sessionId 写回当前锚定
+ *  页签——「新对话」后旧会话复活，后续输入被引回半截旧 CLI 会话。命中即拦。
+ *  插入序 Set，cap 16 防无界 */
+const cancelledTaskIds = new Set<string>()
+
 /** 取消进行中任务（new-session 复用）；返回 undefined 表示无任务在跑 */
 function cancelCurrent() {
   if (currentTask) {
+    cancelledTaskIds.add(currentTask.taskId)
+    if (cancelledTaskIds.size > 16) for (const id of cancelledTaskIds) { cancelledTaskIds.delete(id); break }
     nmPort.send({ t: 'task-cancel', taskId: currentTask.taskId })
     // 终局帧补发：发起面板按 taskId 对号（finished 幂等，双收无害）；host 迟到的
     // 同义帧会被面板 finished 列表拒收——双窗口下也绝不错终局另一面板的新任务。
@@ -514,7 +528,9 @@ nmPort.onMessage((m) => {
     const owner =
       msg.agentId ??
       (currentTask && msg.taskId === currentTask.taskId ? currentAgentId : undefined)
-    if (msg.sessionId && owner) {
+    // r46（review C2）：取消台账命中的迟到帧不归档会话（见 cancelledTaskIds 注释）；
+    // lastModels 的模型名记录与任务死活无关，保留
+    if (msg.sessionId && owner && !cancelledTaskIds.has(msg.taskId)) {
       const tabId = currentTask && msg.taskId === currentTask.taskId ? currentTask.tabId : panelTabId
       // || 而非 ??：host 首轮 persist 失败时回传空串（不虚构路径），跳过且保留
       // 上一会话已有路径（r7-review）；合法路径永非空串
@@ -588,7 +604,7 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
 }
 
 /** 逐 frame 提取，取正文最长者为该页内容（iframe SPA：top frame 往往只有壳） */
-async function extractBest(tabId: number): Promise<PageContent | { error: string }> {
+async function extractBest(tabId: number): Promise<PageContent | { error: string; detail?: string }> {
   const results = (await chrome.scripting
     .executeScript({
       target: { tabId, allFrames: true },
@@ -601,7 +617,14 @@ async function extractBest(tabId: number): Promise<PageContent | { error: string
   const pages = (results ?? []).map((r) => r.result).filter((p): p is PageContent => !!p && !('error' in p))
   if (!pages.length) {
     const errs = (results ?? []).map((r) => (r.result && 'error' in r.result ? r.result.error : '')).filter(Boolean)
-    return { error: errs.includes('empty-content') ? 'empty-content' : 'no-permission' }
+    // r46（activetab-analysis P1）：官方语义「失败的 frame 被静默省略」——此前把
+    // 页面未就绪/错误页/提取器崩溃/tab 已关全归 no-permission，「点图标重授权」
+    // 指引对这些物理原因空转。拆分：整体 reject=授权窗口（窄），全 frame 省略=
+    // page-not-ready，带原始错误串=extract-crash，empty-content 语义不变
+    if (results === undefined) return { error: 'no-permission' }
+    if (errs.includes('empty-content')) return { error: 'empty-content' }
+    if (errs.length) return { error: 'extract-crash', detail: errs[0] }
+    return { error: 'page-not-ready' }
   }
   return pages.reduce((a, b) => (b.contentMarkdown.length > a.contentMarkdown.length ? b : a))
 }
@@ -623,8 +646,12 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   if (currentTask) cancelCurrent()
   chrome.action.setBadgeText({ text: '' }).catch(() => {}) // 新轮起跑清完成角标（r16）
   // target：action 点击的 tab（activeTab 授权随手势生效）。SW 重启丢态或 panel
-  // 直接点按钮时 fallback 到当前活跃 tab——无授权的 tab 注入会失败并提示，
-  // 不会造成越权（executeScript 直接被 Chrome 拒绝）。
+  // 直接点按钮时 fallback 到当前活跃 tab。
+  // r46（privacy review M3）安全论证更新：activeTab 默认模式下无授权的 tab 注入
+  // 会被 Chrome 直接拒绝（失败自暴露，不越权）；但用户开启「始终允许读取网页」
+  // （optional <all_urls>）后 executeScript 对任意普通页放行——fallback 选 tab 的
+  // 正确性从此是真实约束（仅限 lastFocusedWindow 的 active tab，即用户正看的那
+  // 页），目标页经提取成功的 page-meta 帧回显给 panel 供用户即时纠偏。
   // fallback 只认普通网页：panel 自己常是 lastFocusedWindow 的 active「页」，
   // chrome-extension:// 的它绝不该被选为总结目标
   let tab = target?.id ? await chrome.tabs.get(target.id).catch(() => null) : null
@@ -677,6 +704,8 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     // r46：文件加载失败（dist 不完整/升级中，真机曾因单段构建误报授权失效）不是
     // 授权问题——单独归因，免得「点图标重授权」指引对缺文件场景空转
     if (/Could not load file/i.test(injectErr)) return { error: 'inject-failed', detail: injectErr }
+    // r46：目标 tab 已关（用户关页后点总结）——非授权问题，重授权指引空转
+    if (/No tab with id/i.test(injectErr)) return { error: 'tab-closed' }
     // 授权失效（无手势/已切页）：原样带回错误文本，panel 给重授权指引
     return { error: 'no-permission', detail: injectErr }
   }
