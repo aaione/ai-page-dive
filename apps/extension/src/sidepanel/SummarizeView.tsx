@@ -226,9 +226,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         (order[a.name] ?? (9 + a.name.localeCompare(b.name))) -
         (order[b.name] ?? (9 + b.name.localeCompare(b.name))),
       )
-    // 「留空则深度总结」与发送侧对齐（workflow==='default' → 'deep'）：曾写
+    // 「留空则深度总结」与发送侧对齐（空输入首轮 → 'deep'）：曾写
     // 「留空则快速摘要」，用户按文案留空预期快速档，实际跑最慢最贵的 deep
-    return [{ name: 'default', description: '按输入框内容执行；留空则深度总结', builtin: true }, ...rest]
+    // r46-user：default 文案随语义恢复——不套预设提示词，输入即指令
+    return [{ name: 'default', description: '不套预设提示词，输入即指令；留空则深度总结', builtin: true }, ...rest]
   }, [workflows])
 
   /** 发送失败回填（r7-ux）：错误属于本轮时把输入/附件回填输入框（可改后重发），
@@ -251,7 +252,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // 「一键总结」承诺断裂）；有输入/附件 = 追问轮（正文可能已不可用，不拦）。
     // r46（review P1/C5/P4）：受限页与零可用 CLI 前置拦截——此前按钮 disabled 但
     // 键盘路径照发必败请求，靠 SW 异步报错兜底；send 为全部入口的末道守卫
-    if (pageUnsupported || !usable.length || (!text && !attachments.length && !usable.length) || running) return
+    // r47：pageUnsupported 只拦首轮——追问轮走 SW 的 startFollowUp，不提取页面
+    // （上下文在 CLI 会话里）。r46 统一守卫时漏了这层语义：锚定页导航到 chrome://
+    // 后，已有对话的追问被连带禁掉且提示「此页面无法提取」，与事实不符
+    if ((pageUnsupported && !hasSession) || !usable.length || (!text && !attachments.length && !usable.length) || running) return
     // r12：附件以 chip 展示在用户气泡上方（对齐用户期望形态），气泡文本只放用户
     // 输入；附件-only 轮 instruction 仍发占位文本（r8-review：显示与执行一致，
     // host 侧追问轮空 user 段会凭空消失）
@@ -261,7 +265,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // r44-audit F2：空输入+无附件+无会话 = 一键总结路径——与 hero CTA 同语义强制
     // deep，不吃 localStorage 记忆档（CTA 写「深度总结本页」而 Enter 跑论文档 = 名实分裂；
     // 有自定义输入 = 用户主动表达，按所选档执行）
-    const wf = forceWf ?? (!text && !attachments.length && !hasSession ? 'deep' : workflow === 'default' ? 'deep' : workflow)
+    // r46-user：default 不再硬映射 deep——「默认模式」= 不套预设 prompt、用户输入
+    // 即任务段（host `instruction || wfBody` 优先级保证）；附件轮 instruction 有
+    // 占位文本、追问轮走 followUp 不带 workflow，均无「default 未命中兜底」路径
+    const wf = forceWf ?? (!text && !attachments.length && !hasSession ? 'deep' : workflow)
     const bubbleText =
       text || (hasSession || attachments.length ? '' : `${WF_LABEL[wf] ?? '深度总结'}本页`)
     const skills = getEnabledSkills()
@@ -964,7 +971,8 @@ function ActionBar({
           }
           // r46（review P1/C5/P4）：与按钮 disabled 同条件的前置拦截——受限页/
           // 零 CLI 时不再发出必败请求（此前键盘路径绕过按钮禁用，SW 异步报错兜底）
-          if (pageUnsupported || !usableCount) {
+          // r47：受限页只拦首轮，追问轮不提取页面（与 send() 守卫同条件）
+          if ((pageUnsupported && !hasSession) || !usableCount) {
             e.preventDefault()
             flashHint(pageUnsupported ? '此页面无法提取——切换到普通网页后再总结' : '先安装或启用一个 CLI，再开始总结')
             return
@@ -976,17 +984,20 @@ function ActionBar({
         }}
         // r7-ux：不再 disabled——运行中允许预输入下一问（Enter 已有 !running 守卫，
         // 发送按钮不受影响；锁死输入框只是防重发，守卫已覆盖）
-        placeholder={pageUnsupported ? '此页面无法提取——切换到普通网页后可用' : hasSession ? '继续追问…（Shift+Enter 换行）' : '想了解这个网页的什么？（Shift+Enter 换行）'}
+        // r47：hasSession 优先——受限页仍可追问（不提取页面），placeholder 不得
+        // 沿用「此页面无法提取」误导用户以为输入框失效
+        placeholder={hasSession ? '继续追问…（Shift+Enter 换行）' : pageUnsupported ? '此页面无法提取——切换到普通网页后可用' : '想了解这个网页的什么？（Shift+Enter 换行）'}
         aria-label="自定义指令"
         className="pd-input"
         rows={1}
       />
 
       {/* r46（review C3）：pageUnsupported 只禁发送态——运行中导航到受限页时
-          停止按钮被连带禁用，非破坏性取消入口全失，任务只能烧满看门狗 */}
+          停止按钮被连带禁用，非破坏性取消入口全失，任务只能烧满看门狗。
+          r47：且只禁首轮发送——追问轮不提取页面，受限页不该禁 */}
       <button
         onClick={running ? onCancel : onStart}
-        disabled={!running && (pageUnsupported || (!usableCount && !input.trim() && !attachCount))}
+        disabled={!running && ((pageUnsupported && !hasSession) || (!usableCount && !input.trim() && !attachCount))}
         aria-label={running ? '停止' : '发送'}
         title={running ? '停止' : '发送'}
         className={`pd-primary-btn ${running ? 'running' : ''}`}
@@ -1139,9 +1150,10 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
 }
 
 const WF_LABEL: Record<string, string> = {
-  // r43：default 是「未显式选档」哨兵，实际执行映射 deep——叫「默认模式」与 CTA
-  // 「深度总结本页」名实不符（用户困惑点）；直接叫执行档名
-  default: '深度总结',
+  // r46-user：恢复「默认模式」——真实语义 = 不套预设 prompt 纯调 CLI（r43 曾
+  // 硬映射 deep 并改名「深度总结」，把该档连同语义一起吃掉了；空输入仍转 deep
+  // 保一键总结，见 send()）
+  default: '默认模式',
   quick: '快速摘要',
   deep: '深度总结',
   paper: '论文模式',
