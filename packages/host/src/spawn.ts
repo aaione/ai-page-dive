@@ -78,6 +78,15 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
           pending = pending.slice(i + 1)
           if (line.trim()) opts.onStdoutLine(line)
         }
+        // NM 出口背压：出口（process.stdout 管道到 Chrome）积压 >4MB 说明对端消费不动，
+        // 停读 CLI stdout 让内核管道缓冲顶住上游——否则 write 缓冲在 host 内存里无界涨。
+        // drain 排空即恢复；pause 期间 end/close 推迟，但 kill 走 exit 钩子、断连走
+        // shutdown，均有兜底出口（r47 C8）
+        const nmOut = process.stdout
+        if (!child.stdout!.isPaused() && nmOut.writableLength > 4 * 1024 * 1024) {
+          child.stdout!.pause()
+          nmOut.once('drain', () => child.stdout!.resume())
+        }
       })
       // 末行无换行符也要派发（CLI 非正常结尾时不丢最后一行事件）
       child.stdout!.on('end', () => {

@@ -7,6 +7,11 @@
  *   ?unsupported=1  受限页（F4 验证：输入区置灰）
  *   ?noskills=1     忽略 localStorage 技能预置（F1 对照组）
  *   ?noextract=1    启动前失败（r46 验证：no-permission 气泡不得带「CLI 报告运行失败」前缀）
+ *   ?swcycle=codex  SW 回收后重开（r47：codex 无 sessionId）——hasSession +
+ *                  historyPath 还原对话 UI，canResume=false 不得出现追问入口
+ *   ?swcycle=claude 同上但 canResume=true——还原后「继续追问」可用（followUp 续流）
+ *   ?swcycle=lost   会话彻底丢——追问发得出去，回 session-lost 气泡 + 自愈降级
+ *                  （resumable 置 false，重发自动走全新总结）
  * 任务流：点「深度总结本页」后 mock 广播 reading→thinking→4 段流式 chunk→done，
  * 全程 ~2.4s，可验证 running 态（I3 两步确认/I1 禁用视觉/enterHint）与完成态。
  */
@@ -70,6 +75,16 @@ function route(msg: any): unknown {
       cast({ t: 'agents', agents: AGENTS })
       cast({ t: 'workflows', items: WORKFLOWS })
     }, 50)
+    // SW 回收后重开的还原透出（swcycle）：镜像 sw.ts panel-ready 的会话分支
+    const cyc = q.get('swcycle')
+    if (cyc === 'codex' || cyc === 'claude') {
+      return {
+        ok: true, panelTabId: 1, page: PAGE, pageUnsupported: false,
+        hasSession: true, sessionAgentId: cyc,
+        canResume: cyc === 'claude',
+        historyPath: `/mock/history/2026/09/23/120000-${cyc}.md`,
+      }
+    }
     return q.get('unsupported')
       ? { ok: true, panelTabId: 1, pageUnsupported: true }
       : { ok: true, panelTabId: 1, page: PAGE, pageUnsupported: false }
@@ -86,6 +101,8 @@ function route(msg: any): unknown {
   }
   if (msg?.t === 'summarize') {
     if (q.get('noextract')) return { error: 'no-permission' }
+    // swcycle=lost：会话已随 SW 回收湮灭——追问打空（App 自愈降级全量总结）
+    if (q.get('swcycle') === 'lost' && msg.followUp) return { error: 'session-lost' }
     return { agentId: 'claude', taskId: runFakeTask() }
   }
   return undefined
