@@ -673,8 +673,11 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
       injectErr = String(e?.message ?? e)
     })
   if (injectErr) {
-    // 授权失效（无手势/已切页）：原样带回错误文本，panel 给重授权指引
     currentTask = null
+    // r46：文件加载失败（dist 不完整/升级中，真机曾因单段构建误报授权失效）不是
+    // 授权问题——单独归因，免得「点图标重授权」指引对缺文件场景空转
+    if (/Could not load file/i.test(injectErr)) return { error: 'inject-failed', detail: injectErr }
+    // 授权失效（无手势/已切页）：原样带回错误文本，panel 给重授权指引
     return { error: 'no-permission', detail: injectErr }
   }
   const page = await extractBest(tab.id!)

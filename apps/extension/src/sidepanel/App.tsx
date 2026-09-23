@@ -585,6 +585,7 @@ export function App() {
         resp.error === 'host-not-found-retry' ? '本机组件连接闪断——通常已自动恢复，请重试'
         : resp.error === 'no-tab' ? '没有可总结的页面（先在普通网页上点扩展图标）'
         : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
+        : resp.error === 'inject-failed' ? `扩展文件加载失败（content.js 缺失——多为更新或加载不完整）${resp.detail ? `〔${String(resp.detail).slice(0, 120)}〕` : ''}——请在 chrome://extensions 刷新 PageDive 后重试`
         : resp.error === 'no-permission' ? `本页尚未授权提取（浏览器安全模型：换页后需重新授权）——点一下工具栏上的 PageDive 图标，回来重试即可${resp.detail ? `〔${String(resp.detail).slice(0, 120)}〕` : ''}`
         : resp.error === 'empty-content' ? '页面没有可提取的正文——等页面加载完成（或滚动到底部触发懒加载）后重试；也可粘贴正文作为附件直接追问'
         : resp.error === 'cancelled' ? '已取消'
