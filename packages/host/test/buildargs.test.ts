@@ -3,12 +3,14 @@ import { claudeDef } from '../src/agents/claude.js'
 import { codexDef } from '../src/agents/codex.js'
 
 describe('buildArgs 快照', () => {
-  it('claude：-p stream-json verbose + partial 增量 + Read 围栏 + resume 位', () => {
+  it('claude：-p stream-json verbose + partial 增量 + 空 MCP + Read 围栏 + resume 位', () => {
     expect(claudeDef.buildArgs({ contentFile: '/tmp/x.md' })).toEqual([
       '-p',
       '--output-format', 'stream-json',
       '--verbose',
       '--include-partial-messages',
+      // r47-perf：空 MCP 内联配置跳过连接用户 MCP server（Read 围栏下本就不可调）
+      '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
       // 进程级工具围栏（r6-sec）：与 codex --sandbox read-only 对称；等号形式防
       // variadic 吞参（实测空格形式会吃掉后续 argv）
       '--allowedTools=Read',
@@ -18,6 +20,7 @@ describe('buildArgs 快照', () => {
       '--output-format', 'stream-json',
       '--verbose',
       '--include-partial-messages',
+      '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
       '--allowedTools=Read',
       '--resume', 'abc',
     ])

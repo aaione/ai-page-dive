@@ -97,6 +97,10 @@ export const claudeDef: AgentDef = {
     '--output-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
+    // r47-perf：-p 默认连用户环境全部 MCP server（本机 10 个实测 5-15s CPU 纯浪费——
+    // --allowedTools=Read 围栏下 MCP 工具本就不可调，连接零语义收益）。内联空配置
+    // （--mcp-config 收 JSON 串）+ strict 屏蔽其余来源，CLI 冷启段 ~10s+ → ~1s
+    '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
     // 进程级工具围栏（r6-sec，与 codex --sandbox read-only 对称）：任务语义只需读临时正文/附件文件——白名单外
     // 工具（Bash/Write/网络等）在 CLI 层一律拒绝，prompt 注入的越权指令到此被拦。等号形式：--allowedTools 是
     // variadic 参数，空格形式会吞掉后续 argv。实测（claude 2.x）：Read 围栏下读文件+总结链路 exit 0 / is_error false
