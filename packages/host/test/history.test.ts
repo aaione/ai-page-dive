@@ -1,8 +1,8 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { appendHistoryTurn, buildHistoryPath, escapePd, escapeYamlForTest, extractSnippet, pruneHistory, saveHistory, slugify } from '../src/history.js'
+import { appendHistoryTurn, buildHistoryPath, deleteHistory, escapePd, escapeYamlForTest, extractSnippet, pruneHistory, readHistory, saveHistory, slugify } from '../src/history.js'
 
 // history ROOT 指向 ~/.ai-page-dive——测试隔离：monkeypatch homedir 不可行（模块级常量），
 // 故本组只测纯函数与写入格式；listHistory 的扫描逻辑由 M3 冒烟覆盖。
@@ -143,5 +143,39 @@ describe('saveHistory 写入格式', () => {
     await expect(
       appendHistoryTurn('/tmp/evil/x.md', { user: 'u', assistant: 'a' }),
     ).rejects.toThrow('outside history root')
+  })
+})
+
+describe('assertInRoot 穿链防护（r47-sec）', () => {
+  // ROOT 是模块级常量（~/.ai-page-dive/history），无法注入——故在真实 ROOT 下建一条
+  // 唯一命名的临时链接，测完即删；不触碰任何既有历史文件
+  const root = join(homedir(), '.ai-page-dive', 'history')
+  const link = join(root, `pd-symlink-test-${process.pid}.md`)
+  const real = join(root, `pd-real-test-${process.pid}.md`)
+  let outsideDir = ''
+  beforeEach(async () => {
+    outsideDir = await mkdtemp(join(tmpdir(), 'pd-outside-'))
+    await writeFile(join(outsideDir, 'secret.md'), 'SECRET', 'utf8')
+    await mkdir(root, { recursive: true })
+    await symlink(join(outsideDir, 'secret.md'), link)
+    await writeFile(real, '---\ntitle: t\n---\n真实历史', 'utf8')
+  })
+  afterEach(async () => {
+    await rm(link, { force: true }) // symlink 本身，不跟随
+    await rm(real, { force: true })
+    await rm(outsideDir, { recursive: true, force: true })
+  })
+
+  it('history/ 内指向树外的符号链接：read/delete/append 全部拒绝，树外文件不受影响', async () => {
+    await expect(readHistory(link)).rejects.toThrow('outside history root')
+    await expect(deleteHistory(link)).rejects.toThrow('outside history root')
+    await expect(appendHistoryTurn(link, { user: 'u', assistant: 'a' })).rejects.toThrow('outside history root')
+    expect(await readFile(join(outsideDir, 'secret.md'), 'utf8')).toBe('SECRET') // 未被读走/删除/追写
+  })
+
+  it('root 内的真实文件不受穿链校验牵连（防误伤回归）', async () => {
+    expect(await readHistory(real)).toContain('真实历史')
+    await appendHistoryTurn(real, { user: '追问', assistant: '回答' })
+    expect(await readFile(real, 'utf8')).toContain('<!-- pd:user -->\n追问')
   })
 })

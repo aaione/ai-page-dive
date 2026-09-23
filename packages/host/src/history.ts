@@ -2,9 +2,9 @@
  * 多轮对话 append 首轮文件、pd:user/pd:assistant 注释分段；伪造标记注入由 escapePd 消（r33-sec） */
 import { mkdir, open, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, resolve, sep } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, renameSync } from 'node:fs'
 import type { HistoryItem } from '@ai-page-dive/shared'
 import { splitFrontmatter } from './frontmatter.js'
 
@@ -22,10 +22,20 @@ function rootDir(): string {
 
 const ROOT = join(rootDir(), 'history')
 
-/** 路径校验：resolve 消除 .. 与同前缀绕过（history-evil/ 等） */
+/** 符号链接解析（不存在则退一级解析父目录 + 拼回名字；父目录也没有则原样返回）。
+ *  r47-sec：assertInRoot 原先只用 resolve——resolve 不解析 symlink，
+ *  history/ 下一条指向树外的链接可通过前缀校验，而 readFile/rm 会跟着链接走。 */
+function realOrSelf(p: string): string {
+  try { return realpathSync(p) } catch { /* 不存在：退一级 */ }
+  try { return join(realpathSync(join(p, '..')), basename(p)) } catch { return p }
+}
+
+/** 路径校验：resolve 消除 .. 与同前缀绕过（history-evil/ 等），realpath 复核穿链。
+ *  ROOT 自身可能是链接（用户把 ~/.ai-page-dive 挪走再链回），故两侧同口径解析 */
 function assertInRoot(p: string): void {
-  const r = resolve(p)
-  if (r !== ROOT && !r.startsWith(ROOT + sep)) {
+  const root = realOrSelf(ROOT)
+  const r = realOrSelf(resolve(p))
+  if (r !== root && !r.startsWith(root + sep)) {
     throw new Error('path outside history root')
   }
 }
