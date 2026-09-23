@@ -290,7 +290,15 @@ export function App() {
           // 是我锚的 tab 且我当前可见」才是用户在同 tab 再按 = 要收起——换锚开/
           // 收起中恢复等其余场景不动作。sidePanel 无 SW 侧 close API，收起只能
           // 面板自 window.close()；会话态在 SW/storage.session，重开走 panel-ready
-          if (typeof m.tabId === 'number' && m.tabId === anchorTabIdRef.current && !document.hidden) window.close()
+          // r46 豁免：终局是错误气泡时，图标点击是在照 no-permission 文案指引
+          // 「点图标重新授权」——此刻收起面板等于打断自救（还得再点一次开面板），
+          // 手势已完成重新授权，面板保持打开让用户直接重试
+          if (typeof m.tabId === 'number' && m.tabId === anchorTabIdRef.current && !document.hidden) {
+            const s = streamRef.current
+            const last = [...s.messages].reverse().find((x) => x.role === 'assistant')
+            const lastErrored = !s.taskId && !!last?.isError && !last?.cancelled
+            if (!lastErrored) window.close()
+          }
           break
         case 'panel-anchor':
           // r16：换锚不重载面板——收养邮戳的核验基准跟着锚走
@@ -577,7 +585,7 @@ export function App() {
         resp.error === 'host-not-found-retry' ? '本机组件连接闪断——通常已自动恢复，请重试'
         : resp.error === 'no-tab' ? '没有可总结的页面（先在普通网页上点扩展图标）'
         : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
-        : resp.error === 'no-permission' ? '本页尚未授权提取（浏览器安全模型：换页后需重新授权）——点一下工具栏上的 PageDive 图标，回来重试即可'
+        : resp.error === 'no-permission' ? `本页尚未授权提取（浏览器安全模型：换页后需重新授权）——点一下工具栏上的 PageDive 图标，回来重试即可${resp.detail ? `〔${String(resp.detail).slice(0, 120)}〕` : ''}`
         : resp.error === 'empty-content' ? '页面没有可提取的正文——等页面加载完成（或滚动到底部触发懒加载）后重试；也可粘贴正文作为附件直接追问'
         : resp.error === 'cancelled' ? '已取消'
         : resp.error === 'empty-instruction' ? '请输入要追问的内容（或直接点「新对话」重新总结本页）'
