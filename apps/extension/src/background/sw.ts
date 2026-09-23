@@ -45,6 +45,8 @@ let currentTask: {
 // 同步持久化到 chrome.storage.session：MV3 SW 30s 空闲即回收，纯内存态在
 // 「看完总结 → 隔一分钟追问」场景下必丢（session-lost）。storage.session 随
 // 浏览器会话存活，SW 冷启动时恢复（restoreSession）。
+// historyPath：追问轮 append 进同一文件——历史详情还原完整多轮对话。
+// sessionId 可为空串：codex 不产 sessionId，仍归档 historyPath 供面板重开还原 UI（r47-ux）
 type Session = { agentId: string; sessionId: string; historyPath?: string }
 const sessions = new Map<number, Session>()
 // 当前任务用的 agent（task-meta 到达时此刻的 agent 即会话归属）
@@ -71,7 +73,12 @@ async function restoreSession() {
     // 已被显式动作触碰（含 new-session 清空）则不恢复会话/agent——旧持久化态不得复活。
     // lastModels 是纯展示缓存，逐 key 补全无害，不受 touched 约束
     if (!sessionTouched) {
-      if (Array.isArray(s?.sessions)) for (const [k, v] of s.sessions) if (typeof k === 'number' && v?.sessionId) sessions.set(k, v)
+      // r47-ux：codex 无 sessionId 仍可能带 historyPath——重开面板要能还原对话 UI
+      if (Array.isArray(s?.sessions)) {
+        for (const [k, v] of s.sessions) {
+          if (typeof k === 'number' && v && (v.sessionId || v.historyPath)) sessions.set(k, v)
+        }
+      }
       if (s?.currentAgentId) currentAgentId = s.currentAgentId
     }
     // 锚定态恢复（r9-backlog：SW 回收后 onActivated 不知该 unanchor 谁，切 tab 面板
@@ -360,6 +367,9 @@ async function handleMessage(msg: any): Promise<unknown> {
           ? {
               hasSession: true,
               sessionAgentId: sess.agentId,
+              // r47-ux：无 sessionId（codex）不可 CLI 追问，但 hasSession + historyPath
+              // 仍用于重开还原——panel 按 canResume 决定是否开追问入口
+              canResume: !!sess.sessionId,
               // r14-ux：带出历史文件路径——面板被收起后重开（React 态已丢）时，
               // panel 自动 history-read 还原完整多轮对话，而不是一句
               // 「此前对话已清空」（切页签回来内容消失感的另一半根因）
@@ -380,7 +390,9 @@ async function handleMessage(msg: any): Promise<unknown> {
         // SW 恰在恢复中（微任务竞态窗）时补一次同步恢复——storage.session 读取 <1ms
         if (panelTabId === null || !sessions.get(panelTabId)) await restoreSession()
         const sess = panelTabId !== null ? sessions.get(panelTabId) : undefined
-        if (!sess) return { error: 'session-lost' }
+        // r47-ux：无 sessionId（codex 归档仅有 historyPath）不可 resume——明示丢失，
+        // 勿把空串交给 CLI（会变成语义不明的 resume 失败）
+        if (!sess?.sessionId) return { error: 'session-lost' }
         const r = startFollowUp(sess.agentId, sess.sessionId, instruction ?? '', sess.historyPath, attachments)
         return { ...r, agentId: sess.agentId }
       }
@@ -535,13 +547,20 @@ nmPort.onMessage((m) => {
       (currentTask && msg.taskId === currentTask.taskId ? currentAgentId : undefined)
     // r46（review C2）：取消台账命中的迟到帧不归档会话（见 cancelledTaskIds 注释）；
     // lastModels 的模型名记录与任务死活无关，保留
-    if (msg.sessionId && owner && !cancelledTaskIds.has(msg.taskId)) {
+    // r47-ux（review P7）：codex 不产 sessionId——仍归档 historyPath，重开面板可
+    // history-read 还原对话；sessionId 空串表示不可 CLI 追问（panel canResume=false）
+    if (owner && !cancelledTaskIds.has(msg.taskId)) {
       const tabId = currentTask && msg.taskId === currentTask.taskId ? currentTask.tabId : panelTabId
-      // || 而非 ??：host 首轮 persist 失败时回传空串（不虚构路径），跳过且保留
-      // 上一会话已有路径（r7-review）；合法路径永非空串
       if (tabId !== null) {
-        sessions.set(tabId, { agentId: owner, sessionId: msg.sessionId, historyPath: msg.historyPath || sessions.get(tabId)?.historyPath })
-        persistSession()
+        const prev = sessions.get(tabId)
+        // || 而非 ??：host 首轮 persist 失败时回传空串（不虚构路径），跳过且保留
+        // 上一会话已有路径（r7-review）；合法路径永非空串
+        const sid = (typeof msg.sessionId === 'string' && msg.sessionId) || prev?.sessionId || ''
+        const hp = msg.historyPath || prev?.historyPath
+        if (sid || hp) {
+          sessions.set(tabId, { agentId: owner, sessionId: sid, historyPath: hp })
+          persistSession()
+        }
       }
     }
     // 记住该 CLI 最近模型，merge 进 agents 缓存即刻下发（下拉展示 claude · GLM-5.2）

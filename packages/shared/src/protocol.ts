@@ -349,5 +349,8 @@ export interface PanelReadyResp {
   hasSession?: boolean
   sessionAgentId?: string
   historyPath?: string
+  /** r47-ux：该会话能否 CLI 级追问（有非空 sessionId）。codex 无 sessionId → false，
+   *  面板仍可经 historyPath 还原对话 UI，但不得开放「继续追问」假入口 */
+  canResume?: boolean
   activeTask?: { taskId: string; startedAt: number }
 }
