@@ -122,6 +122,39 @@ describe('Task 状态机', () => {
     await rm(join(script, '..'), { recursive: true, force: true })
   }, 30_000)
 
+  it('r49（#64-①）：quick 档跳过技能注入，deep 档照注入（上游按任务注入）', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const dir = await mkdtemp(join(tmpdir(), 'pd-fake-'))
+    const script = join(dir, 'cli.mjs')
+    const stdinFile = join(dir, 'stdin.txt')
+    // 假 CLI：收满 stdin 落盘后发终局（prompt 是唯一观测点）
+    await writeFile(script, `import { writeFileSync } from 'node:fs'
+const chunks = []
+for await (const c of process.stdin) chunks.push(c)
+writeFileSync(${JSON.stringify(stdinFile)}, Buffer.concat(chunks), 'utf8')
+console.log(JSON.stringify({type:'result',is_error:false,result:'完成',usage:{input_tokens:1,output_tokens:2}}))`, 'utf8')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const run = async (wf: string) => {
+      const { task: mk, cbs } = makeCbs(); const task = mk()
+      // eli5：仓库内置技能（builtins-skills），getSkillBodies 可稳定取到正文
+      task.start({ taskId: `t-skill-${wf}`, agentId: 'claude', workflow: wf, skills: ['eli5'], page: PAGE as any })
+      task.appendContent(BODY, true)
+      await task.run()
+      await new Promise(r => setTimeout(r, 200))
+      if (cbs.done?.historyPath) await rm(cbs.done.historyPath, { force: true }).catch(() => {})
+    }
+    await run('quick')
+    const quickPrompt = await readFile(stdinFile, 'utf8')
+    await run('deep')
+    const deepPrompt = await readFile(stdinFile, 'utf8')
+    AGENTS[0].buildArgs = orig
+    expect(quickPrompt).not.toContain('## 技能')
+    expect(deepPrompt).toContain('## 技能')
+    await rm(dir, { recursive: true, force: true })
+  }, 30_000)
+
   it('CJK 大 delta 按 UTF-8 字节切片：单片不超 NM 上限', async () => {
     // 40 万汉字单条 text-delta：按字符切（旧实现）单片 512K 字符 = ~1.5MB 超 NM 1MB；
     // 按字节切应分 3 片且每片 UTF-8 ≤512KB。直接驱动（不 spawn）：append 后调私有路径

@@ -182,8 +182,11 @@ export class Task {
     const wfName = this.input.workflow ?? 'quick'
     const wf = await getWorkflow(wfName)
 
-    // 技能注入：非 resume 轮读取启用技能正文（读取失败的已在 getSkillBodies 内跳过）
-    const skillBodies = !isResume && this.input.skills?.length
+    // 技能注入：非 resume 轮读取启用技能正文（读取失败的已在 getSkillBodies 内跳过）。
+    // r49（#64-① 按任务注入）：quick 档跳过——「十几秒出要点」与技能增强指令互相
+    // 冲突（每技能 ~450 token 拖慢首字），快速档零负担；其余档（默认/深度/论文/
+    // 改写/自定义）保留注入。面板徽标同语义降透明提示（SummarizeView PageTips）
+    const skillBodies = !isResume && wfName !== 'quick' && this.input.skills?.length
       ? await getSkillBodies(this.input.skills)
       : undefined
 

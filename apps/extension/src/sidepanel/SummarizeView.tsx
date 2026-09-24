@@ -587,7 +587,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
 
       <div className="pd-action-bar">
         {/* r38-motion：key=锚定页——切页时重挂载重播入场动画（此前恒挂载，标题/tokens 瞬跳是「不丝滑」主源） */}
-        {pageMeta && <PageTips key={pageMeta.url} meta={pageMeta} idle={!messages.length} dimmed={hasSession} />}
+        {/* r49（#64-①）：dimmed 语义 = 本轮不注入技能——追问轮（会话延续）或 quick 档
+            （host 侧跳过注入，与 task.ts 过滤同语义） */}
+        {pageMeta && <PageTips key={pageMeta.url} meta={pageMeta} idle={!messages.length} dimmed={hasSession ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
         {chips.shown && chips.shown.length > 0 && (
           <div className={`pd-attach-chips${chips.exiting ? ' pd-exiting' : ''}`}>
             {chips.shown.map((a, i) => (
@@ -1104,7 +1106,7 @@ function ActionBar({
 /** 输入框上方 tips 条：「正在分享 "页面标题"」（参考 Gemini 插件，上下文透明化）。
  *  r43：启用中的技能以常驻微标在此展示——技能是「设置里开的全局状态」，归属输入区
  *  状态指示而非每条消息的属性（r37 气泡下独立徽标行形态退役：占版面且追问轮虚假标注） */
-function PageTips({ meta, idle, dimmed }: { meta: PageMeta; idle?: boolean; dimmed?: boolean }) {
+function PageTips({ meta, idle, dimmed }: { meta: PageMeta; idle?: boolean; dimmed?: false | 'resume' | 'quick' }) {
   const [skills, setSkills] = useState<string[]>(() => readList('pd-enabled-skills'))
   useEffect(() => {
     const sync = () => setSkills(readList('pd-enabled-skills'))
@@ -1149,11 +1151,12 @@ function PageTips({ meta, idle, dimmed }: { meta: PageMeta; idle?: boolean; dimm
       )}
       {!!skills.length && (
         // r44-audit F1：技能只随首轮注入——追问轮常驻照亮 = 虚假标注复发（r42 同款
-        // 问题的形态转移）；降透明 + title 改口，把轮次语义显式接上
+        // 问题的形态转移）；降透明 + title 改口，把轮次语义显式接上。
+        // r49（#64-①）：quick 档同谱降透明——host 跳过注入，徽标不得假装生效
         <span
           className="pd-page-tips-notice"
           style={dimmed ? { opacity: 0.45 } : undefined}
-          title={`${dimmed ? '追问轮不注入技能（新对话后生效）' : '已启用技能（总结时注入增强指令）'}：${skills.join('、')}——在 设置·技能 管理`}
+          title={`${dimmed === 'resume' ? '追问轮不注入技能（新对话后生效）' : dimmed === 'quick' ? '快速档不注入技能（追求十几秒出要点，切其他档生效）' : '已启用技能（总结时注入增强指令）'}：${skills.join('、')}——在 设置·技能 管理`}
         >
           ⚡ {skills.length > 1 ? `技能 ×${skills.length}` : skills[0]}
         </span>
