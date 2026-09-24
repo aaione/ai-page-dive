@@ -49,6 +49,8 @@
 
 ### 已知限制（opencode 的 Gatekeeper 弹框，v1 接受）
 
+- **2026-09-24 补：codex 无进程级 Read 路径白名单**——claude 有 `--allowedTools=Read(//path/**)`（r48/M7 已收紧为正文/附件/工作目录三根路径白名单），codex 的 `--sandbox` 只有 read-only 工作区级围栏、无按路径白名单的工具级开关，等效收紧需上游支持。当前 codex 面与 claude r47 之前同水位（沙箱只读 + 工具拒绝面靠 CLI 默认权限模型），v1 接受。
+
 - **2026-09-22 修订：opencode 入口暂时下架（registry 注释，适配器保留）**——弹框非「偶发一次」而是**每次必弹且拦杀**（SIGKILL），加上开发者工具豁免指引亦实测无效，已从「可接受的实验档」退化为「基本不可用」；v1 以 claude + codex 双适配器交付。恢复条件：上游改 bundle 方式（固定提取路径 pre-sign / 不再运行时提取）或 macOS 提供进程级 quarantine 清除 API。
 - **症状**：从 Chrome 派生的 host 调起 opencode 时，它内嵌 Bun 1.3.14 每启动把 adhoc 签名的运行时 dylib（随机名 hash）提取到临时目录再 dlopen。macOS 的 quarantine 是「进程树级传播」——Chrome 调用 `qtn_proc_apply_to_self` 让其子树新建的所有文件带 `com.apple.quarantine`（与签名、Chrome 盘上 xattr 均无关）。文件名每次随机 → Gatekeeper 每次重新弹「无法验证是否含恶意软件」。
 - **已证伪的 host 侧方案**（勿回退）：

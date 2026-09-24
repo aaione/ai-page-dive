@@ -499,6 +499,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* r48（M3）：内置档目录名——弱化技术标识，不与雅名抢视觉 */
+.pd-set-wf-dir {
+  flex-shrink: 0;
+  max-width: 90px;
+  font-size: 10px;
+  color: var(--color-pd-ink-2);
+  opacity: .75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pd-set-wf-desc {
   font-size: 11px;
   color: var(--color-pd-ink-2);

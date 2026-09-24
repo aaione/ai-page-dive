@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { AgentDef, AgentEvent } from '@ai-page-dive/shared'
 
 /**
@@ -92,19 +92,42 @@ export const claudeDef: AgentDef = {
       return undefined
     }
   },
-  buildArgs: (opts) => [
-    '-p',
-    '--output-format', 'stream-json',
-    '--verbose',
-    '--include-partial-messages',
-    // r47-perf：-p 默认连用户环境全部 MCP server（本机 10 个实测 5-15s CPU 纯浪费——
-    // --allowedTools=Read 围栏下 MCP 工具本就不可调，连接零语义收益）。内联空配置
-    // （--mcp-config 收 JSON 串）+ strict 屏蔽其余来源，CLI 冷启段 ~10s+ → ~1s
-    '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
-    // 进程级工具围栏（r6-sec，与 codex --sandbox read-only 对称）：任务语义只需读临时正文/附件文件——白名单外
-    // 工具（Bash/Write/网络等）在 CLI 层一律拒绝，prompt 注入的越权指令到此被拦。等号形式：--allowedTools 是
-    // variadic 参数，空格形式会吞掉后续 argv。实测（claude 2.x）：Read 围栏下读文件+总结链路 exit 0 / is_error false
-    '--allowedTools=Read',
-    ...(opts.resumeSessionId ? ['--resume', opts.resumeSessionId] : []),
-  ],
+  buildArgs: (opts) => {
+    // r48（M7）：读围栏从「任意 Read」收紧为路径白名单——Read(//path/**)，规则里
+    // // 表绝对路径（claude 权限语法）。macOS tmpdir(/var/folders/…) 实为
+    // /private/var/… 的软链，CLI 解析真实路径后才做规则匹配——每个根给原路径 +
+    // realpath 双份覆盖两种形态。resume 轮 contentFile 为空串：跳过该根（r7-review）
+    const roots = new Set<string>()
+    const add = (p?: string) => {
+      if (!p) return
+      roots.add(p)
+      try { roots.add(realpathSync(p)) } catch { /* 尚不存在则只给原路径 */ }
+    }
+    add(opts.contentFile && dirname(opts.contentFile))
+    add(opts.agentCwd)
+    add(join(homedir(), '.ai-page-dive', 'attachments')) // 附件持久化目录，resume 轮同样要可读
+    return [
+      '-p',
+      '--output-format', 'stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      // r47-perf：-p 默认连用户环境全部 MCP server（本机 10 个实测 5-15s CPU 纯浪费——
+      // Read 围栏下 MCP 工具本就不可调，连接零语义收益）。内联空配置
+      // （--mcp-config 收 JSON 串）+ strict 屏蔽其余来源，CLI 冷启段 ~10s+ → ~1s
+      '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+      // r48（M7 实测补钉）：用户全局 settings.json 若配了 bypassPermissions，
+      // --allowedTools 白名单不构成拒绝面（白名单外 Read 实测照样放行）——显式钉
+      // default 让围栏不随用户个人偏好漂移。白名单内 Read 在 default 下免批准直读
+      // （实测 denials 空），白名单外 Read/Bash 逃逸均被拦；headless -p 无人值守，
+      // 一切「需批准」操作被拒正是产品语义
+      '--permission-mode', 'default',
+      // 进程级工具围栏（r6-sec，与 codex --sandbox read-only 对称）：任务语义只需读
+      // 白名单路径下的正文/附件——白名单外的 Read 与一切其他工具（Bash/Write/网络等）
+      // 在 CLI 层一律拒绝，prompt 注入的越权指令到此被拦。等号形式 + 逗号分隔：
+      // --allowedTools 是 variadic 参数，空格形式会吞掉后续 argv（claude --help 实测
+      // 收 comma or space-separated list）
+      `--allowedTools=${[...roots].map((p) => `Read(//${p.replace(/^\//, '')}/**)`).join(',')}`,
+      ...(opts.resumeSessionId ? ['--resume', opts.resumeSessionId] : []),
+    ]
+  },
 }

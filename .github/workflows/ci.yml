@@ -35,6 +35,8 @@ jobs:
         if: matrix.node == 22
       - run: pnpm test # 内含 scripts/check-host-lines.mjs 行数红线断言
         if: matrix.node == 22
+      - run: node scripts/check-version.mjs # r48（M10）：ext/host/manifest/install.sh 版本一致门禁
+        if: matrix.node == 22
       # 18 腿：host 在 engines 下界的真实验证——构建产物能被 node 18 加载执行
       # （r8-ci：host tsc 需要 shared 的类型产物，必须连带选中 shared 一起构建——
       # 只 filter host 时 fresh checkout 无 shared/dist，TS2307 必红）

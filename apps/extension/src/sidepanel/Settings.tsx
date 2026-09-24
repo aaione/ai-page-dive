@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentStatus, HostToExt, SkillItem, WorkflowItem } from '@ai-page-dive/shared'
 import { useRovingNav, useListboxMenu } from './a11y.js'
+import { WF_LABEL, wfLabel } from './workflow-labels.js'
 import './Settings.css'
 
 /** workflow 名称合法字符（与目录名一致）：字母数字下划线连字符，≤64 */
@@ -460,7 +461,10 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
                         title={w.description}
                       >
                         <span className="pd-set-wf-name-row">
-                          <span className="pd-set-wf-name">{w.name}</span>
+                          {/* r48（M3）：主行雅名 + 弱化目录名——与顶栏下拉/气泡档名
+                              同源（WF_LABEL），有雅名时补充暴露目录名作技术标识 */}
+                          <span className="pd-set-wf-name">{wfLabel(w.name)}</span>
+                          {WF_LABEL[w.name] && <span className="pd-set-wf-dir">{w.name}</span>}
                           {w.builtin && <span className="pd-set-badge">内置</span>}
                         </span>
                         <span className="pd-set-wf-desc">{w.description}</span>

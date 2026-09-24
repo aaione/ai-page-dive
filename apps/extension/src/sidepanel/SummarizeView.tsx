@@ -4,6 +4,7 @@ import type { ChatMessage, PageMeta, TaskStreamState } from './App.js'
 import { useListboxMenu, useRovingNav } from './a11y.js'
 import { useExitValue } from './motion.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
+import { WF_LABEL } from './workflow-labels.js'
 
 interface Props {
   agents: AgentStatus[]
@@ -1187,7 +1188,13 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
             </>
           ) : (
             <>
-              终端执行 <code>npm i -g @anthropic-ai/claude-code</code>（或 codex）并登录
+              {/* r48（M11）：补 native installer 路线（claude 官方一键脚本，免 npm）
+                  与 codex 的确切命令——「或 codex」让用户自己猜命令 */}
+              终端安装并登录（任选其一）：
+              <br />
+              claude：<code>curl -fsSL https://claude.ai/install.sh | bash</code>
+              <br />
+              codex：<code>npm i -g @openai/codex</code>
               <br />
               安装后点上方「重试检测」 · 无服务器 · 正文不经 PageDive 中转
             </>
@@ -1232,13 +1239,3 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
   )
 }
 
-const WF_LABEL: Record<string, string> = {
-  // r46-user：恢复「默认模式」——真实语义 = 不套预设 prompt 纯调 CLI（r43 曾
-  // 硬映射 deep 并改名「深度总结」，把该档连同语义一起吃掉了；空输入仍转 deep
-  // 保一键总结，见 send()）
-  default: '默认模式',
-  quick: '快速摘要',
-  deep: '深度总结',
-  paper: '论文模式',
-  humanize: '去 AI 味改写',
-}

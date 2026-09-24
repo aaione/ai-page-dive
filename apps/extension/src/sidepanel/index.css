@@ -677,7 +677,11 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: var(--pd-grain-soft) repeat, rgba(16,16,22,.58); /* r22：最重的雾补上砂——结构性三兄弟雾+砂双要件齐（零新面板） */
+  /* r22：最重的雾补上砂——结构性三兄弟雾+砂双要件齐（零新面板）。
+     r48：alpha .58→.92——Chrome 对负 z 伪元素跨 stacking context 的 backdrop
+     采样打折，blur(40) 实际没把底层压到不可读（hero 大字/金色 CTA/topbar 文字
+     透过 .58 仍可读，dev harness 实测），提到近不透明保住 r21「压到不可读」意图 */
+  background: var(--pd-grain-soft) repeat, rgba(16,16,22,.92);
   -webkit-backdrop-filter: blur(40px) saturate(200%);
   backdrop-filter: blur(40px) saturate(200%);
 }

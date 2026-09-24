@@ -252,7 +252,9 @@ export class Task {
     }
 
     this.timeoutTimer = setTimeout(() => {
-      if (this.finished) return
+      // r48（M4）：cancel() 只在 !ran 时同步置 finished——运行中取消后 exit 事件
+      // 到达前 finished 仍 false，此处若不挡会误报 timeout 终局顶掉 cancelled
+      if (this.finished || this.cancelled) return
       // 终局标记前置：reap 触发的 exit 事件不得再走 finish() 二次发终局
       this.finished = true
       this.timeoutSent = true
