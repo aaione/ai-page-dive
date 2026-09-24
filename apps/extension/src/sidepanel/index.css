@@ -680,8 +680,10 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   /* r22：最重的雾补上砂——结构性三兄弟雾+砂双要件齐（零新面板）。
      r48：alpha .58→.92——Chrome 对负 z 伪元素跨 stacking context 的 backdrop
      采样打折，blur(40) 实际没把底层压到不可读（hero 大字/金色 CTA/topbar 文字
-     透过 .58 仍可读，dev harness 实测），提到近不透明保住 r21「压到不可读」意图 */
-  background: var(--pd-grain-soft) repeat, rgba(16,16,22,.92);
+     透过 .58 仍可读，dev harness 实测），提到近不透明保住 r21「压到不可读」意图。
+     r49：.92→.96——.92 下高亮元素（金色 CTA/hero 白字）亮度残留 ~8%，压成
+     可辨认的模糊色块残影（真机反馈「还是没隐藏」）；.96 压到 ~4% 以下，残影灭 */
+  background: var(--pd-grain-soft) repeat, rgba(16,16,22,.96);
   -webkit-backdrop-filter: blur(40px) saturate(200%);
   backdrop-filter: blur(40px) saturate(200%);
 }
