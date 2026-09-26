@@ -41,6 +41,7 @@ export interface TaskCallbacks {
     durationMs: number
     model?: string
     sessionId?: string
+    unrecognized?: number
   }) => void
   onError: (code: 'spawn-fail' | 'timeout' | 'cancelled' | 'parse' | 'no-agent', message: string) => void
 }
@@ -67,6 +68,8 @@ export class Task {
   private timeoutSent = false
   /** claude 已交付完整 result 且 is_error=false（exit code 异常时仍算成功——硬约束 #4 的精神） */
   private gotResultOk = false
+  /** r51 A2③：流中未识别事件数（task-done 透出——CLI 版本漂移的第一信号） */
+  private unrecognized = 0
   /** 首轮 saveHistory 成功落盘（r7-review）：失败时终局回传空串——虚构路径会让
    * SW 记进 lastSession，追问轮 append 出无 frontmatter 的孤儿历史文件 */
   private persistOk = false
@@ -330,6 +333,9 @@ export class Task {
       case 'status':
         if (!this.cancelled) this.cb.onStatus(ev.phase)
         break
+      case 'unrecognized':
+        this.unrecognized++
+        break
       case 'meta':
         if (this.cancelled) break // 取消后迟到 meta 不发（r5：曾把取消任务 A 的 model 写上新任务 B 的气泡）
         this.meta = {
@@ -378,6 +384,7 @@ export class Task {
             durationMs: Date.now() - this.startedAt,
             model: this.meta?.model,
             sessionId: this.meta?.sessionId,
+            unrecognized: this.unrecognized || undefined,
           })
         } else if (ev.text && !this.accText) {
           // codex 无增量时 result 兜底出全文
@@ -472,6 +479,7 @@ export class Task {
         durationMs,
         model: this.meta?.model,
         sessionId: this.meta?.sessionId,
+        unrecognized: this.unrecognized || undefined,
       })
     }
   }

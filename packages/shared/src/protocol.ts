@@ -239,6 +239,8 @@ export interface TaskDoneMsg {
   sessionId?: string
   /** 实际使用的模型名（claude init 事件） */
   model?: string
+  /** 流中未识别事件数（r51 A2③ 漂移感知）：>0 = CLI 版本可能高于适配器实测 */
+  unrecognized?: number
 }
 
 export interface TaskErrorMsg {

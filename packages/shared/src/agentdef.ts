@@ -44,6 +44,9 @@ export type AgentEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'usage'; inputTokens?: number; outputTokens?: number }
   | { type: 'result'; isError: boolean; text: string }
+  /** r51 A2③ 版本漂移感知：解析器遇到未知事件类型时上报（kind=原始 type），
+   *  task.ts 计数后经 task-done.unrecognized 透出——CLI 升级改格式的第一信号 */
+  | { type: 'unrecognized'; kind: string }
 
 /** 任务输入（task-start 消息携带，正文经 task-content 分片递送） */
 export interface TaskInput {

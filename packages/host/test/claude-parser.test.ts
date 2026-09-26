@@ -3,6 +3,12 @@ import { createClaudeParser } from '../src/agents/claude.js'
 
 // fixture 采自 claude 2.1.162 真实输出（2026-09-01）
 describe('claude stream-json parser', () => {
+  it('未知 type → unrecognized 上报（r51 A2③ 漂移感知；user 工具结果回执已知忽略）', () => {
+    const p = createClaudeParser()
+    expect(p({"type":"user","message":{}})).toEqual([])
+    expect(p('{"type":"brand_new_frame"}')).toEqual([{ type: 'unrecognized', kind: 'brand_new_frame' }])
+  })
+
   it('system init → meta（model/sessionId）+ status', () => {
     const p = createClaudeParser()
     const evs = p(

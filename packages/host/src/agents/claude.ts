@@ -13,6 +13,10 @@ import type { AgentDef, AgentEvent } from '@ai-page-dive/shared'
  *   {type:'assistant', message.content:[{type:'text'}]}   → 全量消息（已发过增量则跳过）
  *   {type:'result', is_error, result, usage}              → 终局（硬约束：退出码 0 也可能 is_error）
  */
+/** r51 A2③：已知但无需处理的 type（user=工具结果回执；system 非 init 子类型=hook
+ * 等生命周期帧）——不进 unrecognized 防误报 */
+const CLAUDE_IGNORED = new Set(['user', 'system'])
+
 export function createClaudeParser() {
   let prevText = ''
   return (line: string): AgentEvent[] => {
@@ -63,6 +67,9 @@ export function createClaudeParser() {
         })
       }
       out.push({ type: 'result', isError: isError(d), text: d.result ?? '' })
+    } else if (typeof d.type === 'string' && !CLAUDE_IGNORED.has(d.type)) {
+      // r51 A2③：未知 type 上报（版本漂移感知），task.ts 计数进 task-done
+      out.push({ type: 'unrecognized', kind: d.type })
     }
     return out
   }

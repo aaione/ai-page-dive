@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a0dda8-24ed-7593-9ea5-7a8357306e1c"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Codex is ignoring 9 unrecognized configuration settings. Check for typos or deprecated settings.\n  user (/Users/apple/.codex/config.toml): `disable_response_storage` is ignored.\n  user (/Users/apple/.codex/config.toml): `mcp_servers.Ref.type` is ignored.\n  user (/Users/apple/.codex/config.toml): `mcp_servers.chrome-devtools.type` is ignored.\n  ... and 6 more ignored settings."}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"Codex is ignoring 9 unrecognized configuration settings. Check for typos or deprecated settings.\n  user (/Users/apple/.codex/config.toml): `disable_response_storage` is ignored.\n  user (/Users/apple/.codex/config.toml): `mcp_servers.Ref.type` is ignored.\n  user (/Users/apple/.codex/config.toml): `mcp_servers.chrome-devtools.type` is ignored.\n  ... and 6 more ignored settings."}}
+{"type":"item.completed","item":{"id":"item_2","type":"error","message":"failed to parse hooks config /Users/apple/.codex/hooks.json: unknown field `state`, expected `description` or `hooks` at line 99 column 9"}}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"ok"}}
+{"type":"turn.completed","usage":{"input_tokens":20966,"cached_input_tokens":13056,"cache_write_input_tokens":0,"output_tokens":5,"reasoning_output_tokens":0}}

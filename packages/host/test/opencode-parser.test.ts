@@ -3,6 +3,12 @@ import { createOpencodeParser } from '../src/agents/opencode.js'
 
 // fixture 采自 opencode 1.18.23 真实输出（2026-09-02）
 describe('opencode jsonl parser', () => {
+  it('未知 type → unrecognized 上报（r51 A2③ 漂移感知；已处理类型不误报）', () => {
+    const p = createOpencodeParser()
+    expect(p({"type":"text","part":{"type":"text","text":"x"}})).toEqual([])
+    expect(p('{"type":"brand_new_frame"}')).toEqual([{ type: 'unrecognized', kind: 'brand_new_frame' }])
+  })
+
   it('step_start → status', () => {
     const p = createOpencodeParser()
     expect(

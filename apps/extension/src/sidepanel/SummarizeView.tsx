@@ -93,6 +93,19 @@ export function useSetting(key: string): [string, (v: string) => void] {
   return [v, set]
 }
 
+/** r51 A2①：解析器实测版本基线（= test fixture 采样版本；scripts/record-fixtures.mjs
+ * 重采样后同步更新此处）——低于即在下拉内联提示；只警告不硬拒跑（与零配置支柱一致） */
+const MIN_VERSIONS: Record<string, string> = { claude: '2.1.162', codex: '0.156.1' }
+const verLt = (a: string, b: string) => {
+  // 净化非数字字符：真机 --version 形如 "codex-cli 0.156.1" / "2.1.162 (Claude Code)"
+  const pa = a.replace(/[^\d.]/g, '').split('.').map((s) => parseInt(s, 10) || 0)
+  const pb = b.split('.').map((s) => parseInt(s, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0)
+  }
+  return false
+}
+
 export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, resumable, sessionAgentId, pageUnsupported, agentsLoaded }: Props) {
   const disabledClis = useDisabledClis()
   const getEnabledSkills = useEnabledSkills()
@@ -486,8 +499,16 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             version: a.version,
             model: a.model,
             // r51 A6：codex 无 sessionId（不可追问）前置到引擎选择处——此前只在
-            // 定稿后提示，用户选完引擎才发现追问预期落空
-            note: a.id === 'codex' ? '不支持追问' : undefined,
+            // 定稿后提示，用户选完引擎才发现追问预期落空。
+            // r51 A2①：版本低于解析器实测基线同位提示（CLI 自动升级漂移的可见信号）
+            note: [
+              a.id === 'codex' ? '不支持追问' : '',
+              a.version && MIN_VERSIONS[a.id] && verLt(a.version, MIN_VERSIONS[a.id])
+                ? `版本低于实测基线 ${MIN_VERSIONS[a.id]}`
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' · ') || undefined,
           }))}
           fallback="无可用 CLI"
           ariaLabel="选择 AI CLI"

@@ -3,6 +3,12 @@ import { createCodexParser } from '../src/agents/codex.js'
 
 // fixture 采自 codex-cli 0.151.0 真实输出（2026-09-01）
 describe('codex jsonl parser', () => {
+  it('未知 type → unrecognized 上报（r51 A2③ 漂移感知；turn.started 已知忽略）', () => {
+    const p = createCodexParser()
+    expect(p({"type":"turn.started"})).toEqual([])
+    expect(p('{"type":"brand_new_frame"}')).toEqual([{ type: 'unrecognized', kind: 'brand_new_frame' }])
+  })
+
   it('thread.started → meta(thread_id 作 sessionId，追问锚点) + status', () => {
     const p = createCodexParser()
     expect(p(JSON.stringify({ type: 'thread.started', thread_id: 't1' }))).toEqual([

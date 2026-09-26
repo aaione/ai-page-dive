@@ -13,6 +13,9 @@ import type { AgentDef, AgentEvent } from '@ai-page-dive/shared'
  *   {type:'turn.completed', usage:{input_tokens, output_tokens}} → 终局
  *   {type:'turn.failed', error}
  */
+/** r51 A2③：已知但无需处理的 type（turn/item 的 started 结构帧）——不进 unrecognized 防误报 */
+const CODEX_IGNORED = new Set(['turn.started', 'item.started'])
+
 export function createCodexParser() {
   let done = false
   return (line: string): AgentEvent[] => {
@@ -48,6 +51,11 @@ export function createCodexParser() {
         done = true
         out.push({ type: 'result', isError: true, text: d.error?.message ?? 'turn failed' })
         break
+      default:
+        // r51 A2③：未知 type 上报（版本漂移感知），task.ts 计数进 task-done
+        if (typeof d.type === 'string' && !CODEX_IGNORED.has(d.type)) {
+          out.push({ type: 'unrecognized', kind: d.type })
+        }
     }
     return out
   }

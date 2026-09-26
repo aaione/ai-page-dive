@@ -39,6 +39,9 @@ export function createOpencodeParser() {
         if (d.part?.reason === 'error') errored = true
         break
       }
+      default:
+        // r51 A2③：未知 type 上报（版本漂移感知；适配器暂时下架，回归后首个校准点）
+        if (typeof d.type === 'string') out.push({ type: 'unrecognized', kind: d.type })
     }
     // result 恰发一次：errored 置位后每行都会走到这里，无 resultSent 门控会逐行重复
     // push result（当前靠 task.ts finished 门控兜住不炸，但解析器契约上 result 应唯一，
