@@ -100,7 +100,8 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
       case 'history-list':
         // 无 .catch 时 EACCES → unhandledRejection → Node ≥18 退出进程 → NM 断连
         listHistory(msg.query, msg.limit)
-          .then((items) => send({ t: 'history-list', items }))
+          // query 回显：面板对账迟到帧（各请求并发、回帧序无保证，r50）
+          .then((items) => send({ t: 'history-list', items, query: msg.query }))
           .catch((e) => send({ t: 'error', code: 'list-fail', message: String(e?.message ?? e) }))
         break
       case 'history-read':

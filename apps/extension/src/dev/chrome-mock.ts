@@ -13,7 +13,8 @@
  *   ?swcycle=lost   会话彻底丢——追问发得出去，回 session-lost 气泡 + 自愈降级
  *                  （resumable 置 false，重发自动走全新总结）
  * 任务流：点「深度总结本页」后 mock 广播 reading→thinking→4 段流式 chunk→done，
- * 全程 ~2.4s，可验证 running 态（I3 两步确认/I1 禁用视觉/enterHint）与完成态。
+ * 全程 ~2.4s，可验证 running 态（I3 两步确认/I1 禁用视觉/enterHint）与完成态；
+ * 点「停止」→ nm task-cancel → 清假任务 timers + 回 task-error(cancelled)（r50）。
  */
 
 const q = new URLSearchParams(location.search)
@@ -56,16 +57,25 @@ const MD = [
 ]
 
 let seq = 0
+// r50：fake 任务可取消——SW 收 {t:'cancel'} 后转 nm task-cancel 给 host，host 收割
+// 进程回 task-error(code=cancelled) 终局帧（App 渲染「已取消」气泡、不回填输入框）。
+// 此前 mock 的 setTimeout 序列无法中止，harness 点「停止」后假任务照常流到 done
+let fakeTimers: ReturnType<typeof setTimeout>[] = []
+let fakeTaskId: string | null = null
+function cancelFake() {
+  fakeTimers.forEach(clearTimeout)
+  fakeTimers = []
+  if (fakeTaskId) setTimeout(() => cast({ t: 'task-error', taskId: fakeTaskId!, code: 'cancelled', message: 'task cancelled' }), 50)
+}
 function runFakeTask() {
   const taskId = `mock-${++seq}`
-  cast({ t: 'task-status', taskId, phase: 'reading', agentId: 'claude', tabId: 1 })
-  setTimeout(() => cast({ t: 'task-status', taskId, phase: 'thinking', agentId: 'claude' }), 300)
-  setTimeout(() => cast({ t: 'task-meta', taskId, agentId: 'claude', model: 'GLM-4.6', sessionId: `sess-${taskId}` }), 500)
-  MD.forEach((text, i) => setTimeout(() => cast({ t: 'task-chunk', taskId, seq: i, text }), 700 + i * 400))
-  setTimeout(
-    () => cast({ t: 'task-done', taskId, agentId: 'claude', historyPath: `/mock/h-${taskId}.md`, usage: { input: 15234, output: 1893 }, durationMs: 8200 }),
-    700 + MD.length * 400 + 200,
-  )
+  fakeTaskId = taskId
+  const at = (ms: number, fn: () => void) => fakeTimers.push(setTimeout(fn, ms))
+  at(0, () => cast({ t: 'task-status', taskId, phase: 'reading', agentId: 'claude', tabId: 1 }))
+  at(300, () => cast({ t: 'task-status', taskId, phase: 'thinking', agentId: 'claude' }))
+  at(500, () => cast({ t: 'task-meta', taskId, agentId: 'claude', model: 'GLM-4.6', sessionId: `sess-${taskId}` }))
+  MD.forEach((text, i) => at(700 + i * 400, () => cast({ t: 'task-chunk', taskId, seq: i, text })))
+  at(700 + MD.length * 400 + 200, () => cast({ t: 'task-done', taskId, agentId: 'claude', historyPath: `/mock/h-${taskId}.md`, usage: { input: 15234, output: 1893 }, durationMs: 8200 }))
   return taskId
 }
 
@@ -94,11 +104,15 @@ function route(msg: any): unknown {
     if (m?.t === 'list-agents') setTimeout(() => cast({ t: 'agents', agents: AGENTS }), 30)
     if (m?.t === 'list-workflows') setTimeout(() => cast({ t: 'workflows', items: WORKFLOWS }), 30)
     if (m?.t === 'list-skills') setTimeout(() => cast({ t: 'skills', items: SKILLS }), 30)
-    if (m?.t === 'history-list') setTimeout(() => cast({ t: 'history-list', items: HISTORY }), 30)
+    if (m?.t === 'history-list') setTimeout(() => cast({ t: 'history-list', items: m.query ? HISTORY.filter((h) => (h.title + h.url).includes(m.query)) : HISTORY, query: m.query ?? '' }), 30)
+    if (m?.t === 'task-cancel') cancelFake()
     if (m?.t === 'history-read') setTimeout(() => cast({ t: 'history-file', path: m.path, content: `---\ntitle: 示例总结\nurl: https://example.com\nagent: claude\nts: 2026-09-20\n---\n\n# 摘要\n\n历史详情正文占位。` }), 30)
     if (m?.t === 'workflow-read') setTimeout(() => cast({ t: 'workflow-file', name: m.name, content: WORKFLOWS.find((w) => w.name === m.name)?.description ?? '' }), 30)
     return undefined
   }
+  // UI 停止按钮发 SW 层 {t:'cancel'}（真机 SW 再转 nm task-cancel 给 host）——
+  // mock 无 SW，此处即取消入口
+  if (msg?.t === 'cancel') { cancelFake(); return undefined }
   if (msg?.t === 'summarize') {
     if (q.get('noextract')) return { error: 'no-permission' }
     // swcycle=lost：会话已随 SW 回收湮灭——追问打空（App 自愈降级全量总结）
@@ -115,7 +129,10 @@ function route(msg: any): unknown {
     lastError: undefined,
     sendMessage(msg: unknown, cb?: (resp: unknown) => void) {
       const resp = route(msg)
-      if (cb) setTimeout(() => cb(resp), 30)
+      // r50：无 callback 分支返回 Promise（MV3 真身语义）——App 层多处
+      // sendMessage(...).catch(...) 在 harness 里抛 TypeError 杀死后续语句
+      if (cb) { setTimeout(() => cb(resp), 30); return }
+      return new Promise((r) => setTimeout(() => r(resp), 30))
     },
     onMessage: {
       addListener: (l: (m: unknown) => void) => void listeners.add(l),

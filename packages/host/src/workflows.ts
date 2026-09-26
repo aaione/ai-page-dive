@@ -65,6 +65,9 @@ export async function listWorkflows(): Promise<LoadedWorkflow[]> {
     for (const e of entries) {
       if (!e.isDirectory()) continue
       try {
+        // r50：目录名防线（同 skills 列表）——非法名（如中文目录）进了下拉后，点选
+        // 被 getWorkflow 的同名校验拒读，静默落回默认深度总结（用户以为在跑自定义档）
+        assertValidWorkflowName(e.name)
         const raw = await readFile(join(dir, e.name, 'WORKFLOW.md'), 'utf8')
         const wf = parseWorkflow(raw, e.name, builtin)
         if (wf) out.set(e.name, wf)

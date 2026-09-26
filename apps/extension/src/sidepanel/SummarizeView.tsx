@@ -162,7 +162,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   // 对空回填是空承诺，note 指明等效重发路径（hero CTA 已随首条气泡卸载）
   const [retryNote, setRetryNote] = useState('')
   const armCtaRetry = (wf: string) => {
-    setWorkflow(wf) // 选择器同步显示重试将跑的档（setWorkflow 会清 ctaRetryWf，随后再置）
+    // r50：只同步选择器显示，不写 localStorage——setWorkflow 会把 CTA 的 deep 覆写
+    // 用户显式选的持久偏好（选 paper→点 CTA→失败→pd-workflow 被改 deep，跨会话丢失）
+    setWorkflowState(wf)
     ctaRetryWf.current = wf
     setRetryNote(`「${WF_LABEL[wf] ?? wf}」未完成——直接按 Enter 以原档位重试`)
   }
@@ -404,9 +406,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       withinBudget.push(a)
     }
     setAttachments(withinBudget)
-    if (skipped.length) {
-      setAttachNotice(`已跳过：${skipped.join('、')}——请精简后重试`)
-    }
+    // r50：每次选择重算提示——先超限再补合规文件时清掉旧「已跳过」，否则残留红字
+    // 让用户误以为新文件也被跳过（原先只在下一次 send 时清）
+    setAttachNotice(skipped.length ? `已跳过：${skipped.join('、')}——请精简后重试` : '')
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -833,12 +835,18 @@ function GrantHostRow() {
 
 function MessageActions({ text, onNewChat, pageTitle }: { text: string; onNewChat: () => void; pageTitle?: string }) {
   const [copied, setCopied] = useState(false)
+  const [copyFail, setCopyFail] = useState(false)
   async function copy() {
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch { /* 剪贴板不可用（罕见） */ }
+    } catch {
+      // r50：面板失焦时 writeText 会 reject（Onboarding 同款真实场景）——静默吞掉
+      // = 用户以为已复制、粘贴出旧剪贴板内容；✗ icon + title 自解释
+      setCopyFail(true)
+      setTimeout(() => setCopyFail(false), 2500)
+    }
   }
   function download() {
     const blob = new Blob([text], { type: 'text/markdown' })
@@ -861,10 +869,14 @@ function MessageActions({ text, onNewChat, pageTitle }: { text: string; onNewCha
     <div className="pd-chat-actions">
       {/* r12 回退：复制回 icon 形态（r11 曾升文字主按钮，用户反馈突兀——三 icon
           工具栏与竞品基线一致）；已复制态 icon 换 ✓ + tooltip 反馈 */}
-      <button onClick={copy} className="pd-chat-action-btn" title={copied ? '已复制 ✓' : '复制全文'} aria-label="复制全文">
+      <button onClick={copy} className="pd-chat-action-btn" title={copied ? '已复制 ✓' : copyFail ? '复制失败——请手动选中复制' : '复制全文'} aria-label="复制全文">
         {copied ? (
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
             <path d="m3 8.5 3.2 3.2L13 5" />
+          </svg>
+        ) : copyFail ? (
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" style={{ color: 'var(--color-pd-danger)' }}>
+            <path d="m4 4 8 8M12 4l-8 8" />
           </svg>
         ) : (
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

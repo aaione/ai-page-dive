@@ -44,11 +44,16 @@ export function HistoryView({
   // 在途读取的 path（F10）：回帧 path 不符即丢——「返回后点下一条」时旧帧迟到
   // 会把详情页拽回旧文（正文与 viewingItem 元数据/继续对话错配）
   const pendingPathRef = useRef<string | null>(null)
+  // r50：列表滚动位保存/恢复——详情态 early return 卸载整个 ul，重挂载 scrollTop
+  // 归零，200 条深处浏览每次返回都得重滚（退场 150ms 后列表挂载时回填）
+  const listRef = useRef<HTMLUListElement>(null)
+  const listScrollRef = useRef(0)
 
   // 是否收到过 history-list 回帧（= host 已连接）。首帧到达前 3s 视为加载中；
   // 3s 后仍无回帧 → host 未连接，显示连接提示而非误导性的「暂无历史」
   const [replied, setReplied] = useState(false)
   const [waited, setWaited] = useState(false)
+  const [slowed, setSlowed] = useState(false)
   // 条目读取失败提示（文件被外部删除/权限变化——r3-ux R3-m2：零反馈会让用户
   // 以为「按钮坏了」）：4s 自清
   const [readError, setReadError] = useState(false)
@@ -97,13 +102,28 @@ export function HistoryView({
     setTimeout(() => setReadError(false), 4000)
   }
   useEffect(() => {
-    const t = setTimeout(() => setWaited(true), 3000)
-    return () => clearTimeout(t)
+    // r50：两级反馈——host 冷启动 spawn + 扫盘在历史较多时可超 3s，3s 即报
+    // 「未连接」是终态措辞误报（用户被引去排查安装，随后列表又突然刷出）；
+    // 3s 先中性「正在连接」，8s 仍无回帧才定性未连接
+    const t1 = setTimeout(() => setWaited(true), 3000)
+    const t2 = setTimeout(() => setSlowed(true), 8000)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
+  // 详情返回（detail 退场 150ms 结束、列表 ul 挂载）恢复滚动位
+  useEffect(() => {
+    if (!detail.shown && listRef.current) listRef.current.scrollTop = listScrollRef.current
+  }, [detail.shown])
 
   useEffect(() => {
     const listener = (m: HostToExt) => {
-      if (m.t === 'history-list') { setItems((m as HistoryListResultMsg).items); setReplied(true) }
+      if (m.t === 'history-list') {
+        const r = m as HistoryListResultMsg
+        // r50：帧回带 query 对账——host 每个请求独立 promise 并发（无队列），正文
+        // 全量扫盘的慢查询迟到会覆盖新状态（清空搜索后列表仍是被过滤子集且无自愈）。
+        // 旧 host 回帧无 query 字段 → 归一成空串比较，退化为盲收（协议向前修复）
+        if ((r.query ?? '') !== queryRef.current) return
+        setItems(r.items); setReplied(true)
+      }
       if (m.t === 'history-file') {
         // 只收在途那条的回帧（同 Settings workflow-file 守卫）：迟到旧帧丢掉。
         // 严格等值：pendingPath 为 null（已返回列表/切走）时同样拒收——否则迟到
@@ -222,12 +242,13 @@ export function HistoryView({
           该记录读取失败（文件可能已被移动或删除，或本机组件未响应）
         </p>
       )}
-      <ul className="pd-history-list">
+      <ul className="pd-history-list" ref={listRef}>
         {items.map((it, i) => (
           // r34-motion：条目交错浮现——delay 40ms 递进、8 条封顶（长列表尾部不再叠加等待）
           <li key={it.path} className="pd-history-item" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
             <button
               onClick={() => {
+                listScrollRef.current = listRef.current?.scrollTop ?? 0
                 setViewingItem(it)
                 pendingPathRef.current = it.path
                 setReading(true)
@@ -283,7 +304,8 @@ export function HistoryView({
               {query.trim() ? `无匹配「${query.trim()}」的历史——换个关键词试试` : '暂无历史'}
             </p>
           )
-          : waited ? <p className="pd-history-empty">本机组件未连接，历史暂不可读</p>
+          : slowed ? <p className="pd-history-empty">本机组件未连接，历史暂不可读</p>
+          : waited ? <p className="pd-history-empty">正在连接本机组件…首次打开或历史较多时可能需要数秒</p>
           : <p className="pd-history-empty">加载中…</p>
         )}
       </ul>

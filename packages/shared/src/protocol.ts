@@ -263,6 +263,9 @@ export interface HistoryItem {
 export interface HistoryListResultMsg {
   t: 'history-list'
   items: HistoryItem[]
+  /** 回显请求 query（r50）：host 侧各请求独立 promise 并发，回帧顺序无保证——
+   *  面板靠它对账丢弃迟到旧帧（清空搜索后被慢查询的过滤子集覆盖）；旧 host 不带 */
+  query?: string
 }
 
 export interface HistoryFileMsg {
