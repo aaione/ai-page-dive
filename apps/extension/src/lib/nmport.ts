@@ -1,6 +1,7 @@
 /**
  * SW 侧 NM port 封装：connectNative 管理 + 消息类型收窄。
- * Chrome 110+ 开放的 NM port 本身保活 SW，任务期间不会休眠。
+ * Chrome 105+ 起 merely-open 的 NM port 不豁免 SW 回收——只有 port 上的消息活动
+ * 才重置 30s idle 计时器；任务期保活由 host 的周期 heartbeat 帧承担（stdio.ts）。
  * 注意：connectNative 几乎不同步抛错，「host 未安装」以 onDisconnect 到达，
  * connected 只代表 port 对象存在，真实可用性由 ping→pong 探测判定。
  */

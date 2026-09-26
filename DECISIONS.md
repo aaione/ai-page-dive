@@ -9,7 +9,7 @@
 | 1 | 定位 | **零配置一键深度阅读 agent**（候选 A）。适配层是底层能力顺带产出，垂直场景由 workflow 生态承载 |
 | 2 | 命名 | **PageDive**（弃用 read-one）。npm 包 `ai-page-dive`，安装命令 `ai-page-dive install`。项目目录：`/Users/apple/work/hs/ai-feature/ai-page-dive/` |
 | 3 | 通信底座 | **Native Messaging 薄 host + Side Panel 主 UI**。否决 localhost daemon 主通道（Chrome 147 LNA 政策风险）。host 预留 `--daemon` 升级位。权限：`activeTab` + `scripting` + `nativeMessaging` + `sidePanel`，不申请 `<all_urls>`。**2026-09-23 修订（r46）**：加 `optional_host_permissions: ["<all_urls>"]`——安装时依然零权限警告，设置页「始终允许读取网页」开关由用户主动授予（Chrome 弹一次确认）；解决换页后 activeTab 收权导致的「尚未授权提取」反复重授权痛点。默认关闭，最小权限叙事不变 |
-| 4 | 历史记录 | **host 侧 markdown 落盘 + 档 B+**：`~/.ai-page-dive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）+ 历史列表/查看/删除/Finder 定位 + 过滤 + 标题/URL 搜索。全文搜索/导入导出/对话关联 → v2 |
+| 4 | 历史记录 | **host 侧 markdown 落盘 + 档 B+**：`~/.ai-page-dive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）+ 历史列表/查看/删除/Finder 定位 + 过滤 + 搜索。**2026-09-26 修订（r51-audit）**：搜索已含全文（r17 起——正文命中返回前后片段，title/url 命中免读全文的快路径）；导入导出/对话关联 → v2 |
 | 5 | CLI 适配 | **v1 = claude + codex 双适配器**。AgentDef 接口按六家（claude/codex/opencode/gemini/qwen/dsh）字段并集设计。`claude -p --output-format stream-json --verbose`；`codex exec --json`（r8 删 `-o <file>` 死机制：最终文本取自流事件，该文件写了清了从不读）。prompt 一律走 stdin。**2026-09-16 修订（r8-review）**：opencode 以「实验档」进入默认探测（UI 标注「实验」+ Gatekeeper 弹框提示）——它是唯一无进程级工具围栏的 CLI（claude `--allowedTools=Read`、codex `--sandbox read-only`，opencode CLI 无等效 flag），对不可信网页正文属已接受的例外，见「已知限制」节 |
 | 6 | 平台 | **v1 = macOS + Chrome**。Linux 声明支持不承诺测试；Windows/Edge/Brave → v2（install 分支留位） |
 | 7 | 开源 | **全开源 MIT**（2026-09-01 定案；host 可审计 = 信任自证；与 summarize/React/Vite 等 MIT 生态零摩擦，Apache-2.0 的专利条款对本品类无暴露面） |
@@ -62,7 +62,7 @@
 
 1. Side Panel 一键总结当前页（提取 → 本地临时文件 → CLI agent → 流式渲染）
 2. claude + codex 双适配器（opencode 实验档默认探测，2026-09-16 修订，见 D5；2026-09-22 起 opencode 入口暂时下架，见「已知限制」节）
-3. 内置 3-4 个 workflow（快速摘要 / 深度研读多步 / 论文模式）
+3. 内置 workflow：立项拍 3-4 个，实际交付 5 个（quick / deep / paper / humanize / product-audit）——2026-09-26 r51-audit 对齐口径
 4. `npm i -g @aaione/ai-page-dive && ai-page-dive install`（自动注册 NM + 探测已装 CLI）
 5. 历史 B+ 档
 
@@ -88,7 +88,7 @@
 ### 多引擎（多 CLI 组合）定案（2026-09-09 grilling）
 
 - **价值定位**：把用户已付费的多个 AI 订阅从「备选项」变成「可组合的阅读引擎池」（本地免费版多模型聚合，正文不经 PageDive 中转）。默认单引擎，多引擎一律显式 opt-in + 成本前置（≈2× tokens 微标）；deep+双引擎不加二次确认（opt-in 已显式，微标已透明，过度防御）。
-- **交付节奏**：v1.x 只交付**审校模式**（second opinion，1.5-2 天）；**并列对比推 v2 等数据**（审校上线后看使用数据：风格差异诉求由重跑按钮 0.5 天覆盖，真有并列 arena 诉求再做 1-2 周双流 UI 改造）。
+- **交付节奏**：v1.x 只交付**审校模式**（second opinion，1.5-2 天）；**并列对比推 v2 等定性反馈**（审校上线后看用户反馈 / GitHub issue 等定性信号——零遥测承诺下无量化数据源，2026-09-26 r51-audit 措辞对齐：风格差异诉求由重跑按钮 0.5 天覆盖，真有并列 arena 诉求再做 1-2 周双流 UI 改造）。
 - **审校模式产品语义**：A 总结完 → 原文 + A 的产出喂给 B 审校 → B 输出「审校说明（改了什么/为什么）+ 修订后总结」两段，**追加为新气泡、不替换 A 的原文**（保留对照 = 保留 diff 价值）；追问挂 B 的会话；A 的会话经既有 resume-history 可恢复。
 - **交互入口**：CLI 下拉底部「+ 添加第二引擎」→ 双 chip（`claude ✕ codex`）+ 模式微切换（审校⟷并列，v1.x 只有审校生效）+ ≈2× tokens 微标。默认态零变化，渐进披露，不加第三个下拉。
 - **架构**：编排放 SW（A 的 task-done 同一 tick 内发 B 的 task-start，A 的 accumulated 输出作为 B 的上下文重发）——host 零改动（tasks Map 本就支持并发/串行多任务；审校串行 = panel 单流状态机直接复用，B 的 chunk 天然是新气泡）。审校 prompt 由内置 workflow `review-critique` 承载（可被用户目录 shadow 定制）。历史：两任务两文件现状机制零改，frontmatter 加 `reviewOf` 关联 A 的 historyPath。

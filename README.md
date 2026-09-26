@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 <!-- CWS 上线后补商店 badge 并反转安装步骤① -->
 
-零配置 · 复用你已有的 CLI 订阅 · 无服务器、零遥测
+零账号 · 零 API key · 复用你已有的 CLI 订阅 · 无服务器、零遥测
 
 </div>
 
@@ -32,14 +32,16 @@
 curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- <扩展ID>
 ```
 
+> 🔒 不想盲跑？脚本[源码同仓库、执行前可先读](./install.sh)（MIT）：钉版本安装（`@0.1.3`，不追 latest）、不下载任何二进制、无 sudo、只装 npm 包并注册 Chrome 本机组件。
+
 **③ 即用**：任意网页点工具栏图标（或按快捷键 `Ctrl+Shift+D`，macOS 为 `⌘⇧D`）→ 侧边栏选模式 → 总结。快捷键若无效或想改键，去 `chrome://extensions/shortcuts` 查看/修改。
 
 <details>
 <summary>终端走不通时的手动备选（npm）</summary>
 
 ```bash
-# Node >= 18；勿用 sudo npm——会写坏本机组件注册属主
-npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id <扩展ID>
+# Node >= 18；勿用 sudo npm——会写坏本机组件注册属主；钉版本与 install.sh 一致
+npm i -g @aaione/ai-page-dive@0.1.3 && ai-page-dive install --ext-id <扩展ID>
 ```
 </details>
 
@@ -55,6 +57,18 @@ npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id <扩展ID>
 <summary>网页内容会被上传到你们的服务器吗？</summary>
 
 不会。PageDive 没有服务器、零遥测，正文经 Chrome Native Messaging 直达本机 CLI，不经任何 PageDive 中转。之后内容如何处理由你所选 CLI 自身的隐私政策决定（claude → Anthropic、codex → OpenAI），详见 [PRIVACY.md](PRIVACY.md)。
+</details>
+
+<details>
+<summary>这条 <code>curl | sh</code> 安全吗？</summary>
+
+三层防护：**① 钉版本**——脚本内部执行 <code>npm i -g @aaione/ai-page-dive@0.1.3</code>，不追 latest（npm tarball 自带 registry integrity 校验）；**② 不下载二进制**——只装 npm 包 + 注册 Chrome 本机组件，无 sudo、不写系统目录；**③ 全程可审**——脚本托管在本仓库（[install.sh](./install.sh)，MIT），执行前可先读源码。不额外发布 SHA256：哈希与脚本同仓库同信道，恶意 release 会同步改哈希，密码学上零增益。
+</details>
+
+<details>
+<summary>和浏览器自带的页面摘要 AI 有什么区别？</summary>
+
+浏览器原生摘要免费预装，但锁自家模型、多为单次浅摘要，页面数据经厂商云端处理。PageDive 复用你已有的 CLI 订阅做 agent 式多步深读（通读全文、workflow 可插拔、可追问），正文经 Native Messaging 直交本机 CLI，不经 PageDive 任何服务器。
 </details>
 
 <details>

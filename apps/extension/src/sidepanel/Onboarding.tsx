@@ -201,8 +201,8 @@ export function Onboarding() {
           <div className="pd-onboarding-stuck" role="alert">
             <p>
               {forbidden
-                ? '复制命令已超过 1 分半仍未生效。登记通常立即生效，多半是 '
-                : '复制命令已超过 1 分半仍未检测到安装完成。若终端已显示 🎉 安装完成 但本页未进入，多半是 '}
+                ? '复制命令已超过 1 分半仍未生效，多半是 '
+                : '复制命令已超过 1 分半仍未检测到安装完成。若终端命令已跑完但本页未进入，多半是 '}
               <strong>Chrome 未完全重启</strong>（macOS 关闭窗口 ≠ 退出）：
               <br />
               请 <strong>⌘Q 完全退出 Chrome</strong> 再重新打开，然后点下方按钮。
@@ -210,8 +210,10 @@ export function Onboarding() {
           </div>
         ) : (
           <p className="pd-onboarding-note">
-            终端看到 <code>🎉 安装完成</code> 后回本页，通常会自动进入；若超过 1 分半未进入，
-            多半需完全重启 Chrome（⌘Q）。
+            {/* r51（P6）：⌘Q 提为主建议——install.sh 与 `ai-page-dive install` 两条路径的
+                终端输出口径不同（前者带 🎉、后者刻意无），统一用「命令跑完」不复述具体字样 */}
+            终端命令跑完后<strong>完全退出 Chrome（⌘Q）再重开</strong>最稳妥——本机组件登记只在
+            浏览器启动时加载；不重启时常能自动进入，超过 1 分半未进入即需 ⌘Q。
             <br />
             <strong>内容不经 PageDive 任何服务器；上传与否只由你的 CLI 自身决定。</strong>
           </p>
