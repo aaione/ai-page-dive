@@ -22,7 +22,11 @@ pnpm monorepo：
 - `packages/host` — 纯 Node >=18 + TS，运行时零依赖
 - `packages/shared` — AgentDef 类型 / NM 消息协议
 
-测试 vitest（host 流解析器 + buildArgs + extension 历史轮切分等纯函数单测，108 用例）。
+测试 vitest（host 流解析器 + buildArgs + extension 历史轮切分等纯函数单测，118 用例）。
+
+## Dev Harness（UI 可视化自验）
+
+chrome-extension:// 页面无法被自动化浏览器直接导航——`apps/extension/dev.html` + `src/dev/chrome-mock.ts`（chrome API shim + 场景参数 + mock 任务流）是 UI 自验路径：`cd apps/extension && npx vite` 起 dev server，自动化浏览器导航 `http://localhost:5173/dev.html`（场景开关 `?swcycle=claude` / `?unsupported=1` 等与 mock 能力见 chrome-mock.ts 头注释）。dev 入口不进生产构建（不在 rollupOptions.input）。
 
 ## Hard Constraints（违反即 bug）
 
