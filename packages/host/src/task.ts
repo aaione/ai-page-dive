@@ -470,7 +470,9 @@ export class Task {
     if (code !== 0 && !delivered) {
       this.cb.onError('parse', `exit ${code}: ${stderrTail.slice(-500)}${gate}`)
     } else if (!this.accText) {
-      this.cb.onError('parse', `no output${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}`)
+      // r51-review P2-③ 收尾：漂移可观测闭环到失败出口——no output 且流里有未识别事件，
+      // 大概率是 CLI 版本高于解析器实测（格式漂移）而非 CLI 真没输出，把重采样指引带给用户
+      this.cb.onError('parse', `no output${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}${this.unrecognized ? `（流含 ${this.unrecognized} 个未识别事件——CLI 版本可能高于适配器实测，node scripts/record-fixtures.mjs 可重采样适配）` : ''}`)
     } else {
       this.cb.onDone({
         historyPath: this.effectiveHistoryPath,
