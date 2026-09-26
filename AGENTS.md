@@ -26,7 +26,7 @@ pnpm monorepo：
 
 ## Dev Harness（UI 可视化自验）
 
-chrome-extension:// 页面无法被自动化浏览器直接导航——`apps/extension/dev.html` + `src/dev/chrome-mock.ts`（chrome API shim + 场景参数 + mock 任务流）是 UI 自验路径：`cd apps/extension && npx vite` 起 dev server，自动化浏览器导航 `http://localhost:5173/dev.html`（场景开关 `?swcycle=claude` / `?unsupported=1` 等与 mock 能力见 chrome-mock.ts 头注释）。dev 入口不进生产构建（不在 rollupOptions.input）。
+chrome-extension:// 页面无法被自动化浏览器直接导航——`apps/extension/dev.html` + `src/dev/chrome-mock.ts`（chrome API shim + 场景参数 + mock 任务流）是 UI 自验路径：`cd apps/extension && npx vite` 起 dev server，自动化浏览器导航 `http://localhost:5173/dev.html`（场景开关 `?swcycle=claude` / `?unsupported=1` 等与 mock 能力见 chrome-mock.ts 头注释）。dev 入口不进生产构建（不在 rollupOptions.input）。⚠ harness 验证**只用 dev server，勿跑单段 `npx vite build`**——完整构建是两段（`pnpm build`，第二段 `vite.content.config.ts` 才产 `content.js`），单段会产出「manifest 动态注入声明存在但文件缺失」的残缺 dist 覆盖真机在用的加载目录，扩展报 `Could not load file: 'content.js'`。
 
 ## Hard Constraints（违反即 bug）
 
