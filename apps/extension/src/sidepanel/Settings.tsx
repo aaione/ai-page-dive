@@ -341,7 +341,8 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
       r44：+ Reddit / Hacker News / Bluesky——同为零权限 intent，论坛社区与开发者受众重合 */
   function shareTo(kind: (typeof SHARE_SITES)[number][0]) {
     const url = 'https://github.com/aaione/ai-page-dive'
-    const text = 'AI PageDive——一键调用本机 AI CLI 深度总结当前网页的 Chrome 扩展：零配置、复用已有订阅、内容不出本机。'
+    // r51-review A1：分享文案与 README 首屏同口径——「零配置」对需先装 CLI 的新用户是误导
+    const text = 'AI PageDive——一键调用本机 AI CLI 深度总结当前网页的 Chrome 扩展：零账号零 API key、复用已有订阅、内容不出本机。'
     const u = encodeURIComponent(url)
     const t = encodeURIComponent(text)
     const target = {

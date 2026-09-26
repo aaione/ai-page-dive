@@ -6,8 +6,9 @@ const extId = chrome.runtime.id
 const installCmd = `curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- ${extId}`
 /** forbidden：host 已装但本扩展 ID 不在白名单（只差补登记，无需再装） */
 const registerCmd = `ai-page-dive install --ext-id ${extId}`
-/** curl 走不通时的 npm 手动备选（r33-ux：与主命令同享点击复制） */
-const npmCmd = `npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id ${extId}`
+/** curl 走不通时的 npm 手动备选（r33-ux：与主命令同享点击复制）。
+ * r51-review：钉版本对齐 install.sh（A3）——取 manifest 版本动态拼，发版 bump 自动跟随零漂移 */
+const npmCmd = `npm i -g @aaione/ai-page-dive@${chrome.runtime.getManifest().version} && ai-page-dive install --ext-id ${extId}`
 /** r16（3-agent P0）：v1 仅 macOS——CWS 全球可见，Win/Linux 用户拿到 curl|sh 粘进
  * PowerShell 必败且面板永久停在轮询。非 darwin 整卡替换为不支持说明，不给死命令 */
 const unsupportedOs = !/mac/i.test(
