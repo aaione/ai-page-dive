@@ -56,7 +56,7 @@ async function sample(id) {
   console.log(`   事件类型：${[...hist.entries()].map(([k, n]) => `${k}×${n}`).join(' ') || '（无）'}`)
   console.log(unrecognized
     ? `   ⚠️ 未识别事件 ${unrecognized} 个——CLI 版本高于解析器实测，需适配并更新 fixture/MIN_VERSIONS`
-    : '   未识别事件 0 个——解析器与当前版本兼容')
+    : `   未识别事件 0 个——解析器与当前版本兼容；建议把 SummarizeView 的 MIN_VERSIONS.${id} 基线抬到 ${version.match(/[\d.]+/)?.[0] ?? version}`)
 }
 
 const targets = process.argv[2] ? [process.argv[2]] : Object.keys(TASKS)
