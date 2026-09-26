@@ -286,9 +286,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // r16：空文首轮（CTA/一键总结）气泡放实际档位文案——空壳气泡既无反馈又占版面；
     // instruction 不受影响（首轮 host 侧 `instruction || wfBody` 落默认摘要指令）。
     // r33-ux：档名查 WF_LABEL——自定义 workflow（用户自建）也标对，不一律「深度总结」
-    // r44-audit F2：空输入+无附件+无会话 = 一键总结路径——与 hero CTA 同语义强制
-    // deep，不吃 localStorage 记忆档（CTA 写「深度总结本页」而 Enter 跑论文档 = 名实分裂；
-    // 有自定义输入 = 用户主动表达，按所选档执行）
+    // r44-audit F2：空输入+无附件+无会话 = 一键总结路径——与 hero CTA 同语义。
+    // r51 A5：CTA 文案与执行档均跟随记忆档（按钮名 = 实际跑的档，名实一致下不再
+    // 强制 deep——quick 用户不必每次重选），未选过（default）仍 deep；
+    // 有自定义输入 = 用户主动表达，按所选档执行
     // r46-user：default 不再硬映射 deep——「默认模式」= 不套预设 prompt、用户输入
     // 即任务段（host `instruction || wfBody` 优先级保证）；附件轮 instruction 有
     // 占位文本、追问轮走 followUp 不带 workflow，均无「default 未命中兜底」路径
@@ -296,8 +297,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // 而非用户输入）——在用户消息上记 wf，失败回填据此恢复档位而非回填标签文本
     const isCta = !text && !attachments.length && !hasSession
     // r47-audit M1：空输入重发优先用回填恢复的档位（ctaRetryWf，防 quick CTA 失败后
-    // Enter 落回强制 deep 的档位漂移）；无恢复时保持 r44 F2 强制 deep 不变
-    const wf = forceWf ?? (!text && !attachments.length && !hasSession ? (ctaRetryWf.current ?? 'deep') : workflow)
+    // Enter 落回强制 deep 的档位漂移）；无恢复时用记忆档（r51 A5），未选过才 deep
+    const wf = forceWf ?? (!text && !attachments.length && !hasSession ? (ctaRetryWf.current ?? (workflow !== 'default' ? workflow : 'deep')) : workflow)
     // r47-audit：ctaRetryWf 消费即清（陈旧档位跨会话泄漏——重试成功后经「新对话」
     // 再空输入 Enter，会静默跑旧 quick 而非 r44 F2 强制 deep）；本轮若失败，
     // refill→armCtaRetry 会重臂，无失效风险
@@ -484,6 +485,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             label: a.id === 'opencode' ? 'opencode·实验' : a.id,
             version: a.version,
             model: a.model,
+            // r51 A6：codex 无 sessionId（不可追问）前置到引擎选择处——此前只在
+            // 定稿后提示，用户选完引擎才发现追问预期落空
+            note: a.id === 'codex' ? '不支持追问' : undefined,
           }))}
           fallback="无可用 CLI"
           ariaLabel="选择 AI CLI"
@@ -540,6 +544,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             /* r16（3-agent P1）：活会话（重开兜底/追问中）不给一键 CTA——CTA 走首轮
                总结分支会拆会话，走追问分支又必吃 empty-instruction；空态请用户输入 */
             onSummarize={hasSession ? undefined : (wf) => send(wf)}
+            /* r51 A5：CTA 主按钮跟随记忆档（pd-workflow，r16 已持久）——用户显式
+               选过的档成为一键总结默认，未选过（default）保持 deep */
+            primaryWf={workflow !== 'default' ? workflow : 'deep'}
           />
         )}
         {messages.map((m) =>
@@ -906,7 +913,7 @@ export function ModelDropdown({
 }: {
   value: string
   onChange: (key: string) =>  void
-  items: { key: string; label: string; version?: string; model?: string }[]
+  items: { key: string; label: string; version?: string; model?: string; note?: string }[]
   fallback?: string
   ariaLabel?: string
   disabled?: boolean
@@ -967,6 +974,9 @@ export function ModelDropdown({
                 <span className="pd-dropdown-item-label">{it.label}</span>
                 {it.version && <span className="pd-dropdown-item-hint">{it.version}</span>}
                 {it.model && <span className="pd-dropdown-item-hint pd-dropdown-item-model">{it.model}</span>}
+                {/* r51 A6：能力差异前置到选择时（此前只在定稿后输入框旁提示）——
+                    note 与 version/model 同行 hint 样式，选中前即知 */}
+                {it.note && <span className="pd-dropdown-item-hint">{it.note}</span>}
               </button>
             </li>
           ))}
@@ -1177,7 +1187,7 @@ function PageTips({ meta, idle, dimmed }: { meta: PageMeta; idle?: boolean; dimm
   )
 }
 
-function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSummarize, exiting }: { clis: string[]; anyInstalled?: boolean; pageUnsupported?: boolean; agentsLoaded?: boolean; onSummarize?: (wf: 'deep' | 'quick') => void; exiting?: boolean }) {
+function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSummarize, primaryWf, exiting }: { clis: string[]; anyInstalled?: boolean; pageUnsupported?: boolean; agentsLoaded?: boolean; onSummarize?: (wf: string) => void; primaryWf?: string; exiting?: boolean }) {
   // r14 首旅程：探测在途（host spawn + 逐 CLI --version 秒级）——agents 未回帧前
   // 显示中性等待，抢跑「未检测到」假告示会误导已装用户去重装
   if (!clis.length && !agentsLoaded) {
@@ -1235,15 +1245,16 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
   return (
     <div className="pd-placeholder">
       <p className="pd-placeholder-title">想了解这个网页的什么？</p>
-      {/* r15（3-agent P0-1）：一键总结可见入口——「深度总结本页」即空输入发送的
-          default→deep 映射显式化（按钮名 = 实际跑的档），quick 给轻量选项 */}
+      {/* r15（3-agent P0-1）：一键总结可见入口（按钮名 = 实际跑的档）。
+          r51 A5：主按钮跟随记忆档 primaryWf（未选过 = deep），quick 用户不必每次
+          重选；次按钮给另一档（primary 是 quick 时换 deep），两选项恒在 */}
       {onSummarize && (
         <div className="pd-placeholder-cta">
-          <button className="pd-cta-primary" onClick={() => onSummarize('deep')}>
-            深度总结本页
+          <button className="pd-cta-primary" onClick={() => onSummarize(primaryWf ?? 'deep')}>
+            {`${WF_LABEL[primaryWf ?? 'deep'] ?? primaryWf ?? '深度总结'}本页`}
           </button>
-          <button className="pd-cta-ghost" onClick={() => onSummarize('quick')}>
-            快速摘要
+          <button className="pd-cta-ghost" onClick={() => onSummarize(primaryWf === 'quick' ? 'deep' : 'quick')}>
+            {primaryWf === 'quick' ? '深度总结' : '快速摘要'}
           </button>
         </div>
       )}

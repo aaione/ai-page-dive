@@ -80,7 +80,7 @@ npm i -g @aaione/ai-page-dive@0.1.3 && ai-page-dive install --ext-id <扩展ID>
 <details>
 <summary>支持哪些 CLI？支持 Windows 吗？</summary>
 
-v1 支持 claude 与 codex 双引擎（完整支持）；opencode 适配器已就绪，暂因 macOS 上游 Gatekeeper 问题下架（详见 [DECISIONS.md](DECISIONS.md)）。v1 仅支持 macOS + Chrome，Windows / Edge / Brave 在路线图上（[DECISIONS.md](DECISIONS.md)）。
+v1 支持 claude 与 codex 双引擎（完整支持）；opencode 适配器已就绪，暂因 macOS 上游 Gatekeeper 问题下架（详见 [DECISIONS.md](DECISIONS.md)）。追问能力：claude 支持多轮追问（复用 CLI 会话）；codex 暂不支持（CLI 不回传会话 id，每次新提问独立成轮）。v1 仅支持 macOS + Chrome，Windows / Edge / Brave 在路线图上（[DECISIONS.md](DECISIONS.md)）。
 </details>
 
 ## 开发者
