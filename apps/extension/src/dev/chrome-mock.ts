@@ -28,9 +28,11 @@ const PAGE = {
   notice: '正文超长，已截断至前 8 万字',
 }
 
+// r51-review：版本对齐实测基线之上（SummarizeView MIN_VERSIONS：claude 2.1.162 /
+// codex 0.156.1）——harness 默认态=健康环境，低版本提示样式验证时临时调低即可
 const AGENTS = [
-  { id: 'claude', available: true, version: '2.0.62', model: 'GLM-4.6' },
-  { id: 'codex', available: true, version: '0.46.0' },
+  { id: 'claude', available: true, version: '2.1.170', model: 'GLM-4.6' },
+  { id: 'codex', available: true, version: '0.157.0' },
 ]
 const WORKFLOWS = [
   { name: 'deep', description: '结构化研读报告，多步通读全文', builtin: true },
@@ -138,7 +140,7 @@ function route(msg: any): unknown {
       addListener: (l: (m: unknown) => void) => void listeners.add(l),
       removeListener: (l: (m: unknown) => void) => void listeners.delete(l),
     },
-    getManifest: () => ({ version: '1.8.0' }),
+    getManifest: () => ({ version: '0.1.3' }),
   },
   tabs: { create: ({ url }: { url: string }) => void window.open(url, '_blank') },
   permissions: {
