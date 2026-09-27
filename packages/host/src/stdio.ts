@@ -67,6 +67,9 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
               ...(info.errorText ? { errorText: info.errorText } : {}),
               ...(info.model ? { model: info.model } : {}),
               ...(info.sessionId ? { sessionId: info.sessionId } : {}),
+              // r52（review #3）：r51 漂移感知链路的最后一跳——此处漏带则 panel 永远
+              // 收不到，App 侧消费代码成死代码（协议已声明、task.ts 三处已传）
+              ...(info.unrecognized ? { unrecognized: info.unrecognized } : {}),
             })
           },
           onError: (code, message) => {

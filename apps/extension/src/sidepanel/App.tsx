@@ -210,8 +210,10 @@ export function App() {
           finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
           messages: [
             ...s.messages.map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg)),
-            // 中性文案：不预设死因（可能是 SW 死，也可能是极端慢），普通用户可懂（R2-m4）
-            { id: `w${Date.now()}`, role: 'assistant', text: '', error: '响应超时——你的问题已放回输入框，可直接重发', isError: true },
+            // 中性文案：不预设死因（可能是 SW 死，也可能是极端慢），普通用户可懂（R2-m4）。
+            // r52（review #9）：wf 轮（一键总结）回填为空串——「已放回输入框」是假承诺，
+            // 改指真实重试路径（与 retryNote 的 Enter 重发同机制）
+            { id: `w${Date.now()}`, role: 'assistant', text: '', error: rf?.wf ? '一键总结超时未完成——直接按 Enter 以原档位重试' : '响应超时——你的问题已放回输入框，可直接重发', isError: true },
           ],
         }
       })
@@ -532,6 +534,16 @@ export function App() {
                 ),
               }
             }
+            // r33-ux：失败终局回填本轮问题（与看门狗/断连同式）——parse/timeout 等
+            // 可重试失败不必对着气泡手抄重敲。cancelled 不回填（用户主动放弃）。
+            // r46：条件扩到附件-only 轮（text 空串 + 有附件也回填）。
+            // r52（review #9/#16）：构造提前到 error 文案之前——文案按「本轮是否一键
+            // 总结」分流；timeout 不再拼裸英文原文（维护者通道走 console.debug）
+            const lastUser = [...s.messages].reverse().find((msg) => msg.role === 'user')
+            // r47-audit M1：refill 构造收敛 refillFor（wf 轮 text 置空 + 携带档位）；
+            // cancelled 不回填（用户主动放弃）保持原语义
+            const rf = m.code !== 'cancelled' ? refillFor(s, lastUser) : undefined
+            if (m.code === 'timeout') console.debug('[pd] host timeout detail:', m.message)
             const messages = s.messages.map((msg) =>
               msg.streaming
                 ? {
@@ -546,6 +558,12 @@ export function App() {
                         ? m.message && m.message !== '已取消'
                           ? m.message
                           : '已取消'
+                        // r52（review #16）：timeout 用完整用户向文案；wf 轮不给
+                        // 「已放回输入框」假承诺（review #9）
+                        : m.code === 'timeout'
+                          ? rf?.wf
+                            ? '一键总结超时未完成——直接按 Enter 以原档位重试'
+                            : ERROR_LABEL.timeout
                         // r46（activetab-analysis P3）：content-mismatch 是 NM 传输
                         // 丢片非 CLI 故障——SW 下发的 message 已是完整文案，再拼
                         // ERROR_LABEL 会「正文传输不完整」重复两遍；单用 message
@@ -558,13 +576,6 @@ export function App() {
                   }
                 : msg,
             )
-            // r33-ux：失败终局回填本轮问题（与看门狗/断连同式）——parse/timeout 等
-            // 可重试失败不必对着气泡手抄重敲。cancelled 不回填（用户主动放弃）。
-            // r46：条件扩到附件-only 轮（text 空串 + 有附件也回填）
-            const lastUser = [...s.messages].reverse().find((msg) => msg.role === 'user')
-            // r47-audit M1：refill 构造收敛 refillFor（wf 轮 text 置空 + 携带档位）；
-            // cancelled 不回填（用户主动放弃）保持原语义
-            const rf = m.code !== 'cancelled' ? refillFor(s, lastUser) : undefined
             return {
               ...s,
               taskId: null,
@@ -592,17 +603,21 @@ export function App() {
               if (s.finished.includes(m.taskId)) return s
               if (s.taskId !== null && s.taskId !== m.taskId) return s
             }
-            const TEXT = '本机组件连接中断——你的问题已放回输入框，可直接重发'
+            // r8-ux：断连终局同样回填本轮问题（与看门狗判死同式）。
+            // r52（review #9）：refill 提前——wf 轮（一键总结）回填为空串，「已放回
+            // 输入框」是假承诺，改指真实重试路径
+            const lastUser = [...s.messages].reverse().find((msg) => msg.role === 'user')
+            // r47-audit M1：refill 构造收敛 refillFor（wf 轮 text 置空 + 携带档位）
+            const rf = refillFor(s, lastUser)
+            const TEXT = rf?.wf
+              ? '一键总结未完成——直接按 Enter 以原档位重试'
+              : '本机组件连接中断——你的问题已放回输入框，可直接重发'
             const messages = s.messages.map((msg) =>
               msg.streaming ? { ...msg, streaming: false, error: TEXT, isError: true } : msg,
             )
             // pending ⟺ 本轮尚无任何 assistant 帧——必然零气泡，断连即补（r5 修正：
             // 曾用 !messages.some(isError) 判定，上一轮遗留的错误气泡会吞掉本轮反馈）
             const needBubble = s.pending
-            // r8-ux：断连终局同样回填本轮问题（与看门狗判死同式）
-            const lastUser = [...s.messages].reverse().find((msg) => msg.role === 'user')
-            // r47-audit M1：refill 构造收敛 refillFor（wf 轮 text 置空 + 携带档位）
-            const rf = refillFor(s, lastUser)
             return {
               ...s,
               taskId: null,
@@ -900,7 +915,9 @@ const PHASE_LABEL: Record<string, string> = {
 }
 const ERROR_LABEL: Record<string, string> = {
   'spawn-fail': 'CLI 启动失败——终端跑一次 which claude / which codex 确认已安装，或用官方安装器重装后重试',
-  timeout: '任务超时',
+  // r52（review #16）：完整用户向文案——host 原始英文 "task exceeded 10min" 不再
+  // 拼进气泡（task-error 分支的 timeout 专用处理 + console.debug 维护者通道）
+  timeout: '任务超时（上限 10 分钟）——你的问题已放回输入框，可直接重发',
   cancelled: '已取消',
   parse: 'CLI 输出异常',
   'no-agent': '未知 CLI',

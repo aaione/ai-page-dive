@@ -23,6 +23,12 @@ switch (cmd) {
     }
     break
   }
+  case 'uninstall': {
+    // r52（review #5）：卸载出口——preuninstall 钩子与手动清理共用
+    const { uninstall } = await import('./scripts/uninstall.js')
+    uninstall()
+    break
+  }
   default:
-    console.log(`pagedive host ${HOST_VERSION}\n  ai-page-dive install [--ext-id <id>]\n  pagedive probe\n  pagedive --stdio`)
+    console.log(`pagedive host ${HOST_VERSION}\n  ai-page-dive install [--ext-id <id>]\n  ai-page-dive uninstall\n  pagedive probe\n  pagedive --stdio`)
 }

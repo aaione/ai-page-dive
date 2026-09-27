@@ -6,6 +6,9 @@
  */
 import { nmPort } from '../lib/nmport.js'
 import type { AgentStatus, ExtToHost, HostToExt, PageContent } from '@ai-page-dive/shared'
+// r52（review #12）：NM 分片上限单源——此前与 shared/protocol.ts 各写一份 512*1024，
+// 漂移 = SW 发送侧与 host 切片侧按不同上限工作（契约测试只锚了常量没锚消费）
+import { MAX_CHUNK } from '@ai-page-dive/shared'
 
 // host 最低兼容版本：协议新增依赖消息时（如 heartbeat）才抬高。旧 host 对新消息
 // 静默无响应，症状是「按钮无反应」——在 panel-ready 时一次说清而不是让用户猜
@@ -64,8 +67,11 @@ function persistSession() {
     chrome.storage?.session?.set({ sessions: [...sessions.entries()], currentAgentId, lastModels: [...lastModels], panelTabId, panelWindowId, disabledTabs: [...disabledTabs] } as any)?.catch?.(() => {})
   } catch { /* 无 storage 权限：退化纯内存 */ }
 }
-// SW 顶层不能 await（listener 注册必须同步）——恢复放微任务。handleMessage 的
-// followUp 分支是异步的，微任务先于任何用户消息执行完，无竞态。
+// SW 顶层不能 await（listener 注册必须同步）——恢复放微任务。⚠️ r52（review P1）
+// 纠正旧论断：storage.get 是宏任务级 IPC 而非微任务，冷唤醒的 listener（onClicked/
+// onRemoved/onMessage）完全可能先于恢复完成跑 persistSession，用空内存态全量覆写
+// 持久化（session-lost 复发）——各入口先 await restoreSession()（onActivated/
+// onCreated 自 r12/r13 起即该模式）
 void restoreSession()
 async function restoreSession() {
   try {
@@ -184,24 +190,6 @@ function sendToPanel(m: unknown): void {
   chrome.runtime.sendMessage(m).catch(() => {})
 }
 
-/** 锚定 + 开面板（onClicked 原路径，toggle 分流后复用） */
-function anchorAndOpen(tab: chrome.tabs.Tab) {
-  // 换 tab 开面板 = 换锚：旧锚定 tab 解除 disable。跨窗口例外（r9-backlog）：
-  // 双窗口各自开面板是合法形态，另一窗口的锚不拆台（面板不强制收起）
-  if (panelTabId !== null && panelTabId !== tab.id && panelWindowId === tab.windowId) unanchorPanel(panelTabId)
-  target = tab
-  panelTabId = tab.id ?? null
-  panelWindowId = tab.windowId ?? null
-  persistSession()
-  if (tab.id != null) anchorPanel(tab.id)
-  // 面板开张即把本窗口其余 tab 预 disable（r13）：之后每次切 tab 首次即收起
-  void ensureTabsDisabled()
-  // 直接 open：不夹 setOptions / 不吞错。open 要求 user gesture（onClicked 自带）
-  chrome.sidePanel.open({ tabId: tab.id! }).catch((e: unknown) => {
-    console.warn('[pd] sidePanel.open failed:', e)
-  })
-}
-
 chrome.action.onClicked.addListener((tab) => {
   // r30-2 toggle：恒走同步锚定+open（open 只认 onClicked 的同步 user gesture，
   // r30 v1 在 await/回调里调 open 直接抛错——面板连开都开不开，本回归实证）。
@@ -209,11 +197,32 @@ chrome.action.onClicked.addListener((tab) => {
   // panel 比对「点击 tab === 自己的锚 && 自身可见」才 window.close()（sidePanel
   // 无 SW 侧 close API）。面板未开时广播无接收端，静默丢弃。SW 冷启动无需
   // 任何状态——panel 自己记得锚，不依赖 panelTabId 恢复
-  // ⚠️ toggle 广播必须先于 anchorAndOpen：panel-anchor 帧会把 panel 的锚更新成
+  // ⚠️ toggle 广播必须先于锚定：panel-anchor 帧会把 panel 的锚更新成
   // 本次点击 tab，若 toggle 后到，换锚场景（B tab 按快捷键、锚原是 A）会误匹配
   // 新锚把自己关掉。先发的 toggle 比对的是旧锚——只有「同 tab 再按」才匹配
   chrome.runtime.sendMessage({ t: 'panel-toggle', tabId: tab.id ?? undefined }).catch(() => {})
-  anchorAndOpen(tab)
+  // r52（review P1）：点击常是 SW 冷唤醒后的第一个事件，restoreSession（宏任务级
+  // storage.get）尚未跑完——原 anchorAndOpen 同步改 panelTabId 并 persistSession，
+  // 等于用空 sessions 全量覆写持久化（session-lost 复发）。锚定与 open 必须留在
+  // 同步段（open 只认同步 user gesture；setOptions 先于 open 是 r15 铁律），
+  // 状态提交挪到恢复完成后
+  target = tab
+  if (tab.id != null) anchorPanel(tab.id)
+  // 直接 open：不夹 setOptions / 不吞错
+  chrome.sidePanel.open({ tabId: tab.id! }).catch((e: unknown) => {
+    console.warn('[pd] sidePanel.open failed:', e)
+  })
+  void restoreSession().then(() => {
+    // 换 tab 开面板 = 换锚：旧锚定 tab 解除 disable。跨窗口例外（r9-backlog）：
+    // 双窗口各自开面板是合法形态，另一窗口的锚不拆台。冷唤醒时旧锚此刻才从
+    // 持久化态回来——换锚判定必须在恢复后
+    if (panelTabId !== null && panelTabId !== tab.id && panelWindowId === tab.windowId) unanchorPanel(panelTabId)
+    panelTabId = tab.id ?? null
+    panelWindowId = tab.windowId ?? null
+    persistSession()
+    // 面板开张即把本窗口其余 tab 预 disable（r13）：之后每次切 tab 首次即收起
+    void ensureTabsDisabled()
+  })
 })
 
 const isNormalPage = (u?: string) => !!u && !/^(chrome|edge|about|chrome-extension|devtools|view-source|file|data|blob):/.test(u)
@@ -265,7 +274,10 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   }
 })
 // 面板 tab 被关闭：重置作用域（运行中任务交给既有 cancel 语义，不强杀）
-chrome.tabs.onRemoved.addListener((tabId) => {
+// r52（review P1）：本事件常冷唤醒 SW——restoreSession 未跑完时下方 persistSession
+// 会用空内存态覆写持久化（会话全丢）。先恢复再清理（对齐 onActivated/onCreated）
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  await restoreSession()
   sessions.delete(tabId) // r12：页签没了，其会话归档一并清理
   disabledTabs.delete(tabId) // r13：账随 tab 消亡，防 Set 无界增长
   if (panelTabId === tabId) {
@@ -308,6 +320,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 })
 
 async function handleMessage(msg: any): Promise<unknown> {
+  // r52（review P1）：本消息冷唤醒 SW 时顶层恢复微任务可能尚未跑完——各分支的
+  // persistSession（panel-ready 重建/resume-history/new-session/summarize）会用
+  // 空内存态覆写持久化。storage.session 读取 <1ms，统一先恢复再处理
+  // （sessionTouched 守卫：显式动作设置过的态不会被恢复复活）
+  await restoreSession()
   switch (msg?.t) {
     case 'panel-ready': {
       // r16：面板（重）唤起即清完成角标——用户已看到结果，✓ 完成使命
@@ -770,7 +787,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // 用 JSON.stringify 而非裸 Blob.size：帧最终是 JSON，\ / " / 控制字符转义最坏 2x
   // 膨胀，只测原文字节会让转义密集页击穿 NM 1MB 帧限。
   // done 片带 total：host 回 content-received 对账，丢片即取消（宁可失败不可半截总结）
-  const CH = 512 * 1024
+  const CH = MAX_CHUNK
   let i = 0
   let seq = 0
   let total = 0

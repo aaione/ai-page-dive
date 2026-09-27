@@ -66,13 +66,13 @@ if (!probeOk || !hasClaudeBtn) {
   console.error('⛔ FAIL: host 探测失败或 claude 不可用'); await ctx.close(); process.exit(1)
 }
 
-// ── 断言 1：CLI 下拉切 claude + workflow 下拉切深度研读，总结完成 ──
+// ── 断言 1：CLI 下拉切 claude + workflow 下拉切深度总结，总结完成 ──
 // CLI pill：输入框上方内联行，aria-label="选择 AI CLI"
 await panel.getByRole('button', { name: '选择 AI CLI' }).click()
 await panel.getByRole('option', { name: /^claude/ }).click()
 // workflow pill：输入框内左侧，aria-label="选择总结模式"，向上弹出
 await panel.getByRole('button', { name: '选择总结模式' }).click()
-await panel.getByRole('option', { name: '深度研读' }).click()
+await panel.getByRole('option', { name: '深度总结' }).click()
 await page.bringToFront()
 // 新 UI：chat 式输入 + Enter 发送
 await panel.getByRole('textbox', { name: '自定义指令' }).fill('总结这篇文章的核心要点')

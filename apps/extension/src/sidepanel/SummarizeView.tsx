@@ -1270,8 +1270,10 @@ function Placeholder({ clis, anyInstalled, pageUnsupported, agentsLoaded, onSumm
           <button className="pd-cta-primary" onClick={() => onSummarize(primaryWf ?? 'deep')}>
             {`${WF_LABEL[primaryWf ?? 'deep'] ?? primaryWf ?? '深度总结'}本页`}
           </button>
+          {/* r52（review #17）：次按钮标签单源走 WF_LABEL——曾与 onClick 的档位表达式
+              双源硬编码，档位雅名一改即名实分裂（deep 双名问题的同族） */}
           <button className="pd-cta-ghost" onClick={() => onSummarize(primaryWf === 'quick' ? 'deep' : 'quick')}>
-            {primaryWf === 'quick' ? '深度总结' : '快速摘要'}
+            {WF_LABEL[primaryWf === 'quick' ? 'deep' : 'quick']}
           </button>
         </div>
       )}

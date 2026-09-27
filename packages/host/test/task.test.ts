@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -93,6 +93,20 @@ function makeCbs() {
 
 const PAGE = { url: 'https://a.com/x', title: 'T', extractor: 'test', approxTokens: 10 }
 const BODY = '# 正文\n\n内容'
+
+// r52（review #15）：全局 fakeHome——此前 8 个 spawn 到终局的用例向真实
+// ~/.ai-page-dive/history 写盘再删，断言失败即残留。host 侧落盘全走 homedir()
+// （HOME 环境变量驱动），统一指到临时目录后个别用例自带的 fakeHome/清理仍兼容
+let fakeHome = ''
+const realHome = process.env.HOME
+beforeEach(async () => {
+  fakeHome = await mkdtemp(join(tmpdir(), 'pd-home-'))
+  process.env.HOME = fakeHome
+})
+afterEach(async () => {
+  process.env.HOME = realHome
+  await rm(fakeHome, { recursive: true, force: true }).catch(() => {})
+})
 
 describe('Task 状态机', () => {
   it('正常路径：delta 流 → onDone + 历史落盘 + seq 递增', async () => {

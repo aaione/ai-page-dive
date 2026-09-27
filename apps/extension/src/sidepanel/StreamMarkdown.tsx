@@ -49,6 +49,10 @@ const Block = memo(function Block({ block }: { block: string }) {
       remarkPlugins={[remarkGfm]}
       components={{
         a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" />,
+        // r52（review #4）：远程图片是绕过 CLI 网络围栏的泄出通道——codex read-only
+        // 沙箱无网络，但 ![](https://…) 会让 panel 替模型发起 GET（查询参数外带）。
+        // 一律不渲染；v1 无本地图片场景，不做放行白名单
+        img: () => null,
         pre: PreWithCopy,
         table: ({ node, ...props }) => <div className="pd-md-table-wrap"><table {...props} /></div>,
       }}

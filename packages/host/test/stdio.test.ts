@@ -92,4 +92,37 @@ describe('stdio 路由', () => {
       await rm(dir, { recursive: true, force: true })
     }
   }, 15_000)
+
+  // r52（review #3）：r51 的 unrecognized 集成测试只锚到 Task 回调层——恰在 stdio
+  // 发帧层断点前一侧（复刻了它自称补齐的缺口）。此处锚帧组装：假 CLI 混注未知
+  // type×2，断言发出的 task-done 帧带 unrecognized:2（panel 消费端才收得到）
+  it('task-done 帧携带 unrecognized（帧组装层）', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const dir = await mkdtemp(join(tmpdir(), 'pd-unk-'))
+    const script = join(dir, 'cli.mjs')
+    await writeFile(script, `console.log(JSON.stringify({type:'future_event',x:1}))
+console.log(JSON.stringify({type:'future_event',x:2}))
+console.log(JSON.stringify({type:'result',is_error:false,result:'完成',usage:{input_tokens:1,output_tokens:2}}))`, 'utf8')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const fakeHome = await mkdtemp(join(tmpdir(), 'pd-home-'))
+    const origHome = process.env.HOME
+    process.env.HOME = fakeHome
+    try {
+      const { handle, sent } = makeSession()
+      handle({ t: 'task-start', task: { taskId: 'unk', agentId: 'claude', page: PAGE as any } })
+      handle({ t: 'task-content', taskId: 'unk', seq: 0, text: 'x', done: true })
+      const deadline = Date.now() + 10_000
+      while (!sent.some(m => m.t === 'task-done') && Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 100))
+      }
+      expect(sent.find(m => m.t === 'task-done')?.unrecognized).toBe(2)
+    } finally {
+      process.env.HOME = origHome
+      AGENTS[0].buildArgs = orig
+      await rm(dir, { recursive: true, force: true })
+      await rm(fakeHome, { recursive: true, force: true })
+    }
+  }, 15_000)
 })

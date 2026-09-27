@@ -18,7 +18,7 @@
 - **开箱即用**——无账号、无 API key：直接复用终端里已登录的 CLI（claude / codex 双引擎；opencode 适配器已就绪，暂因 macOS 上游问题下架，见 [DECISIONS.md](DECISIONS.md)）
 - **只信本机**——正文经 Chrome Native Messaging 直交本机 CLI，无服务器、零遥测、不碰凭证（[PRIVACY.md](PRIVACY.md)）
 - **点到哪读到哪**——安装时仅 5 项权限 + 1 项默认关闭的可选读取权限（用户主动开启），不申请 `<all_urls>`：默认 activeTab 点哪读哪，其余页面零访问面
-- **持续可玩**——快速摘要 / 深度研读 / 论文阅读 / 去 AI 味多档模式（`~/.ai-page-dive/workflows/` 可自定义新增）、markdown 流式输出、多轮追问、历史本地可恢复
+- **持续可玩**——快速摘要 / 深度总结 / 论文阅读 / 去 AI 味多档模式（`~/.ai-page-dive/workflows/` 可自定义新增）、markdown 流式输出、多轮追问（claude）、历史本地可恢复
 
 ## 快速开始（macOS + Chrome）
 
@@ -68,7 +68,7 @@ npm i -g @aaione/ai-page-dive@0.1.3 && ai-page-dive install --ext-id <扩展ID>
 <details>
 <summary>和浏览器自带的页面摘要 AI 有什么区别？</summary>
 
-浏览器原生摘要免费预装，但锁自家模型、多为单次浅摘要，页面数据经厂商云端处理。PageDive 复用你已有的 CLI 订阅做 agent 式多步深读（通读全文、workflow 可插拔、可追问），正文经 Native Messaging 直交本机 CLI，不经 PageDive 任何服务器。
+浏览器原生摘要免费预装，但锁自家模型、多为单次浅摘要，页面数据经厂商云端处理。PageDive 复用你已有的 CLI 订阅做 agent 式多步深读（通读全文、workflow 可插拔、可追问（claude）），正文经 Native Messaging 直交本机 CLI，不经 PageDive 任何服务器。
 </details>
 
 <details>
@@ -81,6 +81,12 @@ npm i -g @aaione/ai-page-dive@0.1.3 && ai-page-dive install --ext-id <扩展ID>
 <summary>支持哪些 CLI？支持 Windows 吗？</summary>
 
 v1 支持 claude 与 codex 双引擎（完整支持）；opencode 适配器已就绪，暂因 macOS 上游 Gatekeeper 问题下架（详见 [DECISIONS.md](DECISIONS.md)）。追问能力：claude 支持多轮追问（复用 CLI 会话）；codex 暂不支持（CLI 不回传会话 id，每次新提问独立成轮）。v1 仅支持 macOS + Chrome，Windows / Edge / Brave 在路线图上（[DECISIONS.md](DECISIONS.md)）。
+</details>
+
+<details>
+<summary>如何卸载？</summary>
+
+Chrome 移除扩展，终端执行 `npm uninstall -g @aaione/ai-page-dive`——preuninstall 钩子自动清理本机组件注册（NM manifest + wrapper）。历史记录与自定义 workflow 保留在 `~/.ai-page-dive/`，不需要可手动删除；只想清注册保留 npm 包，可先跑 `ai-page-dive uninstall`。
 </details>
 
 ## 开发者

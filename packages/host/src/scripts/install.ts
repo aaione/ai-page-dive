@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url'
 import { probeAgents } from '../agents/registry.js'
 import { assertNotRoot } from '../rootguard.js'
 
-const HOST_NAME = 'com.pagedive.host'
+/** r52：uninstall 子命令复用（删同名的 manifest），导出防双源漂移 */
+export const HOST_NAME = 'com.pagedive.host'
 
 /**
  * NM host 由 Chrome 以极简 PATH（/usr/bin:/bin:…）exec——nvm/brew 的 node 不在

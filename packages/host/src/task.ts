@@ -18,9 +18,6 @@ import { getWorkflow } from './workflows.js'
 // r47-audit：测试钩子——env 覆写任务超时（缺省/非法值兜底 10min，默认行为零变化），供短超时回归测试复现孙进程持写端场景
 const TASK_TIMEOUT_MS = Number(process.env.PAGEDIVE_TASK_TIMEOUT_MS) || 10 * 60_000
 
-/** CLI 会话 id → 首轮 spawn cwd 的映射（追问用）。r7-review 现状澄清：当前三适配器下 value 恒为 stableCwd（唯一走 mkdtemp 的 opencode 不产 meta 事件）——「未来按会话隔离 cwd 的引擎」预留，届时 resume 取回同 cwd 才承重。 */
-const sessionCwds = new Map<string, string>()
-
 /** 固定 CLI 工作区（幂等创建）：claude 会话跨 host 重启可 resume 的关键。每次 mkdir：目录被误删后缓存短路会让后续 spawn 落在不存在 cwd 上 */
 let stableCwd: string | null = null
 async function getStableAgentCwd(): Promise<string> {
@@ -202,8 +199,10 @@ export class Task {
     // （~/.claude/projects/<编码>/），跨 host 重启必须可复现否则 --resume 报错——统一固定工作区
     let agentCwd = def.filePathInPrompt && !isResume ? await makeAgentCwd() : undefined
     if (isResume) {
-      const remembered = sessionCwds.get(this.input.resumeSessionId!)
-      agentCwd = remembered ?? (await getStableAgentCwd())
+      // r52（review #13）：sessionCwds 预留映射已删——三适配器下 value 恒为 stableCwd
+      // （唯一走 mkdtemp 的 opencode 不产 sessionId，SW 侧无 sessionId 也不放行 resume），
+      // resume 一律回固定工作区即可复现 claude 会话
+      agentCwd = await getStableAgentCwd()
     } else if (!agentCwd) {
       agentCwd = await getStableAgentCwd()
     }
@@ -344,16 +343,6 @@ export class Task {
           model: ev.model ?? this.meta?.model,
           sessionId: ev.sessionId ?? this.meta?.sessionId,
         }
-        // 记录会话 → cwd（追问轮 resume 需要同 cwd 才能找到会话）
-        if (this.meta.sessionId && this.proc?.cwd) {
-          // FIFO 上限：长寿进程不泄漏。size>0 时 next().value 必有值，
-          // 但迭代器类型是 string | undefined——显式收窄（tsc 严格态）
-          if (sessionCwds.size > 256) {
-            const oldest = sessionCwds.keys().next().value
-            if (oldest !== undefined) sessionCwds.delete(oldest)
-          }
-          sessionCwds.set(this.meta.sessionId, this.proc.cwd)
-        }
         this.cb.onMeta(this.meta)
         break
       case 'text-delta':
@@ -434,11 +423,11 @@ export class Task {
     }
   }
 
-  /** CLI 临时工作目录（mkdtemp）回收——固定工作区（stableCwd）与已被会话映射记录的 cwd 不删
-   * （后续 resume 要用同 cwd）。isError/timeout/spawn 窗口期 cancel 不经过 finish()，各自补调（r4-impl） */
+  /** CLI 临时工作目录（mkdtemp）回收——固定工作区（stableCwd）不删（后续 resume 要用同 cwd）。
+   * isError/timeout/spawn 窗口期 cancel 不经过 finish()，各自补调（r4-impl） */
   private cleanupCwd(): void {
     const cwd = this.proc?.cwd
-    if (cwd && cwd !== stableCwd && ![...sessionCwds.values()].includes(cwd)) {
+    if (cwd && cwd !== stableCwd) {
       rm(cwd, { recursive: true, force: true }).catch(() => {})
     }
   }
