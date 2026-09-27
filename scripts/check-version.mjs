@@ -13,6 +13,10 @@ const spots = [
   ['install.sh', (s) => s.match(/@aaione\/ai-page-dive@([\d.]+)/)?.[1] ?? '(未找到版本号)'],
   ['README.md', all(/@aaione\/ai-page-dive@([\d.]+)/g)],
   ['packages/host/README.md', all(/@aaione\/ai-page-dive@([\d.]+)/g)],
+  // r51 深审：mock 的 getManifest 版本是硬编码字符串（harness 里喂给 Onboarding 动态
+  // npm 命令），发版不跟即漂——8d78e0e 已实证此点位会漂，并入门禁。
+  // 正则锚定 getManifest 行：mock 的 AGENTS 列表里还有 CLI 版本串，泛匹配会撞错
+  ['apps/extension/src/dev/chrome-mock.ts', (s) => s.match(/getManifest[^\n]*version: '([\d.]+)'/)?.[1] ?? '(未找到版本号)'],
 ]
 
 let bad = 0
@@ -25,4 +29,4 @@ for (const [file, pick] of spots) {
   }
 }
 if (bad) process.exit(1)
-console.log(`✓ 版本一致 ${expect}（extension / host / manifest / install.sh / README×2 / host README）`)
+console.log(`✓ 版本一致 ${expect}（extension / host / manifest / install.sh / README×2 / host README / mock）`)

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * r51 A2②：CLI 流式 fixture 重采样。上游 CLI 自动升级改流格式时，此前只能等用户
- * 报障才发现——本脚本对真机 CLI 发一个最小任务，把原始流存到
+ * 报障才发现——本脚本对真机 CLI 发一个最小任务，把脱敏后的流存到
  * scripts/fixtures/<id>-stream.jsonl，并用当前解析器重放，报告：
  *   版本 / 事件类型直方图 / 未识别事件数（>0 = 解析器需要跟进适配）。
  * 产物即测试 fixture 的事实来源：把新样本贴进 packages/host/test/<id>-parser.test.ts
@@ -16,12 +16,29 @@ import { createCodexParser } from '../packages/host/dist/agents/codex.js'
 const PROMPT = 'Reply with exactly: ok'
 const TASKS = {
   claude: {
-    // 与 claudeDef.buildArgs 的流式面一致（读围栏/权限旗子对本任务无语义，采样从简）
+    // 与 claudeDef.buildArgs 的流式面一致（读围栏对本任务无语义，采样从简）。
+    // r51 深审：--permission-mode default 必带——不写会继承用户全局 settings（如
+    // bypassPermissions），采样环境差异会原样进 fixture 留档
     args: ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-      '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'],
+      '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--permission-mode', 'default'],
     parser: createClaudeParser,
   },
   codex: { args: ['exec', '--json', '--skip-git-repo-check'], parser: createCodexParser },
+}
+
+// r51 深审：脱敏——真机流含开发者本机环境（cwd/session_id/memory_paths/插件配置/
+// hook 帧 prompt 全文/绝对路径），留档进公开仓库前剔除。解析器只读
+// type/subtype/delta/content/result/usage，删这些键对重放零影响
+const SENSITIVE_KEYS = ['cwd', 'session_id', 'memory_paths', 'permissionMode', 'mcp_servers', 'plugins']
+const redact = (line) => {
+  try {
+    const d = JSON.parse(line)
+    if (d.type === 'system' && d.subtype !== 'init') return null // hook 生命周期帧可能含插件配置全文
+    for (const k of SENSITIVE_KEYS) delete d[k]
+    return JSON.stringify(d).replace(/\/(?:Users|home)\/[^"\\]+/g, '~/…')
+  } catch {
+    return line
+  }
 }
 
 const sh = (bin, args, opts = {}) =>
@@ -39,7 +56,7 @@ async function sample(id) {
   const version = ((await sh(id, ['--version'])) ?? '').trim().split('\n')[0]
   if (!version) return console.log(`⛔ ${id} 未安装/不可执行，跳过`)
   const raw = await sh(id, t.args, { stdin: PROMPT + '\n' })
-  const lines = raw.split('\n').filter((l) => l.trim().startsWith('{'))
+  const lines = raw.split('\n').filter((l) => l.trim().startsWith('{')).map(redact).filter(Boolean)
   const parse = t.parser()
   const hist = new Map()
   let unrecognized = 0
