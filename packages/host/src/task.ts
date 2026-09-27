@@ -282,6 +282,8 @@ export class Task {
             durationMs: Date.now() - this.startedAt,
             model: this.meta?.model,
             sessionId: this.meta?.sessionId,
+            // r51 深审：三处 onDone 口径对齐——此路径（超时但 result 已交付）此前漏带
+            unrecognized: this.unrecognized || undefined,
           })
         })()
         this.cleanupCwd()
@@ -470,9 +472,10 @@ export class Task {
     if (code !== 0 && !delivered) {
       this.cb.onError('parse', `exit ${code}: ${stderrTail.slice(-500)}${gate}`)
     } else if (!this.accText) {
-      // r51-review P2-③ 收尾：漂移可观测闭环到失败出口——no output 且流里有未识别事件，
-      // 大概率是 CLI 版本高于解析器实测（格式漂移）而非 CLI 真没输出，把重采样指引带给用户
-      this.cb.onError('parse', `no output${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}${this.unrecognized ? `（流含 ${this.unrecognized} 个未识别事件——CLI 版本可能高于适配器实测，node scripts/record-fixtures.mjs 可重采样适配）` : ''}`)
+      // r51-review P2-③ 收尾 + 深审修正 altitude：no output 且流里有未识别事件，大概率是
+      // CLI 版本高于解析器实测（格式漂移）而非真没输出——用户气泡只给用户向归因与反馈
+      // 指引（重采样命令是维护者动作，已挪到扩展端 console.debug 排障信号里）
+      this.cb.onError('parse', `no output${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}${this.unrecognized ? `（流含 ${this.unrecognized} 个未识别事件——CLI 版本可能高于适配器实测，请到项目仓库反馈）` : ''}`)
     } else {
       this.cb.onDone({
         historyPath: this.effectiveHistoryPath,
