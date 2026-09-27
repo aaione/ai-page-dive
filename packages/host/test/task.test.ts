@@ -122,6 +122,31 @@ describe('Task 状态机', () => {
     await rm(join(script, '..'), { recursive: true, force: true })
   }, 30_000)
 
+  // r51 深审（A2③ 集成缺口）：parser 单测各自锚了 unrecognized 上报，但「task.ts
+  // 计数 → onDone 透出」链路零覆盖——白名单 type 不计、未知 type 计数的口径在此锚定
+  it('未知事件计数经 onDone.unrecognized 透出（白名单 type 不计）', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const dir = await mkdtemp(join(tmpdir(), 'pd-fake-'))
+    const script = join(dir, 'cli.mjs')
+    // 未知 type ×2 + claude 白名单 type（user）×1
+    await writeFile(script, `console.log(JSON.stringify({type:'future_event',x:1}))
+console.log(JSON.stringify({type:'user',message:{content:[]}}))
+console.log(JSON.stringify({type:'future_event',x:2}))
+console.log(JSON.stringify({type:'result',is_error:false,result:'完成',usage:{input_tokens:1,output_tokens:2}}))`, 'utf8')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const { task: mk, cbs } = makeCbs(); const task = mk()
+    task.start({ taskId: 't1', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+    task.appendContent(BODY, true)
+    await task.run()
+    expect(cbs.done?.isError).toBe(false)
+    expect(cbs.done?.unrecognized).toBe(2)
+    AGENTS[0].buildArgs = orig
+    await rm(cbs.done.historyPath, { force: true }).catch(() => {})
+    await rm(dir, { recursive: true, force: true })
+  }, 30_000)
+
   it('r49（#64-①）：quick 档跳过技能注入，deep 档照注入（上游按任务注入）', async () => {
     const { AGENTS } = await import('../src/agents/registry.js')
     const dir = await mkdtemp(join(tmpdir(), 'pd-fake-'))
