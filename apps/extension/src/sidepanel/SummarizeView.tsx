@@ -4,7 +4,7 @@ import type { ChatMessage, PageMeta, TaskStreamState } from './App.js'
 import { useListboxMenu, useRovingNav } from './a11y.js'
 import { useExitValue } from './motion.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
-import { WF_LABEL } from './workflow-labels.js'
+import { WF_LABEL, verLt } from './workflow-labels.js'
 
 interface Props {
   agents: AgentStatus[]
@@ -96,15 +96,6 @@ export function useSetting(key: string): [string, (v: string) => void] {
 /** r51 A2①：解析器实测版本基线（= test fixture 采样版本；scripts/record-fixtures.mjs
  * 重采样后同步更新此处）——低于即在下拉内联提示；只警告不硬拒跑（与零配置支柱一致） */
 const MIN_VERSIONS: Record<string, string> = { claude: '2.1.162', codex: '0.156.1' }
-const verLt = (a: string, b: string) => {
-  // 净化非数字字符：真机 --version 形如 "codex-cli 0.156.1" / "2.1.162 (Claude Code)"
-  const pa = a.replace(/[^\d.]/g, '').split('.').map((s) => parseInt(s, 10) || 0)
-  const pb = b.split('.').map((s) => parseInt(s, 10) || 0)
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0)
-  }
-  return false
-}
 
 export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, resumable, sessionAgentId, pageUnsupported, agentsLoaded }: Props) {
   const disabledClis = useDisabledClis()
@@ -128,6 +119,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     setWorkflowState(wf)
     try { localStorage.setItem('pd-workflow', wf) } catch { /* quota 等 */ }
   }
+  // r51 深审：记忆档→CTA 档的映射单源化——send() 兜底链与 Placeholder primaryWf
+  // 此前两处独立编码同一表达式，改一处漏一处即名实分裂（自定义档场景首当其冲）
+  const ctaWf = workflow !== 'default' ? workflow : 'deep'
   // 持久值失效自愈（自定义 workflow 被删/换机残留）：列表到手后校验，不在则回 default。
   // workflows 初始为 []（App 异步拉取）——空表=未加载而非「全没了」，跳过校验，
   // 否则 mount 竞态会把持久值当场复位清库（localStorage 白写）
@@ -311,13 +305,15 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     const isCta = !text && !attachments.length && !hasSession
     // r47-audit M1：空输入重发优先用回填恢复的档位（ctaRetryWf，防 quick CTA 失败后
     // Enter 落回强制 deep 的档位漂移）；无恢复时用记忆档（r51 A5），未选过才 deep
-    const wf = forceWf ?? (!text && !attachments.length && !hasSession ? (ctaRetryWf.current ?? (workflow !== 'default' ? workflow : 'deep')) : workflow)
+    const wf = forceWf ?? (!text && !attachments.length && !hasSession ? (ctaRetryWf.current ?? ctaWf) : workflow)
     // r47-audit：ctaRetryWf 消费即清（陈旧档位跨会话泄漏——重试成功后经「新对话」
     // 再空输入 Enter，会静默跑旧 quick 而非 r44 F2 强制 deep）；本轮若失败，
     // refill→armCtaRetry 会重臂，无失效风险
     if (!forceWf) ctaRetryWf.current = null
     const bubbleText =
-      text || (hasSession || attachments.length ? '' : `${WF_LABEL[wf] ?? '深度总结'}本页`)
+      // r51 深审：自定义档 fallback 与主按钮同谱（回退档名而非硬编码「深度总结」，
+      // A5 之后主按钮可为任意记忆档，气泡标签必须=实跑档）
+      text || (hasSession || attachments.length ? '' : `${WF_LABEL[wf] ?? wf}本页`)
     const skills = getEnabledSkills()
     // r42：技能只随首轮 prompt 注入（host !isResume 才读技能正文）——追问轮不带，
     // 气泡徽标也只标实际注入的轮次（此前追问轮也亮徽标 = 虚假标注）
@@ -567,7 +563,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             onSummarize={hasSession ? undefined : (wf) => send(wf)}
             /* r51 A5：CTA 主按钮跟随记忆档（pd-workflow，r16 已持久）——用户显式
                选过的档成为一键总结默认，未选过（default）保持 deep */
-            primaryWf={workflow !== 'default' ? workflow : 'deep'}
+            primaryWf={ctaWf}
           />
         )}
         {messages.map((m) =>

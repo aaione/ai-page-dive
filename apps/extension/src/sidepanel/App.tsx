@@ -459,8 +459,9 @@ export function App() {
           })
           break
         case 'task-done':
-          // r51 A2③：漂移感知排障信号——CLI 版本高于适配器实测时流中会出现未知事件
-          if (m.unrecognized) console.debug(`[pagedive] 本轮流含 ${m.unrecognized} 个未识别事件（CLI 版本可能高于适配器实测），如遇异常请携此信息反馈`)
+          // r51 A2③：漂移感知排障信号——CLI 版本高于适配器实测时流中会出现未知事件。
+          // 维护者指引放这里（console 本就是开发向通道），用户气泡只保留用户向文案
+          if (m.unrecognized) console.debug(`[pagedive] 本轮流含 ${m.unrecognized} 个未识别事件（CLI 版本可能高于适配器实测），如遇异常请携此信息反馈；维护者：node scripts/record-fixtures.mjs 重采样适配`)
           setStream((s) => {
             // 已终局任务的迟到 done（r4-ux F2）：拒收——mismatch 分支会顺手收掉
             // 新任务还在 streaming 的气泡，与其他四个 handler 的台账守卫对齐

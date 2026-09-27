@@ -187,8 +187,9 @@ export function Onboarding() {
         <details className="pd-onboarding-faq">
           <summary>命令报错了？</summary>
           <p>
-            <code>curl</code> 走不了代理/被墙 → 用 npm 方式手动安装：
-            <code>npm i -g @aaione/ai-page-dive && ai-page-dive install --ext-id {extId}</code>。
+            <code>curl</code> 走不了代理/被墙 → 用 npm 方式手动安装（r51 深审：复用
+            npmCmd 常量——此处第二份命令曾漏钉版本，与首屏命令两处独立编码必漂移）：
+            <code>{npmCmd}</code>。
           </p>
           <p>
             <code>EACCES</code> / 权限错误 → 改用 nvm/Homebrew 的 Node 重装（免 sudo；
