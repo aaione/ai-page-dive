@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { Task } from '../src/task.js'
 // r47-arch：prompt 组装层已从 task.ts 拆出（纯函数、无 IO、可独立单测）
@@ -133,6 +133,41 @@ describe('Task 状态机', () => {
 
     AGENTS[0].buildArgs = orig
     await rm(cbs.done.historyPath, { force: true }).catch(() => {})  // 单测不污染真实历史
+    await rm(join(script, '..'), { recursive: true, force: true })
+  }, 30_000)
+
+  // r55（#8/#9）：#8 终局即删正文临时文件（11min unref timer 短命 host 跑不到，
+  // /tmp/pagedive 无限留存的根）；#9 落盘目录树逐层 0700（slug/附件名可枚举面）
+  it('终局即删正文临时文件 + ~/.ai-page-dive 全树 0700', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const script = await FAKE_CLI('ok')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const tid = `rmprobe-${process.pid}`
+    const { task: mk, cbs } = makeCbs(); const task = mk()
+    task.start({ taskId: tid, agentId: 'claude', workflow: 'quick', page: PAGE as any })
+    task.appendContent(BODY, true)
+    await task.run()
+    expect(cbs.done?.isError).toBe(false)
+    // #8：tmpfile 目录不随 HOME 走——扫真实 /tmp/pagedive 无本 taskId 残留
+    const residue = (await readdir(join(tmpdir(), 'pagedive')).catch(() => [] as string[]))
+      .filter((f) => f.startsWith(tid))
+    expect(residue).toEqual([])
+    // #9：fakeHome 全新树——根/agent-workspace/history/年/月/日 逐层 0700
+    const chain = [
+      join(fakeHome, '.ai-page-dive'),
+      join(fakeHome, '.ai-page-dive', 'agent-workspace'),
+      join(fakeHome, '.ai-page-dive', 'history'),
+      dirname(cbs.done.historyPath),          // 日
+      dirname(dirname(cbs.done.historyPath)), // 月
+      dirname(dirname(dirname(cbs.done.historyPath))), // 年
+    ]
+    for (const d of chain) {
+      expect((await stat(d)).mode & 0o777, `${d} 应为 0700`).toBe(0o700)
+    }
+    AGENTS[0].buildArgs = orig
+    await rm(cbs.done.historyPath, { force: true }).catch(() => {})
     await rm(join(script, '..'), { recursive: true, force: true })
   }, 30_000)
 

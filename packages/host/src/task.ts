@@ -1,5 +1,5 @@
 /** 任务编排：正文缓冲 → 临时文件 → prompt 组装（workflow 正文即任务段）→ spawn → 归一化事件 → ≤512KB chunk → 历史落盘。 */
-import { mkdir, readdir, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { AgentEvent, TaskInput } from '@ai-page-dive/shared'
@@ -21,7 +21,10 @@ const TASK_TIMEOUT_MS = Number(process.env.PAGEDIVE_TASK_TIMEOUT_MS) || 10 * 60_
 let stableCwd: string | null = null
 async function getStableAgentCwd(): Promise<string> {
   const dir = join(homedir(), '.ai-page-dive', 'agent-workspace')
-  await mkdir(dir, { recursive: true })
+  // r55（#9）：0700 与 workflows/skills/attachments 同谱（历史 slug 可枚举面）；
+  // chmod 收敛存量装机的历史 0755（recursive mkdir 对已存在目录是 no-op）
+  await mkdir(dir, { recursive: true, mode: 0o700 }).catch(() => {})
+  await chmod(dir, 0o700).catch(() => {})
   return (stableCwd = dir)
 }
 
@@ -255,6 +258,7 @@ export class Task {
       // spawn 失败只回收 mkdtemp 的临时 cwd——固定工作区（stableCwd）是 resume 锚点，删了
       // 后续 claude/codex 任务连锁 spawn 失败 + 历史会话 resume 失效
       if (agentCwd && agentCwd !== stableCwd) rm(agentCwd, { recursive: true, force: true }).catch(() => {})
+      if (contentFile) rm(contentFile, { force: true }).catch(() => {})
       this.cb.onError('spawn-fail', String(e?.message ?? e))
       return
     }
@@ -263,6 +267,7 @@ export class Task {
     if (this.cancelled) {
       this.proc.reap()
       this.cleanupCwd()
+      if (contentFile) rm(contentFile, { force: true }).catch(() => {})
       this.cb.onError('cancelled', 'task cancelled')
       return
     }
@@ -313,6 +318,7 @@ export class Task {
       // （r9-review 实证）；cwd 不经过 finish() 由本路径自回收（r4-impl）
       this.proc?.reap()
       this.cleanupCwd()
+      if (contentFile) rm(contentFile, { force: true }).catch(() => {})
     }, TASK_TIMEOUT_MS)
 
     await new Promise<void>((resolve) => {
@@ -336,6 +342,7 @@ export class Task {
           // 上方 cancelled 分支顺序，防删正在运行进程的工作目录）
           this.proc?.reap()
           this.cleanupCwd()
+          if (contentFile) rm(contentFile, { force: true }).catch(() => {})
           resolve()
           this.cb.onError('spawn-fail', 'child runtime error')
         }
@@ -451,6 +458,10 @@ export class Task {
     this.flushDelta() // 攒批兜底：终局前把缓冲里的尾部正文发完
     clearTimeout(this.timeoutTimer)
     this.cleanupCwd()
+    // r55（#8）：终局即删正文临时文件——CLI 已退出无读者，11min unref timer 在
+    // per-connection 短命 host 下基本跑不到（PRIVACY「定时清理」名实不符的根）；
+    // scheduleCleanup+sweep 留作崩溃残留兜底
+    if (contentFile) rm(contentFile, { force: true }).catch(() => {})
     const durationMs = Date.now() - this.startedAt
     if (!this.input.resumeSessionId) { // 追问轮不建新历史路径（append 首轮文件）
       this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)

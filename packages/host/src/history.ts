@@ -1,8 +1,8 @@
 /** 历史落盘：~/.ai-page-dive/history/年/月/日/时间戳-slug.md（frontmatter 元数据）。
  * 多轮对话 append 首轮文件、pd:user/pd:assistant 注释分段；伪造标记注入由 escapePd 消（r33-sec） */
-import { mkdir, open, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, open, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, realpathSync, renameSync } from 'node:fs'
 import type { HistoryItem } from '@ai-page-dive/shared'
@@ -20,7 +20,9 @@ function rootDir(): string {
   return newDir
 }
 
-const ROOT = join(rootDir(), 'history')
+/** r55（#9）：ROOT 随 homedir() 惰性求值——模块级常量在 import 时定格真实 HOME，
+ *  测试的 fakeHome 重定向（r52）从未对历史生效，单测一直在写真实家目录再删 */
+const historyRoot = (): string => join(rootDir(), 'history')
 
 /** 符号链接解析（不存在则退一级解析父目录 + 拼回名字；父目录也没有则原样返回）。
  *  r47-sec：assertInRoot 原先只用 resolve——resolve 不解析 symlink，
@@ -33,7 +35,7 @@ function realOrSelf(p: string): string {
 /** 路径校验：resolve 消除 .. 与同前缀绕过（history-evil/ 等），realpath 复核穿链。
  *  ROOT 自身可能是链接（用户把 ~/.ai-page-dive 挪走再链回），故两侧同口径解析 */
 function assertInRoot(p: string): void {
-  const root = realOrSelf(ROOT)
+  const root = realOrSelf(historyRoot())
   const r = realOrSelf(resolve(p))
   if (r !== root && !r.startsWith(root + sep)) {
     throw new Error('path outside history root')
@@ -79,7 +81,7 @@ export function buildHistoryPath(ts: Date, title: string): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   const stamp = `${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}`
   return join(
-    ROOT,
+    historyRoot(),
     String(ts.getFullYear()),
     pad(ts.getMonth() + 1),
     pad(ts.getDate()),
@@ -92,6 +94,12 @@ export async function saveHistory(
   meta: HistoryMeta,
   body: string,
 ): Promise<string> {
+  // r55（#9）：ROOT 与其父（~/.ai-page-dive 根）也收进 0700 口径（历史首写即建；
+  // chmod 收敛存量 0755——recursive mkdir 对已存在目录 no-op，r10 的 mode 罩不住
+  // 早于此创建的根。用 historyRoot() 推导，不做 '..' 层数赌博——浅一层会把 chmod 打到 HOME）
+  const root = dirname(historyRoot())
+  await mkdir(root, { recursive: true, mode: 0o700 }).catch(() => {})
+  await chmod(root, 0o700).catch(() => {})
   await mkdir(join(path, '..'), { recursive: true, mode: 0o700 }) // r10：目录含标题 slug，0700 防枚举
   for (let n = 1; n < 100; n++) { // 同秒同 slug 并发任务互不覆盖：wx 排他创建，EEXIST 时追加序号重试
     const p = n === 1 ? path : path.replace(/\.md$/, `-${n}.md`)
@@ -185,7 +193,7 @@ export async function listHistory(query?: string, limit = 200): Promise<HistoryI
       else if (e.isDirectory() && (depth === 0 ? /^\d{4}$/ : /^\d{2}$/).test(e.name)) await walk(join(dir, e.name), depth + 1)
     }
   }
-  await walk(ROOT, 0)
+  await walk(historyRoot(), 0)
   // r17：query 时 title/url 命中免读全文，未命中才全量读正文搜 snippet（巨文件
   // >2MB 跳过——正文扫描 IO 上界）；坏文件一律跳过
   const readOne = async (p: string, q?: string): Promise<HistoryItem | undefined> => {
@@ -223,7 +231,7 @@ export async function listHistory(query?: string, limit = 200): Promise<HistoryI
 /** r42：历史保留策略——删除超出 limit 的最旧文件（保存新历史后调用）。按路径序
  * 排（年/月/日/时间戳零填充天然可排序），不读 frontmatter（快）；返回删除数。
  * ponytail: 空出的 年/月/日 目录留着不删——无害且省一次递归；root 可注入供测试 */
-export async function pruneHistory(limit: number, root: string = ROOT): Promise<number> {
+export async function pruneHistory(limit: number, root: string = historyRoot()): Promise<number> {
   if (!(limit >= 10)) return 0
   const paths: string[] = []
   const walk = async (dir: string, depth: number): Promise<void> => {
@@ -311,7 +319,7 @@ export function revealInFinder(path: string): void {
 export function revealHistoryRoot(): void {
   // r8-host：mkdirSync——异步 mkdir 与 spawn('open') 竞态，首次点击 open 先于建目录而报错（表现为按钮无反应）
   try {
-    mkdirSync(ROOT, { recursive: true })
+    mkdirSync(historyRoot(), { recursive: true, mode: 0o700 })
   } catch { /* open 仍尝试，双失败走 UI 错误路径 */ }
-  spawn('open', [ROOT], { stdio: 'ignore', detached: true }).unref()
+  spawn('open', [historyRoot()], { stdio: 'ignore', detached: true }).unref()
 }
