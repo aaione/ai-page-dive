@@ -489,9 +489,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           onChange={onAgentChange}
           items={usable.map((a) => ({
             key: a.id,
-            // r7-sec：opencode 无进程级工具围栏（claude 有 --allowedTools、codex 有
-            // --sandbox，opencode CLI 无等效 flag）——标注实验性管理预期
-            label: a.id === 'opencode' ? 'opencode·实验' : a.id,
+            // r7-sec 的 opencode「实验档」标注随适配器删除（r55）——host 恒回双引擎
+            label: a.id,
             version: a.version,
             model: a.model,
             // r51 A6：codex 无 sessionId（不可追问）前置到引擎选择处——此前只在

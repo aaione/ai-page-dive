@@ -52,6 +52,22 @@ let currentTask: {
 // sessionId 可为空串：codex 不产 sessionId，仍归档 historyPath 供面板重开还原 UI（r47-ux）
 type Session = { agentId: string; sessionId: string; historyPath?: string }
 const sessions = new Map<number, Session>()
+
+/** 面板收起期间错过的任务终局（r53 #5 / r54 #5）：task-error 广播时面板无接收端即
+ *  静默丢，重开面板零痕迹（timeout/parse 类 host 侧有落盘但面板不自动恢复，spawn-fail
+ *  连盘都没有——用户只看到永远 loading 或空态）。tabId → 终局帧，panel-ready 一次
+ *  性消费（消费即清），随 storage.session 持久化（SW 回收后窗口仍在） */
+const lastTerminals = new Map<number, { t: 'task-error'; taskId: string; code?: string; message?: string; tabId?: number }>()
+
+/** taskId → 任务源页签台账（r53 #5 + r54 #3 根治）：currentTask 清空后仍保留——
+ *  管道内迟到的终局/流帧照盖原 tab 邮戳，panel 的 foreignAdopt 核邮戳拒收，不再
+ *  穿透新任务的 pending 态。整个「无邮戳迟到帧」家族在路由层统一封堵。cap 16 防无界 */
+const tabOf = new Map<string, number>()
+function rememberTab(taskId: string, tabId: number) {
+  if (tabId < 0) return // 无真实页签（降级边角）：不记账，迟到帧维持旧裸发语义
+  tabOf.set(taskId, tabId)
+  if (tabOf.size > 16) for (const k of tabOf.keys()) { tabOf.delete(k); break }
+}
 // 当前任务用的 agent（task-meta 到达时此刻的 agent 即会话归属）
 let currentAgentId = 'claude'
 // 会话态是否已被本 SW 生命周期内的显式动作（summarize/resume-history/new-session）触碰。
@@ -64,7 +80,7 @@ let sessionTouched = false
  * 绝不让持久化异常打断 host 帧转发链 */
 function persistSession() {
   try {
-    chrome.storage?.session?.set({ sessions: [...sessions.entries()], currentAgentId, lastModels: [...lastModels], panelTabId, panelWindowId, disabledTabs: [...disabledTabs] } as any)?.catch?.(() => {})
+    chrome.storage?.session?.set({ sessions: [...sessions.entries()], currentAgentId, lastModels: [...lastModels], panelTabId, panelWindowId, disabledTabs: [...disabledTabs], lastTerminals: [...lastTerminals] } as any)?.catch?.(() => {})
   } catch { /* 无 storage 权限：退化纯内存 */ }
 }
 // SW 顶层不能 await（listener 注册必须同步）——恢复放微任务。⚠️ r52（review P1）
@@ -75,7 +91,7 @@ function persistSession() {
 void restoreSession()
 async function restoreSession() {
   try {
-    const s = (await chrome.storage?.session?.get?.(['sessions', 'currentAgentId', 'lastModels', 'panelTabId', 'panelWindowId', 'disabledTabs'])) as Record<string, any> | undefined
+    const s = (await chrome.storage?.session?.get?.(['sessions', 'currentAgentId', 'lastModels', 'panelTabId', 'panelWindowId', 'disabledTabs', 'lastTerminals'])) as Record<string, any> | undefined
     // 已被显式动作触碰（含 new-session 清空）则不恢复会话/agent——旧持久化态不得复活。
     // lastModels 是纯展示缓存，逐 key 补全无害，不受 touched 约束
     if (!sessionTouched) {
@@ -93,6 +109,12 @@ async function restoreSession() {
     if (typeof s?.panelTabId === 'number') panelTabId = s.panelTabId
     if (typeof s?.panelWindowId === 'number') panelWindowId = s.panelWindowId
     if (Array.isArray(s?.disabledTabs)) for (const id of s.disabledTabs) if (typeof id === 'number') disabledTabs.add(id)
+    // lastTerminals 同锚定态：错过终局的收件箱，非会话身份语义，不受 touched 约束
+    if (Array.isArray(s?.lastTerminals)) {
+      for (const [k, v] of s.lastTerminals) {
+        if (typeof k === 'number' && v?.taskId) lastTerminals.set(k, v)
+      }
+    }
     if (Array.isArray(s?.lastModels)) for (const [k, v] of s.lastModels) if (!lastModels.has(k)) lastModels.set(k, v)
   } catch { /* 无 storage 权限：退化纯内存 */ }
 }
@@ -280,6 +302,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   await restoreSession()
   sessions.delete(tabId) // r12：页签没了，其会话归档一并清理
   disabledTabs.delete(tabId) // r13：账随 tab 消亡，防 Set 无界增长
+  lastTerminals.delete(tabId) // r53（#5）：收件箱同随页签消亡，防过期终局补发到新页签会话
   if (panelTabId === tabId) {
     // 反向清扫（r13-review）：锚已失，per-tab disable 失去语义——残余 disabled
     // tab 经 Chrome 原生侧边栏 UI 打不开面板且无自愈路径（仅图标点击才 anchor
@@ -359,11 +382,20 @@ async function handleMessage(msg: any): Promise<unknown> {
       }
       // probe 失败时带上 NM 断连错误（forbidden=ID 未登记 vs not found=host 未装）
       const r = await nmPort.probe()
-      // 版本握手：host 过旧时带提示（panel 一次性横幅），升级命令一条到底
+      // 版本握手：host 过旧时带提示（panel 一次性横幅），升级命令一条到底。
+      // r53（#1）：钉 manifest 版本——裸 `npm i -g` 可能被镜像/缓存喂旧版，且命令
+      // 须两段（装 + 登记 ext-id），版本与 ext 由 check-version.mjs 门禁同步
       const outdated =
         r.ok && r.hostVersion && versionLt(r.hostVersion, MIN_HOST_VERSION)
-          ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），请在终端执行：npm i -g @aaione/ai-page-dive`
+          ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），请在终端执行：npm i -g @aaione/ai-page-dive@${chrome.runtime.getManifest().version} && ai-page-dive install --ext-id ${chrome.runtime.id}`
           : undefined
+      // 面板收起期间错过的任务终局一次性补发（r53 #5）：面板无接收端时广播静默丢，
+      // 重开面板永远停在 loading。消费即清——防重复补发
+      const missed = panelTabId !== null ? lastTerminals.get(panelTabId) : undefined
+      if (missed && panelTabId !== null) {
+        lastTerminals.delete(panelTabId)
+        persistSession()
+      }
       // tips 条元数据无论 probe 成败都带回（panel 已开就有目标页）。
       // hasSession/activeTask（r4-ux）：面板切 tab 被收起后重开时 React 态已丢——
       // SW 侧活会话透出给 panel 恢复 resumable（追问不再静默降级为全量重总结），
@@ -374,6 +406,8 @@ async function handleMessage(msg: any): Promise<unknown> {
         ...r,
         ...(r.ok ? {} : { nmError: nmPort.lastError }),
         ...(outdated ? { outdated } : {}),
+        // r53 #5：面板收起期间错过的任务终局——panel 据此补一次错误呈现，不再零痕迹
+        ...(missed ? { missedTerminal: missed } : {}),
         page: pageMeta(),
         // r16：锚定页签透出——panel 未绑定收养任务帧时核邮戳用（防跨页签串台）
         panelTabId,
@@ -593,16 +627,32 @@ nmPort.onMessage((m) => {
   // r12 修正：sendToPanel 恒广播（tabs.sendMessage 到不了 sidePanel，见函数注释）；
   // 终局清理仍在路由之后（见上方说明）。
   // r16：任务帧盖 tabId 邮戳（帧属任务源页签）——panel 只在「未绑定收养」瞬间核
-  // 邮戳（绑定态照收：折叠续流/双窗口恒广播语义不回归），跨页签流不再串台
-  sendToPanel(
-    currentTask && (msg as { taskId?: string })?.taskId === currentTask.taskId
-      ? { ...(msg as object), tabId: currentTask.tabId }
-      : m,
-  )
+  // 邮戳（绑定态照收：折叠续流/双窗口恒广播语义不回归），跨页签流不再串台。
+  // r53（#5）/r54（#3）：非 currentTask 的迟到帧也盖——tabOf 台账在任务结束后仍
+  // 保留源页签，迟到终局不再裸发穿透新面板的 pending 态（panel foreignAdopt 核邮戳拒收）
+  const tid = (msg as { taskId?: string })?.taskId
+  const stamp =
+    currentTask && tid === currentTask.taskId ? currentTask.tabId : tabOf.get(tid ?? '')
+  sendToPanel(stamp !== undefined ? { ...(msg as object), tabId: stamp } : m)
   // r16（3-agent P1）：任务完成打 ✓ 角标——面板被收起期间 done 广播无接收端，
   // 「deep 跑 2 分钟切走干别的」回不回看全靠记忆。SW 由任务期心跳保活必活着，
-  // setBadgeText 免权限；面板重新唤起（panel-ready）或下一轮起跑时清除
-  if (msg?.t === 'task-done') chrome.action.setBadgeText({ text: '✓' }).catch(() => {})
+  // setBadgeText 免权限；面板重新唤起（panel-ready）或下一轮起跑时清除。
+  // r53（#1/#2）：isError 的 done 打 !——CLI 运行内失败也打 ✓ 是误报「成功」
+  if (msg?.t === 'task-done') {
+    chrome.action.setBadgeText({ text: msg.isError ? '!' : '✓' }).catch(() => {})
+  }
+  if (msg?.t === 'task-error' && currentTask && msg.taskId === currentTask.taskId) {
+    chrome.action.setBadgeText({ text: '!' }).catch(() => {})
+  }
+  if (msg?.t === 'task-error') {
+    // r53（#5）/r54（#5）：面板收起期间到达的错误终局存收件箱（panel-ready 一次性
+    // 补发）——广播无接收端时此帧 otherwise 静默丢，重开面板零痕迹
+    const owner = currentTask && msg.taskId === currentTask.taskId ? currentTask.tabId : tabOf.get(msg.taskId)
+    if (owner !== undefined && owner >= 0 && !cancelledTaskIds.has(msg.taskId)) {
+      lastTerminals.set(owner, { t: 'task-error', taskId: msg.taskId, code: msg.code, message: msg.message, tabId: owner })
+      persistSession()
+    }
+  }
   if ((msg?.t === 'task-done' || msg?.t === 'task-error') && currentTask && msg.taskId === currentTask.taskId) {
     currentTask = null
   }
@@ -635,6 +685,7 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
   const ok = nmPort.send(frame)
   if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
   currentTask = { taskId, tabId: panelTabId ?? -1, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
+  rememberTab(taskId, panelTabId ?? -1)
   // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）。
   // r8-review：失败同样终止——重连拉起的新 host 没收过 task-start，追问会静默丢失
   if (!nmPort.send({ t: 'task-content', taskId, seq: 0, text: '', done: true })) {
@@ -724,6 +775,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     content: '',
     startedAt: Date.now(),
   }
+  rememberTab(taskId, tab.id!)
   // 面板未开时无接收端是常态，静默。agentId（r7-ux）：气泡创建即快照归属 CLI，
   // 流式中切下拉不错标（host 侧 status 帧不带，meta 帧到时再补）
   sendToPanel({ t: 'task-status', taskId, phase: 'reading', agentId: currentAgentId, tabId: tab.id! })

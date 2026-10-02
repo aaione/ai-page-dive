@@ -46,13 +46,14 @@ describe('buildArgs 快照', () => {
     expect(args).toContain('s')
   })
 
-  it('codex：exec json read-only skip-git-repo-check（r8 删 -o 死机制：最终文本取自流事件）', () => {
+  it('codex：exec json read-only + MCP 封死 + skip-git-repo-check（r8 删 -o；r54 #2 与 claude strict-mcp 对称）', () => {
     expect(
       codexDef.buildArgs({ contentFile: '/tmp/x.md' }),
     ).toEqual([
       'exec',
       '--json',
       '--sandbox', 'read-only',
+      '-c', 'mcp_servers={}',
       '--skip-git-repo-check',
     ])
   })
@@ -62,12 +63,13 @@ describe('buildArgs 快照', () => {
     expect(args).not.toContain('-o')
   })
 
-  it('codex：resume 轮走 exec resume + -c sandbox 围栏（resume 子命令无 --sandbox flag，实测 0.151）', () => {
+  it('codex：resume 轮走 exec resume + -c sandbox 围栏 + MCP 封死（resume 无 --sandbox flag，实测 0.151；r54 #2）', () => {
     expect(codexDef.buildArgs({ contentFile: '', resumeSessionId: 'th-1' })).toEqual([
       'exec',
       'resume', 'th-1',
       '--json',
       '-c', 'sandbox_mode="read-only"',
+      '-c', 'mcp_servers={}',
       '--skip-git-repo-check',
     ])
   })

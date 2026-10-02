@@ -6,7 +6,8 @@
 import { execSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
-import { chromium } from '/Users/apple/.nvm/versions/node/v24.15.0/lib/node_modules/@playwright/mcp/node_modules/playwright-core/index.mjs'
+import { loadChromium } from './lib/playwright.mjs'
+const { chromium } = await loadChromium()
 
 // E2E 变体构建（广权限）到 dist-e2e；产品 dist 不动。
 // 失败即退出：filter 名失配曾静默跑旧 dist-e2e 两天（@pagedive → @ai-page-dive 改名漏改），

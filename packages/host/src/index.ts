@@ -30,5 +30,7 @@ switch (cmd) {
     break
   }
   default:
-    console.log(`pagedive host ${HOST_VERSION}\n  ai-page-dive install [--ext-id <id>]\n  ai-page-dive uninstall\n  pagedive probe\n  pagedive --stdio`)
+    // r54（#12）：bin 名统一为 npm 实名 ai-page-dive——pagedive 是旧名残留，
+    // 用户照抄 `pagedive probe` 会 command not found
+    console.log(`ai-page-dive host ${HOST_VERSION}\n  ai-page-dive install [--ext-id <id>]\n  ai-page-dive uninstall\n  ai-page-dive probe\n  ai-page-dive --stdio`)
 }

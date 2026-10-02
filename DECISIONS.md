@@ -52,6 +52,7 @@
 - **2026-09-24 补：codex 无进程级 Read 路径白名单**——claude 有 `--allowedTools=Read(//path/**)`（r48/M7 已收紧为正文/附件/工作目录三根路径白名单），codex 的 `--sandbox` 只有 read-only 工作区级围栏、无按路径白名单的工具级开关，等效收紧需上游支持。当前 codex 面与 claude r47 之前同水位（沙箱只读 + 工具拒绝面靠 CLI 默认权限模型），v1 接受。
 
 - **2026-09-22 修订：opencode 入口暂时下架（registry 注释，适配器保留）**——弹框非「偶发一次」而是**每次必弹且拦杀**（SIGKILL），加上开发者工具豁免指引亦实测无效，已从「可接受的实验档」退化为「基本不可用」；v1 以 claude + codex 双适配器交付。恢复条件：上游改 bundle 方式（固定提取路径 pre-sign / 不再运行时提取）或 macOS 提供进程级 quarantine 清除 API。
+- **2026-10-01 修订（r55）：适配器文件删除**——下架满 9 天上游无修复迹象，且 host 行数红线（硬约束 5，<2200）被 r53/r54 安全修复批击穿（2262），按「再破线时删功能，不抬阈值」纪律删 `agents/opencode.ts`（82 行，含专属 parser 测试与 e2e 脚本）。恢复条件不变；恢复时从 git 历史（r53/r54 提交前）找回适配器与测试，cwd/软链管线（filePathInPrompt 槽位）未删可直接复用。
 - **症状**：从 Chrome 派生的 host 调起 opencode 时，它内嵌 Bun 1.3.14 每启动把 adhoc 签名的运行时 dylib（随机名 hash）提取到临时目录再 dlopen。macOS 的 quarantine 是「进程树级传播」——Chrome 调用 `qtn_proc_apply_to_self` 让其子树新建的所有文件带 `com.apple.quarantine`（与签名、Chrome 盘上 xattr 均无关）。文件名每次随机 → Gatekeeper 每次重新弹「无法验证是否含恶意软件」。
 - **已证伪的 host 侧方案**（勿回退）：
   - xattr 竞态轮询剥 `com.apple.quarantine`（spawn 后 120ms×4s）——Gatekeeper 在 dlopen 瞬间即评估，外部轮询追不上，实测无效。
@@ -61,7 +62,7 @@
 ## v1 范围（MVP）
 
 1. Side Panel 一键总结当前页（提取 → 本地临时文件 → CLI agent → 流式渲染）
-2. claude + codex 双适配器（opencode 实验档默认探测，2026-09-16 修订，见 D5；2026-09-22 起 opencode 入口暂时下架，见「已知限制」节）
+2. claude + codex 双适配器（opencode 实验档默认探测，2026-09-16 修订，见 D5；2026-09-22 起 opencode 入口暂时下架；2026-10-01 适配器文件删除守行数红线，见「已知限制」节）
 3. 内置 workflow：立项拍 3-4 个，实际交付 5 个（quick / deep / paper / humanize / product-audit）——2026-09-26 r51-audit 对齐口径
 4. `npm i -g @aaione/ai-page-dive && ai-page-dive install`（自动注册 NM + 探测已装 CLI）
 5. 历史 B+ 档

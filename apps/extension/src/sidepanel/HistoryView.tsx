@@ -139,6 +139,12 @@ export function HistoryView({
       if (m.t === 'error' && m.code === 'read-fail') {
         if (m.ref === undefined || m.ref === pendingPathRef.current) failRead()
       }
+      // r53（#9 同族）：reveal 失败（路径守卫拒绝/spawn open 失败）同样零反馈——
+      // 复用 readError 一次性提示，不给 Finder 按钮留「点了没反应」的死角
+      if (m.t === 'error' && m.code === 'reveal-fail') {
+        setReadError(true)
+        setTimeout(() => setReadError(false), 4000)
+      }
       // 删除结果对账：删除是乐观更新（先移出列表），失败必须回滚——
       // host 是事实源，重拉列表即恢复；成功帧也重拉对齐（host 落盘后列表序可能变）
       if (m.t === 'deleted' || (m.t === 'error' && m.code === 'delete-fail')) refresh()

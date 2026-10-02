@@ -109,21 +109,25 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         break
       case 'history-read':
         readHistory(msg.path)
-          .then((content) => {
-            // NM 单帧 ≤1MB：按字节收缩 + 回退 UTF-8 边界（CJK 截不断）；阈值按 JSON
-            // 编码后字节校验（转义膨胀可让 900KB 原文击穿 1MB → 面板静默收不到帧），
-            // NM_MAX-1024 给 path/键名等帧信封留余量（r8-review）
-            if (Buffer.byteLength(content, 'utf8') > HISTORY_MAX_BYTES) {
-              const buf = Buffer.from(content, 'utf8')
-              let end = HISTORY_MAX_BYTES
-              let text = ''
-              do {
-                let e = end
-                while (e > 0 && (buf[e] & 0xc0) === 0x80) e-- // 多字节序列中间：回退
-                text = buf.subarray(0, e).toString('utf8') + `\n\n[... 已截断，全文见本地文件 ${msg.path}]`
-                end -= 65536 // 编码后仍超（转义密度极罕见的极端）：整档再退
-              } while (Buffer.byteLength(JSON.stringify(text), 'utf8') > NM_MAX - 1024 && end > 0)
-              content = text
+          .then((raw) => {
+            // NM 单帧 ≤1MB：按字节收缩 + 回退 UTF-8 边界（CJK 截不断）；NM_MAX-1024 给
+            // path/键名等帧信封留余量（r8-review）。r54（#10）：编码后字节校验从
+            // >900KB 分支提出全量覆盖——≤900KB 原文遇高转义密度（引号/反斜杠每个
+            // 膨胀 2 倍）同样击穿 1MB，此前小原文直发、面板静默收不到帧
+            let content = raw
+            const buf = Buffer.from(raw, 'utf8')
+            let end = Math.min(HISTORY_MAX_BYTES, buf.length)
+            for (;;) {
+              let e = end
+              while (e > 0 && (buf[e] & 0xc0) === 0x80) e-- // 多字节序列中间：回退
+              const text =
+                buf.subarray(0, e).toString('utf8') +
+                (end < buf.length ? `\n\n[... 已截断，全文见本地文件 ${msg.path}]` : '')
+              if (Buffer.byteLength(JSON.stringify(text), 'utf8') <= NM_MAX - 1024 || end <= 0) {
+                content = text
+                break
+              }
+              end -= 65536 // 编码后仍超（高转义密度极端）：整档再退
             }
             send({ t: 'history-file', path: msg.path, content })
           })
@@ -180,6 +184,13 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
           send({ t: 'error', code: 'reveal-fail', message: String(e?.message ?? e) }),
         )
         break
+      default: {
+        // r54（#10）：未知消息回帧而非静默吞——协议演进（新 ext + 旧 host）时排障可见，
+        // 面板能给出「host 太旧」线索而不是无响应
+        const t = (msg as { t?: string })?.t ?? '?'
+        console.error(`[ai-page-dive] unknown message type: ${t}`)
+        send({ t: 'error', code: 'unknown-message', ref: t, message: `host 不认识的消息类型: ${t}` })
+      }
     }
   }
 

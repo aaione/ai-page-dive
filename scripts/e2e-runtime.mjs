@@ -6,7 +6,8 @@
 import { execSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
-import { chromium } from '/Users/apple/.nvm/versions/node/v24.15.0/lib/node_modules/@playwright/mcp/node_modules/playwright-core/index.mjs'
+import { loadChromium } from './lib/playwright.mjs'
+const { chromium } = await loadChromium()
 
 const EXT = '/Users/apple/work/hs/ai-feature/ai-page-dive/apps/extension/dist-e2e'
 const PROFILE = '/tmp/pd-e2e-rt-profile'

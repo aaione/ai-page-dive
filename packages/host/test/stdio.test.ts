@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ExtToHost } from '@ai-page-dive/shared'
+import { NM_MAX } from '../src/nm.js'
 import { runStdio } from '../src/stdio.js'
 
 function makeSession() {
@@ -54,6 +55,39 @@ describe('stdio 路由', () => {
     expect(sent[1]?.t).toBe('pong')
   })
 
+  it('未知消息类型 → unknown-message 回帧而非静默吞（r54 #10：协议演进时新 ext + 旧 host 可排障）', () => {
+    const { handle, sent } = makeSession()
+    handle({ t: 'from-the-future' } as any)
+    expect(sent[0]).toMatchObject({ t: 'error', code: 'unknown-message', ref: 'from-the-future' })
+    // 回帧后 session 仍活
+    handle({ t: 'ping' })
+    expect(sent[1]?.t).toBe('pong')
+  })
+
+  it('history-read：≤900KB 高转义原文（全引号）编码后击穿 1MB → 收缩进帧上限（r54 #10）', async () => {
+    // 900KB 阈值只看原文字节——引号 JSON 膨胀 2 倍，899KB 原文编码 ~1.8MB 击穿 NM 1MB。
+    // 旧实现仅 >900KB 分支做编码后校验，此形状直发 → writeFrame 抛错、面板静默收不到帧。
+    // readHistory 有 assertInRoot（ROOT 模块级常量、改 HOME 无效）——真实 ROOT 下唯一命名，测后即删
+    const root = join(homedir(), '.ai-page-dive', 'history')
+    const p = join(root, `pd-quotebomb-${process.pid}.md`)
+    await mkdir(root, { recursive: true })
+    await writeFile(p, '"'.repeat(899_000), 'utf8')
+    try {
+      const { handle, sent } = makeSession()
+      handle({ t: 'history-read', path: p })
+      const deadline = Date.now() + 8000
+      while (!sent.some(m => m.t === 'history-file' || m.t === 'error') && Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 50))
+      }
+      const f = sent.find(m => m.t === 'history-file')
+      expect(f).toBeTruthy()
+      expect(f.content).toContain('[... 已截断，全文见本地文件')
+      expect(Buffer.byteLength(JSON.stringify(f.content), 'utf8')).toBeLessThanOrEqual(NM_MAX - 1024)
+    } finally {
+      await rm(p, { force: true })
+    }
+  }, 15_000)
+
   it('list-agents 异步回 agents 帧', async () => {
     const { handle, sent } = makeSession()
     handle({ t: 'list-agents' })
@@ -63,7 +97,7 @@ describe('stdio 路由', () => {
       await new Promise(r => setTimeout(r, 100))
     }
     const agentsMsg = sent.find(m => m.t === 'agents')
-    // r40：opencode 入口暂时下架（Gatekeeper 死结，registry 注释）——断言同步
+    // r40 下架 → r55 删除（D5 修订）：agents 恒为双引擎
     expect(agentsMsg.agents.map((a: any) => a.id)).toEqual(['claude', 'codex'])
   }, 15_000)
 

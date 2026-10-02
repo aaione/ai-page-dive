@@ -28,6 +28,9 @@ export async function listSkills(): Promise<SkillItem[]> {
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
     for (const e of entries) {
       if (!e.isDirectory()) continue
+      // r53（#3）：目录名防线（对齐 listWorkflows r50 / getSkillBodies）——非法名（如
+      // 中文目录）进面板后，点选被 getSkillBodies 同名校验拒注入，静默不生效
+      try { assertValidWorkflowName(e.name) } catch { continue }
       const raw = await readFile(join(dir, e.name, 'SKILL.md'), 'utf8').catch(() => undefined) // 坏目录跳过
       if (raw !== undefined) out.set(e.name, { name: e.name, description: parseSkillMd(raw, e.name).description, builtin })
     }

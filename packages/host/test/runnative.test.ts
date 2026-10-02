@@ -36,10 +36,20 @@ function spawnHost() {
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+// r54：三处 wait(150) 起跑魔数 → ping/pong 就绪握手。慢机上 150ms 内 import 可能
+// 未完成：SIGTERM 案 kill 落在探针注册前（'term' 永不出现）、超限帧头案写头早于
+// desync 监听，均系时序赌博；pong 到手 = runNative 已挂全部监听
+async function ready(h: ReturnType<typeof spawnHost>) {
+  h.write({ t: 'ping' })
+  const dl = Date.now() + 5000
+  while (!h.frames.some((f) => f.t === 'pong') && Date.now() < dl) await wait(50)
+  expect(h.frames.some((f) => f.t === 'pong'), 'host 未在 5s 内应答 ping（起跑失败）').toBe(true)
+}
+
 describe('runNative 关停路径（子进程集成）', () => {
   it('stdin end（Chrome 断连）→ 收割窗口后 exit 0——窗口不得消失（立即 exit 会使 SIGKILL 兜底永不触发，r33）', async () => {
     const h = spawnHost()
-    await wait(150) // 起跑 + stdin resume
+    await ready(h)
     h.child.stdin!.end()
     const t0 = Date.now()
     const { code } = await h.exited
@@ -51,7 +61,7 @@ describe('runNative 关停路径（子进程集成）', () => {
 
   it('SIGTERM 关停窗口内的 task-start → host-shutting-down 错误帧（r7-review 专用 code），不触达 spawn', async () => {
     const h = spawnHost()
-    await wait(150)
+    await ready(h)
     h.child.kill('SIGTERM')
     // 等 [pd-test] term 探针：确保 shuttingDown 已置位、task-start 必然命中闸门
     const deadline = Date.now() + 3000
@@ -71,7 +81,7 @@ describe('runNative 关停路径（子进程集成）', () => {
 
   it('超限帧头（NM 流失步）→ 收割终结，exit 0 而非挂死', async () => {
     const h = spawnHost()
-    await wait(150)
+    await ready(h)
     const head = Buffer.alloc(4)
     head.writeUInt32LE(NM_MAX + 1, 0)
     h.child.stdin!.write(head)

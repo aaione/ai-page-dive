@@ -1,8 +1,9 @@
 import type { PageContent } from './page.js'
 
 /**
- * CLI 适配器定义（声明式）。接口按六家字段并集设计（claude/codex/opencode/
- * gemini/qwen/dsh）。v1 实现 claude + codex（opencode 实验档，见 DECISIONS D5）。
+ * CLI 适配器定义（声明式）。接口按六家字段并集设计（claude/codex/gemini/
+ * qwen/dsh + 已删的 opencode——r55 删除适配器，见 DECISIONS D5 修订）。
+ * v1 实现 claude + codex。
  */
 export interface AgentDef {
   id: string
@@ -14,10 +15,10 @@ export interface AgentDef {
 
   /** 构造 CLI argv。prompt 一律走 stdin（硬约束），此处不含正文 */
   buildArgs: (opts: BuildArgsOpts) => string[]
-  streamFormat: 'claude-stream-json' | 'codex-jsonl' | 'opencode-jsonl' | 'plain-stream'
+  streamFormat: 'claude-stream-json' | 'codex-jsonl' | 'plain-stream'
   /**
-   * 正文文件渲染成 CLI 视角的路径（写进 prompt）。opencode 沙箱只准读 cwd，
-   * 用相对路径；其余给绝对路径。
+   * 正文文件渲染成 CLI 视角的路径（写进 prompt）。适配器槽位（opencode 时代
+   * 引入，r55 删适配器后暂无使用方——沙箱型 CLI 只准读 cwd 时用相对路径）
    */
   filePathInPrompt?: (opts: BuildArgsOpts) => string
 

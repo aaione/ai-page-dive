@@ -1,6 +1,6 @@
 /** workflow 懒扫描 + CRUD：每次 list 重扫，用户目录 shadow 内置同名 */
 import { spawn } from 'node:child_process'
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -116,18 +116,25 @@ export async function saveWorkflow(input: {
 }): Promise<void> {
   assertValidWorkflowName(input.name)
   if (input.originalName) assertValidWorkflowName(input.originalName)
-  // 撞名守卫覆盖新建路径（r4-regression）：面板预检只对 panel 内存快照有效——
-  // 双 Chrome profile / 用户手工落盘的目录它看不见，host 是事实源，覆盖原创
-  // 正文不可恢复（F7）。originalName===name（原地覆盖自己）放行
-  const clash = await readFile(join(USER_DIR, input.name, 'WORKFLOW.md'))
-    .then(() => true)
-    .catch(() => false)
-  if (clash && input.originalName !== input.name) {
-    throw new Error(`已存在同名用户模式「${input.name}」，未保存——请换一个名称`)
-  }
   const dir = join(USER_DIR, input.name)
   await mkdir(dir, { recursive: true, mode: 0o700 })
-  await writeFile(join(dir, 'WORKFLOW.md'), buildWorkflowMd(input), { encoding: 'utf8', mode: 0o600 })
+  const final = join(dir, 'WORKFLOW.md')
+  if (input.originalName !== input.name) {
+    // 新建/改名：撞名守卫即 wx 占位本身（r54 #8：原先 readFile 探测与写之间的窗口，
+    // 双面板并发改名可双双过检、后者覆盖前者原创——创建即检查，原子）。面板预检只
+    // 对 panel 内存快照有效（r4-regression），host 是事实源（F7）
+    try {
+      await writeFile(final, buildWorkflowMd(input), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+    } catch (e: any) {
+      if (e?.code === 'EEXIST') throw new Error(`已存在同名用户模式「${input.name}」，未保存——请换一个名称`)
+      throw e
+    }
+  } else {
+    // 原地覆盖自己：tmp + rename 原子替换——读侧（设置页/下一轮 list）永不停在半截文件
+    const tmp = join(dir, `WORKFLOW.md.${process.pid}.tmp`)
+    await writeFile(tmp, buildWorkflowMd(input), { encoding: 'utf8', mode: 0o600 })
+    await rename(tmp, final)
+  }
   // 删旧目录放在写新成功之后（r3-sec m2）：先 rm 再写曾在写失败时把用户原创模式
   // 直接丢掉——非原子操作里，可重建的（新目录）先做，不可恢复的（删旧）最后做
   if (input.originalName && input.originalName !== input.name) {

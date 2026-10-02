@@ -38,6 +38,12 @@ export function createCodexParser() {
         if (d.item?.type === 'agent_message' && d.item.text) {
           out.push({ type: 'text-delta', text: d.item.text })
         }
+        // r54（review #9）：item.error 此前被完全吞掉——codex「ignoring N unrecognized
+        // configuration settings」类警告走这里，sandbox_mode 若被上游改名将零信号。
+        // 透传进 unrecognized 计数链（task.ts 计数 → onDone.unrecognized 透出）
+        if (d.item?.type === 'error' && d.item.message) {
+          out.push({ type: 'unrecognized', kind: `item.error:${String(d.item.message).slice(0, 80)}` })
+        }
         break
       case 'turn.completed': {
         done = true
@@ -76,9 +82,14 @@ export const codexDef: AgentDef = {
   },
   // resume 轮（r7-impl，实测 codex 0.151）：exec resume <id>，prompt 省略参数即读 stdin。
   // resume 子命令无 --sandbox flag——read-only 围栏用 -c config 覆盖等价保持（value 按 TOML 解析需内层引号）。
+  // r54 live-fire 实证（codex 0.156.1）：read-only 拦 touch / danger-full-access 放行——-c 是活配置通道，等价性闭环。
+  // 大版本升级 codex 时重跑三发实弹（fresh/resume/control）验证围栏未静默退化
   // r8-review：删 -o lastMsgFile——最终文本取自 item.completed 流事件，该文件写了清理了但全仓无读取点（死机制）
+  // r54（review #2）：mcp_servers={} 封死用户 config.toml 的 MCP server——read-only 沙箱不约束
+  // MCP 调用（codex 自身作为客户端直连，不经沙箱），与 claude --strict-mcp-config 对称；
+  // live-fire stderr 实测 spawn 真在连用户 MCP server（rmcp worker 连 127.0.0.1:3845）
   buildArgs: (opts) =>
     opts.resumeSessionId
-      ? ['exec', 'resume', opts.resumeSessionId, '--json', '-c', 'sandbox_mode="read-only"', '--skip-git-repo-check']
-      : ['exec', '--json', '--sandbox', 'read-only', '--skip-git-repo-check'],
+      ? ['exec', 'resume', opts.resumeSessionId, '--json', '-c', 'sandbox_mode="read-only"', '-c', 'mcp_servers={}', '--skip-git-repo-check']
+      : ['exec', '--json', '--sandbox', 'read-only', '-c', 'mcp_servers={}', '--skip-git-repo-check'],
 }

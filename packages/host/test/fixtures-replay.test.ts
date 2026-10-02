@@ -24,7 +24,11 @@ describe('真实流 fixture 重放', () => {
     expect(unrecognizedOf(createClaudeParser, 'claude-stream.jsonl')).toBe(0)
   })
 
-  it('codex-stream.jsonl（7 行，含 item.completed 环境噪声）：全流零未识别', () => {
-    expect(unrecognizedOf(createCodexParser, 'codex-stream.jsonl')).toBe(0)
+  it('codex-stream.jsonl（7 行，含 3 条 item.error 配置噪声）：未识别=已知噪声数', () => {
+    // r54（review #9）：item.error 不再静默吞，计入 unrecognized 透出（仅维护者
+    // console.debug + 失败路径诊断，成功任务用户零感知）。fixture 是采样机真实流
+    // （含 9 个被忽略配置项的 3 条警告）——钉住 3：CLI 升级引入新事件类型/新噪声
+    // 时计数顶破此值即红，驱动重采 fixture
+    expect(unrecognizedOf(createCodexParser, 'codex-stream.jsonl')).toBe(3)
   })
 })

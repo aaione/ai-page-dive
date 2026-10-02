@@ -358,4 +358,7 @@ export interface PanelReadyResp {
    *  面板仍可经 historyPath 还原对话 UI，但不得开放「继续追问」假入口 */
   canResume?: boolean
   activeTask?: { taskId: string; startedAt: number }
+  /** r53（#5）：面板收起期间错过的错误终局（SW lastTerminals 收件箱一次性补发）——
+   *  还原在途时暂存面板侧，落地后并入消息尾；消费即清（重开不重复） */
+  missedTerminal?: { t: 'task-error'; taskId: string; code?: string; message?: string; tabId?: number }
 }

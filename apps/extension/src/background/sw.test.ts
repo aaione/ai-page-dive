@@ -41,7 +41,7 @@ const defer = (): Deferred => {
 const PAGE = { url: 'https://x/art', title: 'Art', extractor: 'test', approxTokens: 7 }
 const CLAUDE_SESS = { agentId: 'claude', sessionId: 's-111' }
 
-async function boot(opts: { seed?: Record<string, any>; slowGets?: number } = {}) {
+async function boot(opts: { seed?: Record<string, any>; slowGets?: number; hostVersion?: string } = {}) {
   const calls = {
     /** runtime.sendMessage 全部广播（含任务帧转发） */
     sent: [] as any[],
@@ -78,6 +78,8 @@ async function boot(opts: { seed?: Record<string, any>; slowGets?: number } = {}
   const chrome: any = {
     runtime: {
       id: 'test-ext-id',
+      // r53（#1）横幅钉版用：与仓库版本同步的假 manifest
+      getManifest: () => ({ version: '0.1.3' }),
       onMessage: listeners(onMessageL),
       sendMessage: (m: any) => {
         calls.sent.push(m)
@@ -146,7 +148,7 @@ async function boot(opts: { seed?: Record<string, any>; slowGets?: number } = {}
     onMessage: (h: (m: any) => void) => calls.nmHandlers.push(h),
     onDisconnect: (h: () => void) => calls.nmDisconnect.push(h),
     lastError: '',
-    probe: async () => ({ ok: true, hostVersion: '9.9.9' }),
+    probe: async () => ({ ok: true, hostVersion: opts.hostVersion ?? '9.9.9' }),
   }
 
   vi.resetModules()
@@ -285,5 +287,68 @@ describe('sw.ts 回归网', () => {
     // 终局后任务位已清：新一轮 followUp 拿到新 taskId
     const r2 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '再问' })
     expect(r2.taskId).not.toBe(tid)
+  })
+
+  it('isError 角标：isError=true 的 done 打 !——CLI 运行内失败不得误报成功 ✓（r53 #1/#2）', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    h.fireNm({ t: 'task-done', taskId: r.taskId, agentId: 'claude', isError: true, errorText: '运行内失败' })
+    expect(h.calls.badge).toContainEqual({ text: '!' })
+    expect(h.calls.badge).not.toContainEqual({ text: '✓' })
+  })
+
+  it('task-error（currentTask 匹配）打 ! 角标 + 面板收起期间的错过进 lastTerminals 收件箱（r53 #1/#5）', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    h.fireNm({ t: 'task-error', taskId: r.taskId, code: 'timeout', message: '超时' })
+    expect(h.calls.badge).toContainEqual({ text: '!' })
+    // 广播帧无接收端是常态（面板收起）——SW 必须记收件箱，重开面板一次性补发
+    const st = await h.fireMessage({ t: 'panel-ready' })
+    expect(st.missedTerminal).toMatchObject({ t: 'task-error', taskId: r.taskId, code: 'timeout', tabId: 5 })
+    // 消费即清：再次 panel-ready 不重复补发
+    const st2 = await h.fireMessage({ t: 'panel-ready' })
+    expect(st2.missedTerminal).toBeUndefined()
+  })
+
+  it('迟到终局帧盖原 tab 邮戳（r53 #5 / r54 #3）：currentTask 清空后 tabOf 台账仍供邮戳，panel foreignAdopt 可核拒', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    const tid = r.taskId
+    h.fireNm({ t: 'task-done', taskId: tid, agentId: 'claude' }) // 终局 → currentTask = null
+    // 管道内同 taskId 迟到流帧：非 currentTask 也必须带源页签邮戳（修复前裸发，
+    // 穿透新面板 pending 态——panel 侧按 tabId 核收养才成立的前提）
+    h.fireNm({ t: 'task-chunk', taskId: tid, seq: 99, text: '尾随' })
+    const late = h.calls.sent.find((m) => m.t === 'task-chunk' && m.seq === 99)
+    expect(late).toMatchObject({ taskId: tid, tabId: 5 })
+  })
+
+  it('版本横幅：host 过旧 → 命令钉 manifest 版本 + 两段到底（r53 #1——裸 npm i -g 可被镜像/缓存喂旧版）', async () => {
+    const h = await boot({ hostVersion: '0.0.9' })
+    const st = await h.fireMessage({ t: 'panel-ready' })
+    expect(st.outdated).toContain('@aaione/ai-page-dive@0.1.3')
+    expect(st.outdated).toContain('install --ext-id test-ext-id')
+  })
+
+  it('r12：会话按任务源页签归档——锚在 6、任务跑在 11 的会话不写进 6（多 tab 隔离）', async () => {
+    const h = await boot({ seed: { panelTabId: 6, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect(r.ok).toBe(true)
+    // 任务源 tab = query 活跃页 11（tabsDb 的 5 仅 tabs.get 命中，query mock 恒返 11）
+    h.fireNm({ t: 'task-meta', taskId: r.taskId, agentId: 'claude', sessionId: 's-9' })
+    const persist = h.calls.storageSet.filter((s) => Array.isArray(s.sessions)).at(-1)
+    expect(persist.sessions).toContainEqual([11, { agentId: 'claude', sessionId: 's-9' }])
+    expect(persist.sessions.some((e: any) => e[0] === 6)).toBe(false)
+  })
+
+  it('r13：预 disable 幂等——同 tab 反复 onActivated 不重发 setOptions（disabledTabs 记账去重）', async () => {
+    const h = await boot({ seed: { panelTabId: 5, panelWindowId: 1 } })
+    h.events.onActivated({ tabId: 9, windowId: 1 })
+    await h.flush()
+    const count9 = () => h.calls.setOptions.filter((o: any) => o.tabId === 9 && o.enabled === false).length
+    const first = count9()
+    expect(first).toBeGreaterThanOrEqual(1)
+    h.events.onActivated({ tabId: 9, windowId: 1 })
+    await h.flush()
+    expect(count9()).toBe(first)
   })
 })

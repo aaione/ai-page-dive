@@ -147,6 +147,10 @@ export function App() {
   /** r47-ux：还原帧落地时的 resumable——codex 无 sessionId 只还原 UI 不可追问；
    *  不得把 history-file 分支硬写成 resumable:true（否则追问必得 session-lost） */
   const restoreResumableRef = useRef(true)
+  /** r53（#5）：面板收起期间错过的任务终局（panel-ready 的 missedTerminal）——还原
+   *  在途时暂存，待 history-file/兜底出口落地后并入消息尾（直接补会被还原的
+   *  BLANK 整体替换吞掉，正是核心场景：错误终局 + 重开还原） */
+  const missedErrRef = useRef<{ taskId: string; code?: string; message?: string } | null>(null)
   // r16：本面板锚定页签（get-state 初值 + panel-anchor 帧刷新）——任务帧「未绑定
   // 收养」瞬间的邮戳核验基准：别的页签任务的流不得在本面板凭空开场（串台根修）
   const anchorTabIdRef = useRef<number | null>(null)
@@ -281,7 +285,14 @@ export function App() {
             setTimeout(() => {
               if (restorePathRef.current === hp) {
                 restorePathRef.current = null
-                setStream((s) => ({ ...s, resumable: canResume, ...(canResume ? { reopened: true } : {}) }))
+                const mt = missedErrRef.current
+                missedErrRef.current = null
+                setStream((s) => ({
+                  ...s,
+                  resumable: canResume,
+                  ...(canResume ? { reopened: true } : {}),
+                  ...(mt ? { messages: [...s.messages, { id: `m${mt.taskId}`, role: 'assistant' as const, text: '', error: `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`, isError: true, cliFault: true }] } : {}),
+                }))
               }
             }, 12_000)
           } else {
@@ -312,6 +323,24 @@ export function App() {
               phase: `处理中（已 ${Math.max(1, Math.round((Date.now() - at.startedAt) / 1000))}s）…`,
             }
           })
+        }
+        // r53（#5）：面板收起期间错过的错误终局——SW 收件箱一次性补发。还原在途时
+        // 暂存（history-file 的 BLANK 会吞掉此刻补的气泡），否则立即补错误气泡：
+        // 重开面板零痕迹停在「看起来没事」是最差结局
+        const mt = resp?.missedTerminal as { taskId: string; code?: string; message?: string } | undefined
+        if (mt) {
+          if (restorePathRef.current) {
+            missedErrRef.current = mt
+          } else {
+            setStream((s) =>
+              s.finished.includes(mt.taskId) ? s : {
+                ...s,
+                done: true,
+                finished: [...s.finished, mt.taskId].slice(-8),
+                messages: [...s.messages, { id: `m${mt.taskId}`, role: 'assistant' as const, text: '', error: `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`, isError: true, cliFault: true }],
+              },
+            )
+          }
         }
       })
     }
@@ -357,6 +386,12 @@ export function App() {
           restorePathRef.current = null
           {
             const msgs = parseHistoryTurns(m.content ?? '')
+            // r53（#5）：还原落地时并入错过的错误终局（在途暂存的 missedTerminal）
+            const mt = missedErrRef.current
+            missedErrRef.current = null
+            const missedMsg = mt
+              ? { id: `m${mt.taskId}`, role: 'assistant' as const, text: '', error: `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`, isError: true, cliFault: true }
+              : null
             if (msgs.length) {
               setStream((s) => {
                 // r46（review C4）：还原窗口内用户已抢先发出新轮（pending/已绑定任务）
@@ -369,7 +404,7 @@ export function App() {
                 // r47-ux：按 panel-ready 带出的 canResume 落 resumable（codex 只还原 UI）
                 resumable: restoreResumableRef.current,
                 finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
-                messages: msgs,
+                messages: missedMsg ? [...msgs, missedMsg] : msgs,
                 }
               })
             } else {
@@ -377,6 +412,7 @@ export function App() {
                 ...s,
                 resumable: restoreResumableRef.current,
                 ...(restoreResumableRef.current ? { reopened: true } : {}),
+                ...(missedMsg ? { messages: [...s.messages, missedMsg] } : {}),
               }))
             }
           }
@@ -468,6 +504,9 @@ export function App() {
             // 已终局任务的迟到 done（r4-ux F2）：拒收——mismatch 分支会顺手收掉
             // 新任务还在 streaming 的气泡，与其他四个 handler 的台账守卫对齐
             if (s.finished.includes(m.taskId)) return s
+            // r54（#3）：未绑定 + 他页签邮戳的迟到终局——本面板与该任务素不相识，
+            // 不得定稿空闲态（六 handler 唯一缺口；SW tabOf 补盖邮戳后此守卫才有据可核）
+            if (foreignAdopt(m, s)) return s
             // 过期帧（取消后旧任务迟到 done）：只收尾 streaming 气泡，不把新一轮定稿
             if (s.taskId !== null && s.taskId !== m.taskId) {
               return {
@@ -603,6 +642,10 @@ export function App() {
               if (s.finished.includes(m.taskId)) return s
               if (s.taskId !== null && s.taskId !== m.taskId) return s
             }
+            // r53（#6）：空闲态（无 pending 且无绑定任务）断连直接忽略——NM 空闲断连/
+            // host 崩溃后 SW 自动重 spawn 是常态，上一轮已终局的问题不得凭空回到
+            // 输入框（refillFor 无条件构造会把用户已发出且成功的问题再回填一遍）
+            if (!s.pending && s.taskId == null) return s
             // r8-ux：断连终局同样回填本轮问题（与看门狗判死同式）。
             // r52（review #9）：refill 提前——wf 轮（一键总结）回填为空串，「已放回
             // 输入框」是假承诺，改指真实重试路径
@@ -611,7 +654,8 @@ export function App() {
             const rf = refillFor(s, lastUser)
             const TEXT = rf?.wf
               ? '一键总结未完成——直接按 Enter 以原档位重试'
-              : '本机组件连接中断——你的问题已放回输入框，可直接重发'
+              // r53（#10）：回填对已有草稿是静默跳过（SummarizeView 守卫）——文案如实
+              : '本机组件连接中断——你的问题已放回输入框（未覆盖已有草稿），可直接重发'
             const messages = s.messages.map((msg) =>
               msg.streaming ? { ...msg, streaming: false, error: TEXT, isError: true } : msg,
             )
@@ -633,6 +677,21 @@ export function App() {
                 : messages,
             }
           })
+          break
+        case 'error':
+          // r53（#9）：还原读取失败（文件被外部移动/删除，host 回 read-fail）——此前
+          // 无消费端，干等 12s 兜底才降级。error 帧到达即走同一退回（reopened 语义）
+          if ((m as any).code === 'read-fail' && (m as any).ref === restorePathRef.current) {
+            restorePathRef.current = null
+            const mt = missedErrRef.current
+            missedErrRef.current = null
+            setStream((s) => ({
+              ...s,
+              resumable: restoreResumableRef.current,
+              ...(restoreResumableRef.current ? { reopened: true } : {}),
+              ...(mt ? { messages: [...s.messages, { id: `m${mt.taskId}`, role: 'assistant' as const, text: '', error: `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`, isError: true, cliFault: true }] } : {}),
+            }))
+          }
           break
       }
     }
@@ -747,6 +806,9 @@ export function App() {
   /** 历史详情「继续对话」：解析 pd:user/pd:assistant 分段还原多轮气泡 + 通知 SW 恢复会话 */
   const resumeHistory = useCallback((item: HistoryItem, body: string) => {
     setOverlay(null)
+    // r54（#4）：作废在途还原——12s 窗口内点「继续对话」后，迟到的 history-file
+    // 若仍被 restorePathRef 放行，会把刚装载的会话整体 BLANK 成旧记录内容
+    restorePathRef.current = null
     // 记录的 CLI 已停用/卸载（r7-ux）：显示与执行必须一致——effectiveAgent 会回退到
     // 其他 CLI，若 SW 仍装载旧会话，追问实际执行的是历史 agent（必然失败）。改走
     // 「只恢复正文、不装载会话」。agents 未加载完（空列表）按可用处理（首屏窗口极短）。
@@ -917,7 +979,7 @@ const ERROR_LABEL: Record<string, string> = {
   'spawn-fail': 'CLI 启动失败——终端跑一次 which claude / which codex 确认已安装，或用官方安装器重装后重试',
   // r52（review #16）：完整用户向文案——host 原始英文 "task exceeded 10min" 不再
   // 拼进气泡（task-error 分支的 timeout 专用处理 + console.debug 维护者通道）
-  timeout: '任务超时（上限 10 分钟）——你的问题已放回输入框，可直接重发',
+  timeout: '任务超时（上限 10 分钟）——你的问题已放回输入框（未覆盖已有草稿），可直接重发',
   cancelled: '已取消',
   parse: 'CLI 输出异常',
   'no-agent': '未知 CLI',

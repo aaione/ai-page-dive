@@ -1,12 +1,11 @@
 /** 任务编排：正文缓冲 → 临时文件 → prompt 组装（workflow 正文即任务段）→ spawn → 归一化事件 → ≤512KB chunk → 历史落盘。 */
-import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { AgentEvent, TaskInput } from '@ai-page-dive/shared'
 import { MAX_CHUNK } from './nmconst.js'
 import { createClaudeParser } from './agents/claude.js'
 import { createCodexParser } from './agents/codex.js'
-import { createOpencodeParser } from './agents/opencode.js'
 import { getAgent } from './agents/registry.js'
 import { getSkillBodies } from './skills.js'
 import { appendHistoryTurn, buildHistoryPath, escapePd, pruneHistory, saveHistory } from './history.js'
@@ -105,6 +104,21 @@ export class Task {
   /** 附件落盘（r12 持久化）：写 ~/.ai-page-dive/attachments/<yyyymm>/（0600，不清理——历史恢复可追溯），
    *  软链进 agent cwd 供沙箱 CLI（opencode）读；图片写 b64 解码件。返回 [{name, path, kind}]。 */
   private async materializeAttachments(agentCwd?: string): Promise<{ name: string; path: string; kind: 'text' | 'image' }[]> {
+    // r53（#8）：先清往轮附件软链——链接文件名内联 taskId 每轮唯一，stable agentCwd 不随任务
+    // 清理，不清则无界累积。判据收窄到「指向 ~/.ai-page-dive/attachments 的符号链接」，用户/
+    // CLI 自己放进工作区的东西一律不碰；本轮链接随后原位重建（幂等）
+    if (agentCwd) {
+      const attRoot = join(homedir(), '.ai-page-dive', 'attachments')
+      try {
+        for (const e of await readdir(agentCwd)) {
+          const lp = join(agentCwd, e)
+          try {
+            if (!(await readlink(lp)).startsWith(attRoot)) continue
+            await unlink(lp)
+          } catch { /* 非符号链接/已不存在：跳过 */ }
+        }
+      } catch { /* agentCwd 不可读：跳过清扫不阻断 */ }
+    }
     const atts = this.input.attachments ?? []
     if (!atts.length) return []
     const out: { name: string; path: string; kind: 'text' | 'image' }[] = []
@@ -190,10 +204,7 @@ export class Task {
       ? await getSkillBodies(this.input.skills)
       : undefined
 
-    const parser =
-      def.streamFormat === 'claude-stream-json' ? createClaudeParser()
-      : def.streamFormat === 'opencode-jsonl' ? createOpencodeParser()
-      : createCodexParser()
+    const parser = def.streamFormat === 'claude-stream-json' ? createClaudeParser() : createCodexParser()
 
     // cwd 语义：opencode --dir 钉死工作区 + 相对路径 prompt；claude 会话按 cwd 分区存储
     // （~/.claude/projects/<编码>/），跨 host 重启必须可复现否则 --resume 报错——统一固定工作区
@@ -285,8 +296,10 @@ export class Task {
             unrecognized: this.unrecognized || undefined,
           })
         })()
-        this.cleanupCwd()
+        // r53（#4）：先收割再删 cwd——对齐 M5 不变量（error 分支注释自述），
+        // 防删仍在运行进程的工作目录
         this.proc?.reap()
+        this.cleanupCwd()
         return
       }
       this.cb.onError('timeout', `task exceeded ${TASK_TIMEOUT_MS / 60_000}min`)
@@ -295,9 +308,11 @@ export class Task {
         this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
       }
       void this.persist('interrupted')
-      this.cleanupCwd() // 不经过 finish()：timeout 路径自回收 cwd（r4-impl）
-      // 收割挂死 CLI：走 cancel() 会被其 finished 守卫挡回（终局已前置），detached 进程组永久泄漏烧配额（r9-review 实证）
+      // r53（#4）：先收割再删 cwd（M5 不变量，对齐 error/cancelled 分支）。收割挂死 CLI：
+      // 走 cancel() 会被其 finished 守卫挡回（终局已前置），detached 进程组永久泄漏烧配额
+      // （r9-review 实证）；cwd 不经过 finish() 由本路径自回收（r4-impl）
       this.proc?.reap()
+      this.cleanupCwd()
     }, TASK_TIMEOUT_MS)
 
     await new Promise<void>((resolve) => {
@@ -446,12 +461,11 @@ export class Task {
       this.cb.onError('cancelled', 'task cancelled')
       return
     }
-    // r37：Chrome→host→opencode（Bun）链释放的 JSC dylib 被内核打上 Chrome quarantine 归因，Gatekeeper 按「下载文件」评估拦杀；每次 hash 皆新，xattr/「仍要打开」均无效。
-    // r37-ux：文案不再指挥用户去系统设置加豁免（普通用户不该被要求做系统级操作）——说明性归因 + 可行动建议=改用 claude/codex；豁免路径留给进阶用户自行检索
-    const gate = this.input.agentId === 'opencode' && durationMs < 15_000 ? '；若屏幕弹出「Apple 无法验证 .dylib」：这是 macOS 对浏览器拉起的程序所释放运行组件的已知拦截（opencode 为实验档，组件每次都换新名，无法预先放行），非 PageDive 故障——建议改用 claude / codex 总结本页（不受此限制）' : ''
+    // r37 的 opencode Gatekeeper 文案随适配器删除（r55，DECISIONS D5 修订）——r37 排障
+    // 记录见 git 历史
     if (signal === 'SIGKILL') {
       await this.persist('interrupted')
-      this.cb.onError('parse', `killed by SIGKILL${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}（可能被系统或用户终止）${gate}`)
+      this.cb.onError('parse', `killed by SIGKILL${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}（可能被系统或用户终止）`)
       return
     }
     // 终局判定（r7-blocker：条件曾写反）：delivered=成功 result 已交付。① exit≠0 无 result → parse 错误（截断文本不得标成功）；② result 交付后 exit≠0 → 仍按成功（硬约束 #4：失败语义在 is_error 不在退出码）
@@ -459,7 +473,7 @@ export class Task {
     const isError = code !== 0 ? !delivered : !this.accText
     await this.persist(isError ? 'error' : 'done')
     if (code !== 0 && !delivered) {
-      this.cb.onError('parse', `exit ${code}: ${stderrTail.slice(-500)}${gate}`)
+      this.cb.onError('parse', `exit ${code}: ${stderrTail.slice(-500)}`)
     } else if (!this.accText) {
       // r51-review P2-③ 收尾 + 深审修正 altitude：no output 且流里有未识别事件，大概率是
       // CLI 版本高于解析器实测（格式漂移）而非真没输出——用户气泡只给用户向归因与反馈
@@ -515,9 +529,16 @@ export class Task {
         usage: this.usage,
         durationMs: Date.now() - this.startedAt,
         sessionId: this.meta?.sessionId,
+        // r54（#11）：输入体量观测——正文实际送达字符数落 frontmatter，为校准 MAX_CONTENT
+        // 攒真实分布（200,000 恒值=触顶信号）；0/未传正文不落键
+        contentChars: this.contentChars || undefined,
+        // r53（#7）：附件路径记档——deleteHistory 据此连带删正文
+        attachments: this.attachFiles.length ? this.attachFiles.map((f) => f.path) : undefined,
       },
-      // r12：首轮带附件时以 pd:user 段先行落标记（恢复会话时附件轮次可还原）。r33-sec：accText 转义同 appendHistoryTurn
-      (this.attachFiles.length ? `<!-- pd:user -->\n${attachMarkers(this.attachFiles)}\n` : '') + escapePd(this.accText),
+      // r12：首轮带附件时以 pd:user 段先行落标记（恢复会话时附件轮次可还原）。r33-sec：accText
+      // 转义同 appendHistoryTurn；r54（#6）：附件标记行同样过 escapePd——APFS 文件名可含 pd 标记
+      // 字样，两路转义口径对称，防恢复会话时轮边界被附件名伪造
+      (this.attachFiles.length ? `<!-- pd:user -->\n${escapePd(attachMarkers(this.attachFiles))}\n` : '') + escapePd(this.accText),
     )
       .then((actual) => { // 冲突重试换了文件名：终局回传实际路径；成功才置 persistOk
         this.historyPath = actual

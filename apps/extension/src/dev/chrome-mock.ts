@@ -41,7 +41,8 @@ const WORKFLOWS = [
   { name: 'humanize', description: '去 AI 味改写', builtin: true },
   { name: 'product-audit', description: '产品四维严苛审计', builtin: true },
 ]
-const SKILLS = [{ name: 'tech-audit', description: '技术审计增强指令', builtin: false }]
+// ?noskills=1（F1 对照组，头注释 :8 承诺但此前零实现——r53 #19）：技能列表回空
+const SKILLS = q.get('noskills') ? [] : [{ name: 'tech-audit', description: '技术审计增强指令', builtin: false }]
 const HISTORY = [1, 2, 3].map((i) => ({
   ts: Date.now() - i * 86400_000,
   title: `示例总结 ${i}——某个很长很长的网页标题占位`,

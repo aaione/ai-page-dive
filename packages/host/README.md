@@ -20,7 +20,7 @@ npm i -g @aaione/ai-page-dive@0.1.3 && ai-page-dive install --ext-id <扩展ID>
 
 装好后打开 Chrome 扩展 [AI PageDive](https://github.com/aaione/ai-page-dive) 的侧边栏即可，无需再管本包。
 
-- 总结模式（workflow）：`~/.ai-page-dive/workflows/<name>/WORKFLOW.md`（内置 deep / paper / quick，用户目录可 shadow 同名内置）
+- 总结模式（workflow）：`~/.ai-page-dive/workflows/<name>/WORKFLOW.md`（内置 deep / humanize / paper / product-audit / quick 五档，用户目录可 shadow 同名内置）
 - 技能（skill）：`~/.ai-page-dive/skills/<name>/SKILL.md`
 - 历史记录：`~/.ai-page-dive/history/`
 

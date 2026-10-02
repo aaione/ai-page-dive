@@ -50,6 +50,11 @@ export interface HistoryMeta {
   durationMs?: number
   /** CLI 会话 id：历史详情页「继续对话」用（claude --resume） */
   sessionId?: string
+  /** r53（#7）：本条任务的附件绝对路径——deleteHistory 据此连带删正文（用户「删除历史」
+   *  的心智是内容一起删）；旧条目无此字段则维持只删 md */
+  attachments?: string[]
+  /** r54（#11）：正文实际送达字符数——为校准 extract 200k 上限攒真实分布 */
+  contentChars?: number
 }
 
 export function slugify(s: string): string {
@@ -112,6 +117,8 @@ async function writeNew(path: string, meta: HistoryMeta, body: string): Promise<
     meta.usage ? `usage: ${JSON.stringify(meta.usage)}` : null,
     meta.durationMs != null ? `duration_ms: ${meta.durationMs}` : null,
     meta.sessionId ? `session_id: ${escapeYaml(meta.sessionId)}` : null,
+    meta.attachments?.length ? `attachments: ${JSON.stringify(meta.attachments)}` : null,
+    meta.contentChars != null ? `content_chars: ${meta.contentChars}` : null,
     '---',
     '',
   ]
@@ -123,12 +130,35 @@ async function writeNew(path: string, meta: HistoryMeta, body: string): Promise<
 /** 轮正文分段标记转义（r33-sec）：正文含标记原样落盘会被 parseHistoryTurns 误切成轮边界——实体化冒号，渲染不变，读侧还原 */
 export const escapePd = (s: string): string => s.replaceAll('<!-- pd:', '<!-- pd&#58;')
 
+/** 读文件头 4KB 的 frontmatter 段（无 frontmatter/读失败 → null）——append/delete 的轻量探测共用 */
+async function readFmHead(path: string): Promise<string | null> {
+  const fh = await open(path, 'r')
+  try {
+    const head = Buffer.alloc(4096)
+    const { bytesRead } = await fh.read(head, 0, 4096, 0)
+    return splitFrontmatter(head.subarray(0, bytesRead).toString('utf8'))?.fm ?? null
+  } finally {
+    await fh.close().catch(() => {})
+  }
+}
+
 /** 追问轮 append 到首轮历史文件（多轮对话完整记录） */
 export async function appendHistoryTurn(
   path: string,
   turn: { user: string; assistant: string },
 ): Promise<void> {
   assertInRoot(path)
+  // r54（#7）：追加前校验目标仍是有效历史文件——首轮文件被删除后 flag:'a' 会静默重建一个
+  // 无 frontmatter 的裸文件：列表永不可见却占 prune 名额（僵尸）。失效即跳过留痕（与 task.ts
+  // persist 的 logFail 同谱），本轮对话仅本次会话可见
+  let fm: string | null = null
+  try {
+    fm = await readFmHead(path)
+  } catch { /* 不存在/不可读 → 无效 */ }
+  if (fm === null) {
+    console.error(`[ai-page-dive] append skipped, target not a valid history file: ${path}`)
+    return
+  }
   await writeFile(path, `\n<!-- pd:user -->\n${escapePd(turn.user)}\n\n<!-- pd:assistant -->\n${escapePd(turn.assistant)}\n`, {
     flag: 'a',
     mode: 0o600,
@@ -258,6 +288,17 @@ export async function readHistory(path: string): Promise<string> {
 
 export async function deleteHistory(path: string): Promise<void> {
   assertInRoot(path)
+  // r53（#7）：连带删本条历史的附件正文——「删除历史」的用户心智是内容一起删。路径仅在
+  // frontmatter 记录（r53 起新条目），旧条目无记录则维持只删 md；且仅认 attachments 根内
+  // 绝对路径，frontmatter 被篡改也不会越界删任意文件
+  try {
+    const m = (await readFmHead(path))?.match(/^attachments: (\[.*\])$/m)
+    const attRoot = resolve(join(homedir(), '.ai-page-dive', 'attachments'))
+    for (const ap of m ? (JSON.parse(m[1]) as string[]) : []) {
+      const rp = resolve(ap)
+      if (rp !== attRoot && rp.startsWith(attRoot + sep)) await rm(rp, { force: true }).catch(() => {})
+    }
+  } catch { /* frontmatter 头读失败/解析失败：照删 md */ }
   await rm(path)
 }
 

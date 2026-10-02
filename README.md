@@ -15,7 +15,7 @@
 
 ## 为什么是 PageDive
 
-- **开箱即用**——无账号、无 API key：直接复用终端里已登录的 CLI（claude / codex 双引擎；opencode 适配器已就绪，暂因 macOS 上游问题下架，见 [DECISIONS.md](DECISIONS.md)）
+- **开箱即用**——无账号、无 API key：直接复用终端里已登录的 CLI（claude / codex 双引擎）
 - **只信本机**——正文经 Chrome Native Messaging 直交本机 CLI，无服务器、零遥测、不碰凭证（[PRIVACY.md](PRIVACY.md)）
 - **点到哪读到哪**——安装时仅 5 项权限 + 1 项默认关闭的可选读取权限（用户主动开启），不申请 `<all_urls>`：默认 activeTab 点哪读哪，其余页面零访问面
 - **持续可玩**——快速摘要 / 深度总结 / 论文阅读 / 去 AI 味多档模式（`~/.ai-page-dive/workflows/` 可自定义新增）、markdown 流式输出、多轮追问（claude）、历史本地可恢复
@@ -26,7 +26,7 @@
 
 **① 安装扩展**（CWS 审核中，上线前先手动加载）：`chrome://extensions` 开启「开发者模式」→「加载已解压的扩展程序」→ 选本仓库 `apps/extension/dist/`（git clone 后先跑一次 `pnpm install && pnpm build` 生成）。
 
-**② 安装本机组件**（一次性）：扩展面板会显示带扩展 ID 的完整命令（ID 即 Chrome 分配的扩展唯一标识，面板自动拼好），复制到终端执行；无 Node 时自动经 Homebrew 引导。
+**② 安装本机组件**（一次性）：扩展面板会显示带扩展 ID 的完整命令（ID 即 Chrome 分配的扩展唯一标识，面板自动拼好），复制到终端执行；无 Node 时若装有 Homebrew 会自动经其安装（首次需先装 Xcode 命令行工具，可能较慢），否则给出手动安装指引。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- <扩展ID>
@@ -74,19 +74,19 @@ npm i -g @aaione/ai-page-dive@0.1.3 && ai-page-dive install --ext-id <扩展ID>
 <details>
 <summary>和 Claude / ChatGPT 官方浏览器扩展有什么区别？</summary>
 
-三点：**① 厂商中立**——官方扩展只接自家模型，PageDive 是多引擎（claude / codex，opencode 适配器待上游修复后回归），哪家订阅在用哪家，随时可换；**② 无云桥中转**——官方扩展的页面数据经厂商云端桥接服务处理，PageDive 正文直交本机 CLI，不经任何桥接域名；**③ 零凭证**——PageDive 不碰 OAuth/token，只子进程调起你已登录的 CLI，host 代码开源可审计。
+三点：**① 厂商中立**——官方扩展只接自家模型，PageDive 是多引擎（claude / codex，更多 CLI 见路线图），哪家订阅在用哪家，随时可换；**② 无云桥中转**——官方扩展的页面数据经厂商云端桥接服务处理，PageDive 正文直交本机 CLI，不经任何桥接域名；**③ 零凭证**——PageDive 不碰 OAuth/token，只子进程调起你已登录的 CLI，host 代码开源可审计。
 </details>
 
 <details>
 <summary>支持哪些 CLI？支持 Windows 吗？</summary>
 
-v1 支持 claude 与 codex 双引擎（完整支持）；opencode 适配器已就绪，暂因 macOS 上游 Gatekeeper 问题下架（详见 [DECISIONS.md](DECISIONS.md)）。追问能力：claude 支持多轮追问（复用 CLI 会话）；codex 暂不支持（CLI 不回传会话 id，每次新提问独立成轮）。v1 仅支持 macOS + Chrome，Windows / Edge / Brave 在路线图上（[DECISIONS.md](DECISIONS.md)）。
+v1 支持 claude 与 codex 双引擎（完整支持）；曾实验性支持 opencode，因 macOS 上游 Gatekeeper 死结已移除（详见 [DECISIONS.md](DECISIONS.md)）。追问能力：claude 支持多轮追问（复用 CLI 会话）；codex 暂不支持（CLI 不回传会话 id，每次新提问独立成轮）。v1 仅支持 macOS + Chrome，Windows / Edge / Brave 在路线图上（[DECISIONS.md](DECISIONS.md)）。
 </details>
 
 <details>
 <summary>如何卸载？</summary>
 
-Chrome 移除扩展，终端执行 `npm uninstall -g @aaione/ai-page-dive`——preuninstall 钩子自动清理本机组件注册（NM manifest + wrapper）。历史记录与自定义 workflow 保留在 `~/.ai-page-dive/`，不需要可手动删除；只想清注册保留 npm 包，可先跑 `ai-page-dive uninstall`。
+Chrome 移除扩展，终端执行 `npm uninstall -g @aaione/ai-page-dive`（当初用 pnpm 装的则 `pnpm rm -g @aaione/ai-page-dive`）——preuninstall 钩子自动清理本机组件注册（NM manifest + wrapper）。历史记录与自定义 workflow 保留在 `~/.ai-page-dive/`，不需要可手动删除；只想清注册保留 npm 包，可先跑 `ai-page-dive uninstall`。
 </details>
 
 ## 开发者

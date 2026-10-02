@@ -29,11 +29,13 @@ describe('codex jsonl parser', () => {
     expect(evs).toEqual([{ type: 'text-delta', text: '答案' }])
   })
 
-  it('error item 静默（可能非致命）', () => {
+  it('error item → unrecognized 透传（r54 #9：「ignoring N unrecognized configuration settings」类警告不再零信号，进 onDone.unrecognized）', () => {
     const p = createCodexParser()
     expect(
       p(JSON.stringify({ type: 'item.completed', item: { id: 'i0', type: 'error', message: 'warn' } })),
-    ).toEqual([])
+    ).toEqual([{ type: 'unrecognized', kind: 'item.error:warn' }])
+    // 无 message 的畸形 error item：不透传（防计数噪音）
+    expect(p(JSON.stringify({ type: 'item.completed', item: { type: 'error' } }))).toEqual([])
   })
 
   it('turn.completed → usage + result(isError=false)', () => {
