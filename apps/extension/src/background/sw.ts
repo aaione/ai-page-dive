@@ -83,6 +83,22 @@ function persistSession() {
     chrome.storage?.session?.set({ sessions: [...sessions.entries()], currentAgentId, lastModels: [...lastModels], panelTabId, panelWindowId, disabledTabs: [...disabledTabs], lastTerminals: [...lastTerminals] } as any)?.catch?.(() => {})
   } catch { /* 无 storage 权限：退化纯内存 */ }
 }
+
+/** r55（#10）：在跑任务指针（storage.local——跨扩展更新/重载存活；session 域随重载
+ *  清空）。扩展重载打断任务时 currentTask/sessions/lastTerminals 全灭，重开面板零
+ *  痕迹；指针在 SW 冷启动的 restoreSession 折算成一条 ext-restarted 终局补进收件箱。
+ *  各终局口（done/error/取消/断连/发送失败）成对清理，防陈旧指针误报 */
+function setRunningTask(taskId: string, tabId: number) {
+  if (tabId < 0) return // 无真实页签（与 rememberTab 同口径）：无人可送达，不立指针
+  try {
+    chrome.storage?.local?.set?.({ pdRunningTask: { taskId, tabId } } as any)?.catch?.(() => {})
+  } catch { /* 无 storage 权限：退化 */ }
+}
+function clearRunningTask() {
+  try {
+    chrome.storage?.local?.remove?.('pdRunningTask')?.catch?.(() => {})
+  } catch { /* 无 storage 权限：退化 */ }
+}
 // SW 顶层不能 await（listener 注册必须同步）——恢复放微任务。⚠️ r52（review P1）
 // 纠正旧论断：storage.get 是宏任务级 IPC 而非微任务，冷唤醒的 listener（onClicked/
 // onRemoved/onMessage）完全可能先于恢复完成跑 persistSession，用空内存态全量覆写
@@ -116,6 +132,19 @@ async function restoreSession() {
       }
     }
     if (Array.isArray(s?.lastModels)) for (const [k, v] of s.lastModels) if (!lastModels.has(k)) lastModels.set(k, v)
+    // r55（#10）：孤儿任务指针折算——扩展更新/重载后 storage.session 已清空，此处是
+    // 死任务唯一残留凭证。折一条 ext-restarted 进收件箱（panel-ready 一次性消费）；
+    // currentTask 仍匹配 = 任务在本 SW 生命周期内活着（冷启动后立刻起新任务、指针
+    // 尚未被其终局清理的窄窗），不报不清。label 走 App 的 ERROR_LABEL，不带 message
+    // （missedTerminal 渲染是 label + message 拼接，双份即复读）
+    try {
+      const p = (await chrome.storage?.local?.get?.('pdRunningTask'))?.pdRunningTask as { taskId?: string; tabId?: number } | undefined
+      if (p?.taskId && typeof p.tabId === 'number' && p.tabId >= 0 && currentTask?.taskId !== p.taskId) {
+        lastTerminals.set(p.tabId, { t: 'task-error', taskId: p.taskId, code: 'ext-restarted', tabId: p.tabId })
+        persistSession() // 折算结果落 session：SW 再次回收也不丢
+        clearRunningTask()
+      }
+    } catch { /* 无 storage 权限：退化 */ }
   } catch { /* 无 storage 权限：退化纯内存 */ }
 }
 // 每个 CLI 最近使用的模型（下拉展示用）：agentId → model。
@@ -490,6 +519,10 @@ async function handleMessage(msg: any): Promise<unknown> {
         chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
         return { ok: true }
       }
+      // r55（#11）：通用转发补帧限门禁——workflow-save 等大帧超限会被 host 当协议
+      // 失步自杀（连带收割全部在跑任务）；任务起跑帧同款 frameTooLarge 早已设防，
+      // 此处是同一红线在转发面的缺口
+      if (frameTooLarge(msg.msg)) return { error: 'frame-too-large' }
       return { ok: nmPort.send(msg.msg as ExtToHost) }
   }
   return undefined
@@ -523,6 +556,7 @@ function cancelCurrent() {
       })
       .catch(() => {})
     currentTask = null
+    clearRunningTask() // r55（#10）
     return { ok: true }
   }
   return undefined
@@ -583,6 +617,7 @@ nmPort.onMessage((m) => {
         .sendMessage({ t: 'task-error', taskId: msg.taskId, code: 'content-mismatch', message: '正文传输不完整（NM 丢片），已取消——请重试' })
         .catch(() => {})
       currentTask = null
+      clearRunningTask() // r55（#10）
     }
     return // 回执不转发（panel 不消费）
   }
@@ -655,6 +690,7 @@ nmPort.onMessage((m) => {
   }
   if ((msg?.t === 'task-done' || msg?.t === 'task-error') && currentTask && msg.taskId === currentTask.taskId) {
     currentTask = null
+    clearRunningTask() // r55（#10）
   }
 })
 nmPort.onDisconnect(() => {
@@ -663,6 +699,7 @@ nmPort.onDisconnect(() => {
   // 进程树），句柄残留会让后续 cancel 发向死连接、新任务误判「已有在跑」
   const tid = currentTask?.taskId
   currentTask = null
+  clearRunningTask() // r55（#10）：断连 = 该连接上的任务必死，指针不留
   chrome.runtime
     .sendMessage({ t: '__host-disconnected', ...(tid ? { taskId: tid } : {}) } as HostToExt)
     .catch(() => {})
@@ -686,10 +723,12 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
   if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
   currentTask = { taskId, tabId: panelTabId ?? -1, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
   rememberTab(taskId, panelTabId ?? -1)
+  setRunningTask(taskId, panelTabId ?? -1) // r55（#10）：host 已受理，任务有了可死的实体
   // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）。
   // r8-review：失败同样终止——重连拉起的新 host 没收过 task-start，追问会静默丢失
   if (!nmPort.send({ t: 'task-content', taskId, seq: 0, text: '', done: true })) {
     currentTask = null
+    clearRunningTask() // r55（#10）
     return { error: 'host-not-found', lastError: nmPort.lastError }
   }
   return { ok: true, taskId }
@@ -834,6 +873,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     currentTask = null
     return { error: 'host-not-found', lastError: nmPort.lastError }
   }
+  setRunningTask(taskId, tab.id!) // r55（#10）：host 已受理，任务有了可死的实体
 
   // 正文分片 ≤512KB（JSON 序列化后字节维度，与 host 侧 sendChunk 同一标准）。
   // 用 JSON.stringify 而非裸 Blob.size：帧最终是 JSON，\ / " / 控制字符转义最坏 2x
@@ -863,6 +903,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     })
     if (!sent) {
       currentTask = null
+      clearRunningTask() // r55（#10）：半途而废的正文同样终结任务
       return { error: 'host-not-found', lastError: nmPort.lastError }
     }
     i = end

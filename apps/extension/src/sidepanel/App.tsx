@@ -986,6 +986,8 @@ const ERROR_LABEL: Record<string, string> = {
   'bad-request': '请求参数不完整',
   'content-mismatch': '正文传输不完整，已取消——请重试',
   'host-shutting-down': '本机组件正在重启',
+  // r55（#10）：SW 冷启动把孤儿任务指针折算成的终局（扩展更新/重载打断在跑任务）
+  'ext-restarted': '扩展更新或重启打断了进行中的任务——请重新发起',
 }
 
 /** CLI 鉴权类错误归一化（r7-ux）：install 探测不含登录态（--version 无需登录），

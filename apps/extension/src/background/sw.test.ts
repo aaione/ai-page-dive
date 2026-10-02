@@ -41,7 +41,7 @@ const defer = (): Deferred => {
 const PAGE = { url: 'https://x/art', title: 'Art', extractor: 'test', approxTokens: 7 }
 const CLAUDE_SESS = { agentId: 'claude', sessionId: 's-111' }
 
-async function boot(opts: { seed?: Record<string, any>; slowGets?: number; hostVersion?: string } = {}) {
+async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<string, any>; slowGets?: number; hostVersion?: string } = {}) {
   const calls = {
     /** runtime.sendMessage 全部广播（含任务帧转发） */
     sent: [] as any[],
@@ -56,6 +56,8 @@ async function boot(opts: { seed?: Record<string, any>; slowGets?: number; hostV
     nmDisconnect: [] as Array<() => void>,
   }
   const store: Record<string, any> = { ...(opts.seed ?? {}) }
+  // r55（#10）：storage.local 独立于 session（跨扩展重载存活）——孤儿任务指针域
+  const localStore: Record<string, any> = { ...(opts.seedLocal ?? {}) }
   let slowLeft = opts.slowGets ?? 0
   const pending: Deferred[] = []
   const snapshot = () => ({ ...store })
@@ -102,6 +104,17 @@ async function boot(opts: { seed?: Record<string, any>; slowGets?: number; hostV
           calls.storageSet.push(obj)
           calls.order.push({ k: 'persist' })
           Object.assign(store, obj)
+          return Promise.resolve()
+        },
+      },
+      local: {
+        get: async (k: string) => (k in localStore ? { [k]: localStore[k] } : {}),
+        set: (obj: any) => {
+          Object.assign(localStore, obj)
+          return Promise.resolve()
+        },
+        remove: (k: string) => {
+          delete localStore[k]
           return Promise.resolve()
         },
       },
@@ -167,6 +180,7 @@ async function boot(opts: { seed?: Record<string, any>; slowGets?: number; hostV
   return {
     chrome,
     calls,
+    local: localStore,
     flush,
     fireMessage,
     fireNm: (m: any) => calls.nmHandlers.forEach((h) => h(m)),
@@ -350,5 +364,39 @@ describe('sw.ts 回归网', () => {
     h.events.onActivated({ tabId: 9, windowId: 1 })
     await h.flush()
     expect(count9()).toBe(first)
+  })
+
+  // r55（#10）：扩展更新/重载打断在跑任务——storage.session 随之清空，收件箱/
+  // currentTask 全灭，重开面板零痕迹。storage.local 的任务指针是唯一残留凭证，
+  // 冷启动 restoreSession 折算成 ext-restarted 终局补进收件箱（消费即清）
+  it('r55（#10）：孤儿任务指针 → 冷启动折算 ext-restarted 进收件箱，panel-ready 一次性消费', async () => {
+    const h = await boot({
+      seed: { panelTabId: 5, panelWindowId: 1 },
+      seedLocal: { pdRunningTask: { taskId: 'orphan-1', tabId: 5 } },
+    })
+    await h.flush()
+    const st = await h.fireMessage({ t: 'panel-ready' })
+    expect(st.missedTerminal).toMatchObject({ t: 'task-error', taskId: 'orphan-1', code: 'ext-restarted', tabId: 5 })
+    // 指针折算即耗：再次 panel-ready 不重复补发
+    const st2 = await h.fireMessage({ t: 'panel-ready' })
+    expect(st2.missedTerminal).toBeUndefined()
+    expect(h.local.pdRunningTask).toBeUndefined()
+  })
+
+  it('r55（#10）：任务起跑立指针 + 终局成对清理——不留陈旧指针在下次冷启动误报', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    expect(h.local.pdRunningTask).toEqual({ taskId: r.taskId, tabId: 5 })
+    h.fireNm({ t: 'task-done', taskId: r.taskId, agentId: 'claude' })
+    expect(h.local.pdRunningTask).toBeUndefined()
+  })
+
+  // r55（#11）：nm 通用转发缺帧限门禁——超限帧会被 host 当协议失步自杀（连带收割
+  // 全部在跑任务）。门禁必须在 SW 侧拒发（任务起跑帧 frameTooLarge 的转发面同类）
+  it('r55（#11）：nm 转发帧限门禁——超 1MB 的 workflow-save 拒发 frame-too-large，不进 NM', async () => {
+    const h = await boot()
+    const resp = await h.fireMessage({ t: 'nm', msg: { t: 'workflow-save', name: 'big', description: '', body: 'x'.repeat(1_100_000) } })
+    expect(resp).toEqual({ error: 'frame-too-large' })
+    expect(h.calls.nmSent).toEqual([])
   })
 })

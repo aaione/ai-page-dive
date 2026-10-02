@@ -1120,7 +1120,16 @@ function ActionBar({
           停止按钮被连带禁用，非破坏性取消入口全失，任务只能烧满看门狗。
           r47：且只禁首轮发送——追问轮不提取页面，受限页不该禁 */}
       <button
-        onClick={running ? onCancel : onStart}
+        onClick={running ? onCancel : () => {
+          // r55（#5）：按钮 enabled 但 send() 守卫会静默拦掉的死路径——零可用 CLI 而
+          // 输入框有字/附件（disabled 条件只认全空）。与 Enter 路径 :1101 同文案，
+          // 点按不再零反馈；其余拦截形态按钮已 disabled，此处是唯一可达缺口
+          if (!usableCount) {
+            flashHint('先安装或启用一个 CLI，再开始总结')
+            return
+          }
+          onStart()
+        }}
         disabled={!running && ((pageUnsupported && !hasSession) || (!usableCount && !input.trim() && !attachCount))}
         aria-label={running ? '停止' : '发送'}
         title={running ? '停止' : '发送'}
@@ -1174,8 +1183,13 @@ function PageTips({ meta, idle, dimmed }: { meta: PageMeta; idle?: boolean; dimm
         </svg>
       )}
       <span className="pd-page-tips-text">
-        {/* r44-audit F3：hero 空闲态无分享行为——「正在分享」是进行时谎言 */}
-        {idle ? '已就绪' : '正在分享'}「{meta.title || host || meta.url}」{host ? ` · ${host}` : ''}
+        {/* r44-audit F3：hero 空闲态无分享行为——「正在分享」是进行时谎言。
+            r55（#4）：resume 态（追问会话）根本没有分享行为在进行——上下文在
+            CLI 会话里，追问不重读页面，文案如实 */}
+        {dimmed === 'resume'
+          ? `对话上下文「${meta.title || host || meta.url}」（追问不重读页面）`
+          : `${idle ? '已就绪' : '正在分享'}「${meta.title || host || meta.url}」`}
+        {host ? ` · ${host}` : ''}
       </span>
       {meta.notice && (
         <span className="pd-page-tips-notice" title={meta.notice}>

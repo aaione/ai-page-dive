@@ -293,7 +293,14 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
         t: 'nm',
         msg: { t: 'workflow-save', name: editor.name, description: editor.description, category: editor.category || undefined, body: editor.body, originalName: editor.originalName ?? undefined },
       },
-      () => void chrome.runtime.lastError,
+      (resp) => {
+        void chrome.runtime.lastError
+        // r55（#11）：SW 帧限门禁拒发（约 1MB 上限，防 host 协议失步自杀）——此前
+        // 静默无回应，用户以为已保存；成功路径仍走 workflow-saved 广播（:175）
+        if ((resp as { error?: string } | undefined)?.error === 'frame-too-large') {
+          setEditor({ ...editor, nameError: '内容过大（上限约 1MB）——请精简后保存', dirty: true })
+        }
+      },
     )
   }
 
