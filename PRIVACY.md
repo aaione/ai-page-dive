@@ -1,12 +1,12 @@
 # Privacy Policy / 隐私政策
 
-*Last updated: 2026-09-26*
+*Last updated: 2026-10-02*
 
 PageDive（"AI PageDive" Chrome 扩展及其本机组件）按以下方式处理数据。核心承诺：**PageDive 没有服务器——你的网页内容只在扩展与本机 CLI 之间流转，不经我们中转，也不被我们存储。**（CLI 与其模型服务如何通信由该 CLI 自身的隐私政策决定，见下。）
 
 ## English Summary
 
-PageDive has no servers, no accounts, and no API keys. When you click "summarize", the extension extracts the current page's content and sends it via Chrome Native Messaging directly to an AI CLI (claude / codex) installed and logged in on your own machine, where it is written to a local temp file for that CLI to read. We never transmit, intermediate, or store your content: no telemetry, no analytics, no crash reports. History, workflows, skills, and any attachments you attach (persisted under `~/.ai-page-dive/attachments/` for history restoration) live under `~/.ai-page-dive/` on your machine; follow-up session state stays in Chrome session storage (cleared on browser restart). The only outbound exit is user-initiated sharing (Settings → "Share"), which opens your chosen platform's share page with this product's link and name. How your CLI communicates with its model service is governed by that CLI's own privacy policy (claude → Anthropic, codex → OpenAI). The optional "always allow reading" host permission is off by default and granted only by explicit user action.
+PageDive has no servers, no accounts, and no API keys. When you click "summarize", the extension extracts the current page's content and sends it via Chrome Native Messaging directly to an AI CLI (claude / codex) installed and logged in on your own machine, where it is written to a per-task temp file (deleted the moment the task ends; crash leftovers are swept within about an hour) and staged in a per-task working directory (`~/.ai-page-dive/agent-workspace/`, cleaned up at task end) for that CLI to read. We never transmit, intermediate, or store your content: no telemetry, no analytics, no crash reports. History, workflows, skills, and any attachments you attach (persisted under `~/.ai-page-dive/attachments/` for history restoration) live under `~/.ai-page-dive/` on your machine; follow-up session state stays in Chrome session storage (cleared on browser restart). Note that the CLI you invoke keeps its own session transcripts of what it processes (e.g. claude under `~/.claude/projects/`) — that is the CLI's built-in behavior, governed by its own privacy policy and outside PageDive's control. The only outbound exit is user-initiated sharing (Settings → "Share"), which opens your chosen platform's share page with this product's link and name. How your CLI communicates with its model service is governed by that CLI's own privacy policy (claude → Anthropic, codex → OpenAI). The optional "always allow reading" host permission is off by default and granted only by explicit user action.
 
 ## 数据处理
 
@@ -19,8 +19,13 @@ PageDive has no servers, no accounts, and no API keys. When you click "summarize
 
 - 总结历史 / workflow / 技能：`~/.ai-page-dive/`
 - 附件（持久化，历史恢复可追溯）：`~/.ai-page-dive/attachments/`
-- CLI 运行临时文件：系统临时目录（任务结束后定时清理）
+- 供 CLI 读取的任务工作目录（正文/附件符号链接与提示词组装）：`~/.ai-page-dive/agent-workspace/`（任务结束清理）
+- CLI 运行临时文件：系统临时目录 `/tmp/pagedive/`（任务结束即删；异常退出的残留由约 11 分钟定时与 1 小时兜底清扫回收）
 - 追问会话状态：Chrome storage（session 域，浏览器重启即清）
+
+### 你所选 CLI 自身的落盘（PageDive 之外）
+
+claude CLI 会把它经手的会话转录（含被总结的网页正文）写入其自身目录（如 `~/.claude/projects/`）；codex 亦会在其自身数据目录留存会话记录（以其官方文档为准）。这是 CLI 的内置行为——PageDive 不创建、不读取、不清理这些文件；查看或清除请参考对应 CLI 的官方文档。
 
 ## 我们不做的
 
