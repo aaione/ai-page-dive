@@ -256,6 +256,45 @@ describe('sw.ts 回归网', () => {
     expect(chunks.at(-1).total).toBe(HEAVY.length)
   })
 
+  it('r56 #4：旧任务的迟到注入失败不清新任务句柄——task2 不被击穿成 cancelled', async () => {
+    const h = await boot()
+    // task1 的 content.js 注入挂起；task2 随后发起（入口收割 task1、接管 currentTask）。
+    // 修复前：task1 注入失败晚归时无条件 currentTask = null → task2 在归位守卫处
+    // 折算 { error: 'cancelled' }——迟到失败杀活任务
+    let rej1!: (e: Error) => void, res2!: (v: any) => void
+    ;(h.chrome.scripting.executeScript as any)
+      .mockReset()
+      .mockImplementationOnce(() => new Promise((_, re) => { rej1 = re })) // task1 注入（挂起）
+      .mockImplementationOnce(() => Promise.resolve([])) // task2 注入
+      .mockImplementationOnce(() => new Promise((re) => { res2 = re })) // task2 提取（挂起）
+    const p1 = h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    await wait(10)
+    const p2 = h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    await wait(10)
+    rej1(new Error('frame went away')) // 旧任务注入失败晚归
+    expect(await p1).toMatchObject({ error: 'no-permission' })
+    res2([{ result: { ...PAGE, contentMarkdown: 'y' } }])
+    const r2 = await p2
+    expect(r2.ok).toBe(true)
+    // nmSent[0] 是入口收割 task1 的 task-cancel；task2 自己的 task-start 必须发出
+    const start = h.calls.nmSent.find((m: any) => m.t === 'task-start')
+    expect(start?.task?.taskId).toBe(r2.taskId)
+  })
+
+  it('r56 #10：正文来自 iframe 时 task-start 携带顶层 tab 的 url/title（不以内帧失锚）', async () => {
+    const h = await boot()
+    // allFrames 择优可能选中内帧——提取结果的 url/title 是 frame 级（location.href/内帧
+    // 标题）；历史 frontmatter 与 tips 必须锚在用户视角的顶层页（tabs.query 的活跃 tab）
+    ;(h.chrome.scripting.executeScript as any).mockResolvedValue([
+      { result: { ...PAGE, url: 'https://embed.frame.io/i.html', title: '内帧标题', contentMarkdown: 'z' } },
+    ])
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect(r.ok).toBe(true)
+    expect(h.calls.nmSent[0].task.page.url).toBe('https://x/active')
+    expect(h.calls.nmSent[0].task.page.title).toBe('Active')
+    expect(h.calls.sent.find((m: any) => m.t === 'page-meta').page.title).toBe('Active')
+  })
+
   it('丢片对账：content-received 数目相符静默；不符 → task-cancel + content-mismatch（r8-review）', async () => {
     const h = await boot()
     const BODY = 'x'.repeat(1200)

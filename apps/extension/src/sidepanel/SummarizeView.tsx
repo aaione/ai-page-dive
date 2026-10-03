@@ -243,6 +243,15 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const canFollowUp =
     resumable && (stream.reopened || messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text))
   const hasSession = canFollowUp
+  // r56（#12）：resume 态的上下文锚——hasSession 建立时快照来源页 title/url。page-meta
+  // 是活数据（页签内导航即更新），不锚定的话 tips 会把「对话上下文」错标成新页标题，
+  // 而 CLI --resume 的内容仍是快照页；firstId 变化（新对话/重开还原）时重置重捕
+  const firstId = messages[0]?.id
+  const [ctxAnchor, setCtxAnchor] = useState<{ title: string; url: string } | null>(null)
+  useEffect(() => { setCtxAnchor(null) }, [firstId])
+  useEffect(() => {
+    if (canFollowUp && !ctxAnchor && pageMeta) setCtxAnchor({ title: pageMeta.title, url: pageMeta.url })
+  }, [canFollowUp, ctxAnchor, pageMeta])
 
   const wfs = useMemo(() => {
     const order: Record<string, number> = { quick: 0, deep: 1, paper: 2 }
@@ -614,7 +623,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         {/* r38-motion：key=锚定页——切页时重挂载重播入场动画（此前恒挂载，标题/tokens 瞬跳是「不丝滑」主源） */}
         {/* r49（#64-①）：dimmed 语义 = 本轮不注入技能——追问轮（会话延续）或 quick 档
             （host 侧跳过注入，与 task.ts 过滤同语义） */}
-        {pageMeta && <PageTips key={pageMeta.url} meta={pageMeta} idle={!messages.length} dimmed={hasSession ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
+        {/* r56（#12）：resume 态渲染会话锚（快照页）而非活 pageMeta——导航后「对话上下文」
+            仍指向快照页；key 同步用锚 url，导航不再触发无谓的重挂动画 */}
+        {pageMeta && <PageTips key={hasSession && ctxAnchor ? ctxAnchor.url : pageMeta.url} meta={hasSession && ctxAnchor ? { ...pageMeta, ...ctxAnchor } : pageMeta} idle={!messages.length} dimmed={hasSession ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
         {chips.shown && chips.shown.length > 0 && (
           <div className={`pd-attach-chips${chips.exiting ? ' pd-exiting' : ''}`}>
             {chips.shown.map((a, i) => (

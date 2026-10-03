@@ -3,7 +3,7 @@
 // r54：extractPage 三种 DOM 形状 + 注入 guard 此前零单测（真机行为全靠 e2e 兜）——
 // jsdom 下锚 readability 正常路径 / shadow DOM 兜底 / 超长截断三条主链
 import { describe, expect, it } from 'vitest'
-import { extractPage } from './extract.js'
+import { approxTokensOf, extractPage } from './extract.js'
 
 /** 每测重置文档：lang/title 直设，body 经 template 解析后整体换树
  *  （document.write 的 reopen 语义在 jsdom 下跨用例不稳——首测后清不干净） */
@@ -38,8 +38,8 @@ describe('extractPage（jsdom 三形状）', () => {
     expect(page.contentMarkdown).toContain('# ')
     expect(page.contentMarkdown).toContain('要点一')
     expect(page.contentMarkdown).not.toContain('alert(')
-    // token 估算口径：ceil(len/4)
-    expect(page.approxTokens).toBe(Math.ceil(page.contentMarkdown.length / 4))
+    // token 估算口径（r56 #8）：CJK 1 token/字 + 其余 4 字符/token——中文正文显著高于旧 len/4
+    expect(page.approxTokens).toBeGreaterThan(Math.ceil(page.contentMarkdown.length / 4))
     expect(page.notice).toBeUndefined()
   })
 
@@ -67,7 +67,15 @@ describe('extractPage（jsdom 三形状）', () => {
     const page = r as Exclude<ReturnType<typeof extractPage>, { error: string }>
     expect(page.contentMarkdown.length).toBe(200_000)
     expect(page.notice).toMatch(/超上限，仅取前 200,000/)
-    expect(page.approxTokens).toBe(50_000)
+    // r56（#8）：截断的 20 万字几乎全 CJK——旧口径恒 50_000（低估 4 倍），新口径 ≈1 token/字
+    expect(page.approxTokens).toBeGreaterThan(100_000)
+  })
+
+  it('approxTokensOf：CJK ≈1 token/字，英文维持 4 字符/token（r56 #8）', () => {
+    expect(approxTokensOf('正文')).toBe(2) // 旧口径 ceil(2/4)=1，低估一半起步
+    expect(approxTokensOf('abcdefgh')).toBe(2) // 纯 ASCII 行为不变
+    expect(approxTokensOf('中文abc')).toBe(3) // 混排：2 + ceil(3/4)
+    expect(approxTokensOf('、。」')).toBe(3) // CJK 标点同口径
   })
 
   it('注入 guard：__pagediveExtract 挂载且指向同一实现（SW 重复注入幂等基座）', () => {

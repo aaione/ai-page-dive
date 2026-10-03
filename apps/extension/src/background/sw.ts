@@ -832,7 +832,9 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
       injectErr = String(e?.message ?? e)
     })
   if (injectErr) {
-    currentTask = null
+    // r56（#4）：守卫同下方 :852——注入/提取 await 数秒，期间新任务可能已接管
+    // currentTask（入口 cancelCurrent 只收割 NM 侧），无条件清句柄会击穿新任务
+    if (currentTask?.taskId === taskId) currentTask = null
     // r46：文件加载失败（dist 不完整/升级中，真机曾因单段构建误报授权失效）不是
     // 授权问题——单独归因，免得「点图标重授权」指引对缺文件场景空转
     if (/Could not load file/i.test(injectErr)) return { error: 'inject-failed', detail: injectErr }
@@ -843,7 +845,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   }
   const page = await extractBest(tab.id!)
   if ('error' in page) {
-    currentTask = null
+    if (currentTask?.taskId === taskId) currentTask = null // r56（#4）：同上，迟到失败不清他人句柄
     return { error: page.error }
   }
   // 提取窗口内被取消/被新任务顶替（currentTask 已易主）：终止，绝不再发 task-start。
@@ -852,7 +854,11 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   if (!currentTask || currentTask.taskId !== taskId) return { error: 'cancelled', taskId }
 
   const { contentMarkdown, ...meta } = page
-  currentTask = { taskId, tabId: tab.id!, page: meta, content: contentMarkdown, startedAt: currentTask?.startedAt ?? Date.now() }
+  // r56（#10）：正文可能来自 iframe（allFrames 择优）——meta.url/title 是 frame 级
+  // （location.href/内帧 title），历史 frontmatter/tips/取消文案会失锚到内帧；
+  // 顶层 tab 的 url/title 才是用户视角的页面锚
+  const pageTop = { ...meta, url: tab.url ?? meta.url, title: tab.title ?? meta.title }
+  currentTask = { taskId, tabId: tab.id!, page: pageTop, content: contentMarkdown, startedAt: currentTask?.startedAt ?? Date.now() }
   lastApproxTokens = meta.approxTokens ?? 0
 
   // 提取成功 → 下发目标页元数据（panel tips 条「正在分享 …」；notice=截断/低置信提示）
@@ -862,7 +868,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     t: 'task-start' as const,
     // skills：panel 选中的技能名，host 读 ~/.ai-page-dive/skills 正文拼进 prompt
     // historyLimit：保留策略（r42）——host 首轮落盘后清理超出部分的最旧历史
-    task: { taskId, agentId, workflow, instruction, skills, lang, attachments, historyLimit, page: meta },
+    task: { taskId, agentId, workflow, instruction, skills, lang, attachments, historyLimit, page: pageTop },
   }
   if (frameTooLarge(frame)) {
     currentTask = null

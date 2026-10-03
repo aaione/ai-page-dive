@@ -12,6 +12,14 @@ import { applySiteAdapter } from './adapters.js'
  * 在线书籍/论坛长帖可产出数 MB 正文（NM 分片放大 + CLI 订阅一次烧穿） */
 const MAX_CONTENT = 200_000
 
+/** token 估算（tips 条「≈N tokens」用量透明）：CJK 按 ≈1 token/字、其余按 4 字符/token。
+ *  r56（#8）：纯 len/4 对中文页低估 3-4 倍——用户看到的用量比实际烧的少一大截。
+ *  ponytail: 覆盖常用 CJK 区块（中日韩统表/假名/注音/全角），CJK 扩展 B+ 与谚文未计入 */
+export function approxTokensOf(s: string): number {
+  const cjk = (s.match(/[　-鿿＀-￯]/g) ?? []).length
+  return cjk + Math.ceil((s.length - cjk) / 4)
+}
+
 /** shadow DOM 文本收集：cloneNode/innerText 都进不去 shadow root，正文整体渲染
  * 在 shadow 里的站点会拿到壳。深度受限防深嵌套 DoS（采集器跑在页面进程里） */
 function collectShadowText(root: Element, depth = 0): string {
@@ -130,7 +138,7 @@ export function extractPage(): PageContent | { error: string } {
       lang: document.documentElement.lang || undefined,
       extractor: article?.content ? 'readability' : 'innertext',
       contentMarkdown: markdown,
-      approxTokens: Math.ceil(markdown.length / 4),
+      approxTokens: approxTokensOf(markdown),
       notice: notices.length ? notices.join('；') : undefined,
     }
   } catch (e: any) {

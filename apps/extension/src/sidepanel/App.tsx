@@ -125,6 +125,7 @@ export function App() {
   /** r33-ux：panel-ready 探活持续失败（SW 唤不醒/通道异常 >30s）——loading 态给手动出口 */
   const [pingStuck, setPingStuck] = useState(false)
   const [outdated, setOutdated] = useState('')
+  const [cmdCopied, setCmdCopied] = useState(false) // r56（#14）：升级横幅一键复制命令的反馈态
   const [agents, setAgents] = useState<AgentStatus[]>([])
   /** host 探测结果是否已到（r14 首旅程）：区分「在途」与「真空」——空列表不该
    * 被渲染成「未检测到本机 AI CLI」假告示 */
@@ -291,7 +292,7 @@ export function App() {
                   ...s,
                   resumable: canResume,
                   ...(canResume ? { reopened: true } : {}),
-                  ...(mt ? { messages: [...s.messages, { id: `m${mt.taskId}`, role: 'assistant' as const, text: '', error: `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`, isError: true, cliFault: true }] } : {}),
+                  ...(mt ? { messages: [...s.messages, missedErrBubble(mt)] } : {}),
                 }))
               }
             }, 12_000)
@@ -337,7 +338,7 @@ export function App() {
                 ...s,
                 done: true,
                 finished: [...s.finished, mt.taskId].slice(-8),
-                messages: [...s.messages, { id: `m${mt.taskId}`, role: 'assistant' as const, text: '', error: `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`, isError: true, cliFault: true }],
+                messages: [...s.messages, missedErrBubble(mt)],
               },
             )
           }
@@ -389,9 +390,7 @@ export function App() {
             // r53（#5）：还原落地时并入错过的错误终局（在途暂存的 missedTerminal）
             const mt = missedErrRef.current
             missedErrRef.current = null
-            const missedMsg = mt
-              ? { id: `m${mt.taskId}`, role: 'assistant' as const, text: '', error: `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`, isError: true, cliFault: true }
-              : null
+            const missedMsg = mt ? missedErrBubble(mt) : null
             if (msgs.length) {
               setStream((s) => {
                 // r46（review C4）：还原窗口内用户已抢先发出新轮（pending/已绑定任务）
@@ -689,7 +688,7 @@ export function App() {
               ...s,
               resumable: restoreResumableRef.current,
               ...(restoreResumableRef.current ? { reopened: true } : {}),
-              ...(mt ? { messages: [...s.messages, { id: `m${mt.taskId}`, role: 'assistant' as const, text: '', error: `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`, isError: true, cliFault: true }] } : {}),
+              ...(mt ? { messages: [...s.messages, missedErrBubble(mt)] } : {}),
             }))
           }
           break
@@ -944,6 +943,23 @@ export function App() {
         {outdated && (
           <div className="pd-error" role="alert" style={{ margin: '8px 12px 0' }}>
             <span>{outdated}</span>
+            {/* r56（#14）：横幅文案含两段式升级命令——手抄必错（版本号/ext-id 各 20+ 字符），
+                命令在末段（「请在终端执行：」之后），按钮只复制命令本身 */}
+            <button
+              type="button"
+              style={{ flex: 'none', fontSize: 12, cursor: 'pointer' }}
+              onClick={() => {
+                navigator.clipboard
+                  .writeText(outdated.slice(outdated.lastIndexOf('：') + 1))
+                  .then(() => {
+                    setCmdCopied(true)
+                    setTimeout(() => setCmdCopied(false), 1500)
+                  })
+                  .catch(() => {})
+              }}
+            >
+              {cmdCopied ? '已复制 ✓' : '复制命令'}
+            </button>
           </div>
         )}
         <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} resumable={stream.resumable} sessionAgentId={sessionAgent} pageUnsupported={pageUnsupported} agentsLoaded={agentsLoaded} />
@@ -988,6 +1004,23 @@ const ERROR_LABEL: Record<string, string> = {
   'host-shutting-down': '本机组件正在重启',
   // r55（#10）：SW 冷启动把孤儿任务指针折算成的终局（扩展更新/重载打断在跑任务）
   'ext-restarted': '扩展更新或重启打断了进行中的任务——请重新发起',
+}
+
+/** r56（#13）：missedTerminal 错误气泡组装（4 个还原入口共用）——按 code 分流，
+ *  对齐实时 task-error 分支（:611/:613）：ext-restarted 是扩展自身重启、cancelled/
+ *  content-mismatch 非 CLI 故障，不挂「CLI 报告运行失败」前缀；timeout 用中文标签，
+ *  不把 host 原始英文 message 拼进气泡 */
+function missedErrBubble(mt: { taskId: string; code?: string; message?: string }) {
+  return {
+    id: `m${mt.taskId}`,
+    role: 'assistant' as const,
+    text: '',
+    error: mt.code === 'timeout'
+      ? '任务超时（上限 10 分钟）——请重新发起'
+      : `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`,
+    isError: true,
+    cliFault: mt.code !== 'cancelled' && mt.code !== 'content-mismatch' && mt.code !== 'ext-restarted',
+  }
 }
 
 /** CLI 鉴权类错误归一化（r7-ux）：install 探测不含登录态（--version 无需登录），
