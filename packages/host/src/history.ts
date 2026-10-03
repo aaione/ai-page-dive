@@ -2,7 +2,7 @@
  * 多轮对话 append 首轮文件、pd:user/pd:assistant 注释分段；伪造标记注入由 escapePd 消（r33-sec） */
 import { chmod, mkdir, open, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, realpathSync, renameSync } from 'node:fs'
 import type { HistoryItem } from '@ai-page-dive/shared'
@@ -101,6 +101,9 @@ export async function saveHistory(
   await mkdir(root, { recursive: true, mode: 0o700 }).catch(() => {})
   await chmod(root, 0o700).catch(() => {})
   await mkdir(join(path, '..'), { recursive: true, mode: 0o700 }) // r10：目录含标题 slug，0700 防枚举
+  // r56（#15）：mkdir mode 对已存在目录 no-op——存量装机的 history/年/月 仍 755；树内路径逐级 chmod 收敛
+  const rel = relative(root, dirname(path))
+  if (!rel.startsWith('..')) { let cur = root; for (const s of rel.split(sep)) await chmod((cur = join(cur, s)), 0o700).catch(() => {}) }
   for (let n = 1; n < 100; n++) { // 同秒同 slug 并发任务互不覆盖：wx 排他创建，EEXIST 时追加序号重试
     const p = n === 1 ? path : path.replace(/\.md$/, `-${n}.md`)
     try {
@@ -138,13 +141,16 @@ async function writeNew(path: string, meta: HistoryMeta, body: string): Promise<
 /** 轮正文分段标记转义（r33-sec）：正文含标记原样落盘会被 parseHistoryTurns 误切成轮边界——实体化冒号，渲染不变，读侧还原 */
 export const escapePd = (s: string): string => s.replaceAll('<!-- pd:', '<!-- pd&#58;')
 
-/** 读文件头 4KB 的 frontmatter 段（无 frontmatter/读失败 → null）——append/delete 的轻量探测共用 */
+/** 读文件头 4KB 的 frontmatter 段（无/读失败 → null）——append/delete 的探测共用。r56（#5）：
+ * 4KB 内没闭合时 ≤1MB 全量兜底——超长 title/url 撑破头后 null 被误判「无效历史」：追问轮静默丢、附件连带删失效 */
 async function readFmHead(path: string): Promise<string | null> {
   const fh = await open(path, 'r')
   try {
     const head = Buffer.alloc(4096)
     const { bytesRead } = await fh.read(head, 0, 4096, 0)
-    return splitFrontmatter(head.subarray(0, bytesRead).toString('utf8'))?.fm ?? null
+    const fm = splitFrontmatter(head.subarray(0, bytesRead).toString('utf8'))?.fm ?? null
+    if (fm !== null || bytesRead < 4096 || (await stat(path)).size > 1024 * 1024) return fm
+    return splitFrontmatter(await readFile(path, 'utf8'))?.fm ?? null
   } finally {
     await fh.close().catch(() => {})
   }

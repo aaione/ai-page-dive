@@ -4,7 +4,7 @@
 process.env.PAGEDIVE_TASK_TIMEOUT_MS = '1500'
 
 import { describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -55,6 +55,10 @@ process.exit(0)`,
       expect(cbs.done?.isError).toBe(false)
       const raw = await readFile(cbs.done.historyPath, 'utf8')
       expect(raw).toContain('status: done')
+      // r56（#2）：超时已交付终局此前漏删正文临时文件（a35d671 散点漏此路径）
+      const residue = (await readdir(join(tmpdir(), 'pagedive')).catch(() => [] as string[]))
+        .filter((f) => f.startsWith('t-m4-timeout-delivered'))
+      expect(residue).toEqual([])
     } finally {
       process.env.HOME = origHome
       AGENTS[0].buildArgs = orig

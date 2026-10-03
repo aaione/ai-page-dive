@@ -22,7 +22,7 @@ pnpm monorepo：
 - `packages/host` — 纯 Node >=18 + TS，运行时零依赖
 - `packages/shared` — AgentDef 类型 / NM 消息协议
 
-测试 vitest（host 流解析器 + buildArgs + 真实流 fixture 重放 + pgid 收割链/runNative 关停子进程集成 + extension 历史轮切分/SW 回归网（chrome shim 锚 session-lost 竞态/断连清理/丢片对账/分片上限）+ jsdom 内容提取三形状等单测，157 用例）。
+测试 vitest（host 流解析器 + buildArgs + 真实流 fixture 重放 + pgid 收割链/runNative 关停子进程集成 + 终局删收敛（is_error/超时已交付零 tmp 残留）/肥 frontmatter 头兜底/存量 0755 收敛 + extension 历史轮切分/SW 回归网（chrome shim 锚 session-lost 竞态/断连清理/丢片对账/分片上限）+ jsdom 内容提取三形状等单测，161 用例）。
 
 ## Dev Harness（UI 可视化自验）
 

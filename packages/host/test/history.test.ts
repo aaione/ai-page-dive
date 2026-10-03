@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { attachMarkers } from '../src/prompt.js'
 import { appendHistoryTurn, buildHistoryPath, deleteHistory, escapePd, escapeYamlForTest, extractSnippet, pruneHistory, readHistory, saveHistory, slugify } from '../src/history.js'
@@ -237,6 +237,51 @@ describe('assertInRoot 穿链防护（r47-sec）', () => {
     } finally {
       await rm(attFile, { force: true })
       await rm(outsideDir, { recursive: true, force: true })
+    }
+  })
+})
+
+// r56（#5/#15）：#5 readFmHead 4KB 截断——页面可控的超长 title/url 撑破 frontmatter 头后
+// append 被误判「无效历史」静默跳过、delete 的附件连带删失效；#15 存量 0755 目录的 chmod
+// 收敛。两锚都要真 ROOT（assertInRoot）——lazy historyRoot（r55）下改 HOME 即生效
+describe('r56：肥 frontmatter 头 + 存量 0755 收敛', () => {
+  let fakeHome = ''
+  const realHome = process.env.HOME
+  beforeEach(async () => {
+    fakeHome = await mkdtemp(join(tmpdir(), 'pd-home-'))
+    process.env.HOME = fakeHome
+  })
+  afterEach(async () => {
+    process.env.HOME = realHome
+    await rm(fakeHome, { recursive: true, force: true }).catch(() => {})
+  })
+
+  it('#5：title/url >4KB 的历史，追问轮 append 与附件连带删照常生效', async () => {
+    const long = 'x'.repeat(6000)
+    const att = join(fakeHome, '.ai-page-dive', 'attachments', 'a.txt')
+    await mkdir(dirname(att), { recursive: true })
+    await writeFile(att, '附件正文', 'utf8')
+    const p = await saveHistory(
+      buildHistoryPath(new Date(), '肥头页'),
+      { title: long, url: `https://a.com/${long}`, agent: 'claude', status: 'done', attachments: [att] },
+      '首轮',
+    )
+    await appendHistoryTurn(p, { user: '追问', assistant: '回答' })
+    expect(await readFile(p, 'utf8')).toContain('<!-- pd:user -->\n追问')
+    await deleteHistory(p)
+    await expect(stat(att)).rejects.toThrow()
+  })
+
+  it('#15：存量 0755 的 history/年/月 在保存时被逐级 chmod 收敛到 0700', async () => {
+    const root = join(fakeHome, '.ai-page-dive')
+    const file = buildHistoryPath(new Date(), '收敛页')
+    const day = dirname(file), month = dirname(day), year = dirname(month)
+    await mkdir(day, { recursive: true, mode: 0o755 })
+    // 模拟 r55 之前的存量装机：根/history/年/月/日 全 755（day 是日目录，非文件）
+    for (const d of [root, join(root, 'history'), year, month, day]) await chmod(d, 0o755)
+    await saveHistory(file, { title: 'T', url: 'u', agent: 'claude', status: 'done' }, 'x')
+    for (const d of [root, join(root, 'history'), year, month, day]) {
+      expect((await stat(d)).mode & 0o777, d).toBe(0o700)
     }
   })
 })

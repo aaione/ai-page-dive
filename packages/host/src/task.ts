@@ -258,7 +258,7 @@ export class Task {
       // spawn 失败只回收 mkdtemp 的临时 cwd——固定工作区（stableCwd）是 resume 锚点，删了
       // 后续 claude/codex 任务连锁 spawn 失败 + 历史会话 resume 失效
       if (agentCwd && agentCwd !== stableCwd) rm(agentCwd, { recursive: true, force: true }).catch(() => {})
-      if (contentFile) rm(contentFile, { force: true }).catch(() => {})
+      this.cleanupCwd(contentFile)
       this.cb.onError('spawn-fail', String(e?.message ?? e))
       return
     }
@@ -266,8 +266,7 @@ export class Task {
     // spawn 成功后又已取消（cancel 落在 await 窗口内）：立即收割 + 必发 onError——否则 tasks Map 不 delete、panel running 永真锁死
     if (this.cancelled) {
       this.proc.reap()
-      this.cleanupCwd()
-      if (contentFile) rm(contentFile, { force: true }).catch(() => {})
+      this.cleanupCwd(contentFile)
       this.cb.onError('cancelled', 'task cancelled')
       return
     }
@@ -304,7 +303,7 @@ export class Task {
         // r53（#4）：先收割再删 cwd——对齐 M5 不变量（error 分支注释自述），
         // 防删仍在运行进程的工作目录
         this.proc?.reap()
-        this.cleanupCwd()
+        this.cleanupCwd(contentFile)
         return
       }
       this.cb.onError('timeout', `task exceeded ${TASK_TIMEOUT_MS / 60_000}min`)
@@ -317,8 +316,7 @@ export class Task {
       // 走 cancel() 会被其 finished 守卫挡回（终局已前置），detached 进程组永久泄漏烧配额
       // （r9-review 实证）；cwd 不经过 finish() 由本路径自回收（r4-impl）
       this.proc?.reap()
-      this.cleanupCwd()
-      if (contentFile) rm(contentFile, { force: true }).catch(() => {})
+      this.cleanupCwd(contentFile)
     }, TASK_TIMEOUT_MS)
 
     await new Promise<void>((resolve) => {
@@ -341,8 +339,7 @@ export class Task {
           // reap，error 分支此前缺失——detached 进程组泄漏烧配额；且先收割再删 cwd（对齐
           // 上方 cancelled 分支顺序，防删正在运行进程的工作目录）
           this.proc?.reap()
-          this.cleanupCwd()
-          if (contentFile) rm(contentFile, { force: true }).catch(() => {})
+          this.cleanupCwd(contentFile)
           resolve()
           this.cb.onError('spawn-fail', 'child runtime error')
         }
@@ -381,7 +378,7 @@ export class Task {
           this.doneSent = true
           clearTimeout(this.timeoutTimer)
           this.proc?.reap()
-          this.cleanupCwd() // 不经过 finish()：isError 路径自回收 cwd（r4-impl）
+          this.cleanupCwd(contentFile) // 不经过 finish()：isError 路径自回收 cwd（r4-impl）
           if (!this.input.resumeSessionId) this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
           // 落盘完成再发终局：host 若在 persist 期间断连退出，错误轮历史不再丢失
           await this.persist('error')
@@ -445,23 +442,21 @@ export class Task {
     }
   }
 
-  /** CLI 临时工作目录（mkdtemp）回收——固定工作区（stableCwd）不删（后续 resume 要用同 cwd）。
-   * isError/timeout/spawn 窗口期 cancel 不经过 finish()，各自补调（r4-impl） */
-  private cleanupCwd(): void {
+  /** CLI 临时工作目录（mkdtemp）+ 正文临时文件的终局回收——固定工作区（stableCwd）不删
+   * （后续 resume 要用同 cwd）。r56（#2）：rm(contentFile) 从 5 散点收敛到此——a35d671 漏了
+   * is_error 与超时已交付两终局，PRIVACY「任务结束即删」曾在主失败通道为假 */
+  private cleanupCwd(contentFile?: string): void {
     const cwd = this.proc?.cwd
     if (cwd && cwd !== stableCwd) {
       rm(cwd, { recursive: true, force: true }).catch(() => {})
     }
+    if (contentFile) rm(contentFile, { force: true }).catch(() => {})
   }
 
   private async finish(code: number | null, signal: string | null, stderrTail: string, contentFile: string): Promise<void> {
     this.flushDelta() // 攒批兜底：终局前把缓冲里的尾部正文发完
     clearTimeout(this.timeoutTimer)
-    this.cleanupCwd()
-    // r55（#8）：终局即删正文临时文件——CLI 已退出无读者，11min unref timer 在
-    // per-connection 短命 host 下基本跑不到（PRIVACY「定时清理」名实不符的根）；
-    // scheduleCleanup+sweep 留作崩溃残留兜底
-    if (contentFile) rm(contentFile, { force: true }).catch(() => {})
+    this.cleanupCwd(contentFile)
     const durationMs = Date.now() - this.startedAt
     if (!this.input.resumeSessionId) { // 追问轮不建新历史路径（append 首轮文件）
       this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)

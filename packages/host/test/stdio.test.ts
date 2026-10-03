@@ -88,6 +88,29 @@ describe('stdio 路由', () => {
     }
   }, 15_000)
 
+  it('workflow-read：>1MB 的 WORKFLOW.md 收缩进帧上限而非 writeFrame throw（r56 #9）', async () => {
+    // USER_DIR 是模块级常量（改 HOME 无效）——真实目录下唯一命名，测后即删（quotebomb 同款）。
+    // 旧实现直发 1.1MB → writeFrame throw → 帧被吞、面板错标 not-found
+    const wfDir = join(homedir(), '.ai-page-dive', 'workflows', `pd-bigwf-${process.pid}`)
+    const p = join(wfDir, 'WORKFLOW.md')
+    await mkdir(wfDir, { recursive: true })
+    await writeFile(p, 'x'.repeat(1_100_000), 'utf8')
+    try {
+      const { handle, sent } = makeSession()
+      handle({ t: 'workflow-read', name: `pd-bigwf-${process.pid}` })
+      const deadline = Date.now() + 8000
+      while (!sent.some(m => m.t === 'workflow-file' || m.t === 'error') && Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 50))
+      }
+      const f = sent.find(m => m.t === 'workflow-file')
+      expect(f).toBeTruthy()
+      expect(f.content).toContain('[... 已截断]')
+      expect(Buffer.byteLength(JSON.stringify(f.content), 'utf8')).toBeLessThanOrEqual(NM_MAX - 1024)
+    } finally {
+      await rm(wfDir, { recursive: true, force: true })
+    }
+  }, 15_000)
+
   it('list-agents 异步回 agents 帧', async () => {
     const { handle, sent } = makeSession()
     handle({ t: 'list-agents' })

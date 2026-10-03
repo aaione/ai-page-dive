@@ -171,6 +171,28 @@ describe('Task 状态机', () => {
     await rm(join(script, '..'), { recursive: true, force: true })
   }, 30_000)
 
+  // r56（#2）：a35d671 的 5 散点漏了 is_error 终局——quota/auth 失败恰是 claude 最高频
+  // 失败通道，PRIVACY「任务结束即删」曾在主失败路径为假；终局删已收敛进 cleanupCwd
+  it('is_error 终局同样零 tmp 残留（cleanupCwd 收敛）', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const script = await FAKE_CLI('is_error')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const tid = `rmprobe-err-${process.pid}`
+    const { task: mk, cbs } = makeCbs(); const task = mk()
+    task.start({ taskId: tid, agentId: 'claude', workflow: 'quick', page: PAGE as any })
+    task.appendContent(BODY, true)
+    await task.run()
+    await new Promise(r => setTimeout(r, 300)) // 等 persist('error') → onDone 异步链
+    expect(cbs.done?.isError).toBe(true)
+    const residue = (await readdir(join(tmpdir(), 'pagedive')).catch(() => [] as string[]))
+      .filter((f) => f.startsWith(tid))
+    expect(residue).toEqual([])
+    AGENTS[0].buildArgs = orig
+    await rm(join(script, '..'), { recursive: true, force: true })
+  }, 30_000)
+
   // r51 深审（A2③ 集成缺口）：parser 单测各自锚了 unrecognized 上报，但「task.ts
   // 计数 → onDone 透出」链路零覆盖——白名单 type 不计、未知 type 计数的口径在此锚定
   it('未知事件计数经 onDone.unrecognized 透出（白名单 type 不计）', async () => {

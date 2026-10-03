@@ -156,7 +156,12 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         readWorkflow(msg.name)
           .then((content) => {
             if (content === undefined) throw new Error(`workflow not found: ${msg.name}`)
-            send({ t: 'workflow-file', name: msg.name, content })
+            let end = content.length, body = content // r56（#9）：>1MB 曾让 writeFrame throw 帧被吞、面板错标 not-found——对齐 history-read 收缩
+            while (end > 0 && Buffer.byteLength(JSON.stringify(body), 'utf8') > NM_MAX - 1024) {
+              end = Math.max(0, end - 65536)
+              body = content.slice(0, end) + '\n\n[... 已截断]'
+            }
+            send({ t: 'workflow-file', name: msg.name, content: body })
           })
           .catch((e) => send({ t: 'error', code: 'not-found', message: String(e?.message ?? e) }))
         break
