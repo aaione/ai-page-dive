@@ -9,8 +9,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // 测试直接吃 TS 源码，不依赖先 build
-      '@pagedive/shared': fileURLToPath(new URL('./packages/shared/src/index.ts', import.meta.url)),
+      // 测试直接吃 TS 源码，不依赖先 build。r56（#6）：键名原为 @pagedive/shared
+      // （.pagedive→.ai-page-dive 改名前的残留死键），别名从未命中——测试实际
+      // 吃的是 workspace 链接的 dist，「不依赖先 build」一直没兑现
+      '@ai-page-dive/shared': fileURLToPath(new URL('./packages/shared/src/index.ts', import.meta.url)),
     },
   },
 })
