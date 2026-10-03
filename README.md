@@ -93,7 +93,7 @@ v1 支持 claude 与 codex 双引擎（完整支持）；曾实验性支持 open
 <details>
 <summary>如何卸载？</summary>
 
-Chrome 移除扩展，终端执行 `npm uninstall -g @aaione/ai-page-dive`（当初用 pnpm 装的则 `pnpm rm -g @aaione/ai-page-dive`）——preuninstall 钩子自动清理本机组件注册（NM manifest + wrapper）。历史记录与自定义 workflow 保留在 `~/.ai-page-dive/`，不需要可手动删除；只想清注册保留 npm 包，可先跑 `ai-page-dive uninstall`。
+Chrome 移除扩展，终端执行 `npm uninstall -g @aaione/ai-page-dive`——preuninstall 钩子自动清理本机组件注册（NM manifest + wrapper）。当初用 pnpm 装的注意：pnpm 默认不执行卸载钩子，请**先跑 `ai-page-dive uninstall` 再 `pnpm rm -g @aaione/ai-page-dive`**（顺序不可反——包删掉后这个命令出口就没了）。历史记录与自定义 workflow 保留在 `~/.ai-page-dive/`，不需要可手动删除；只想清注册保留 npm 包，可先跑 `ai-page-dive uninstall`。
 </details>
 
 <details>

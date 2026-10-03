@@ -1,12 +1,12 @@
 # Privacy Policy / 隐私政策
 
-*Last updated: 2026-10-02*
+*Last updated: 2026-10-04*
 
 PageDive（"AI PageDive" Chrome 扩展及其本机组件）按以下方式处理数据。核心承诺：**PageDive 没有服务器——你的网页内容只在扩展与本机 CLI 之间流转，不经我们中转，也不被我们存储。**（CLI 与其模型服务如何通信由该 CLI 自身的隐私政策决定，见下。）
 
 ## English Summary
 
-PageDive has no servers, no accounts, and no API keys. When you click "summarize", the extension extracts the current page's content and sends it via Chrome Native Messaging directly to an AI CLI (claude / codex) installed and logged in on your own machine, where it is written to a per-task temp file (deleted the moment the task ends; crash leftovers are swept within about an hour) and staged in a per-task working directory (`~/.ai-page-dive/agent-workspace/`, cleaned up at task end) for that CLI to read. We never transmit, intermediate, or store your content: no telemetry, no analytics, no crash reports. History, workflows, skills, and any attachments you attach (persisted under `~/.ai-page-dive/attachments/` for history restoration) live under `~/.ai-page-dive/` on your machine; follow-up session state stays in Chrome session storage (cleared on browser restart). Note that the CLI you invoke keeps its own session transcripts of what it processes (e.g. claude under `~/.claude/projects/`) — that is the CLI's built-in behavior, governed by its own privacy policy and outside PageDive's control. The only outbound exit is user-initiated sharing (Settings → "Share"), which opens your chosen platform's share page with this product's link and name. How your CLI communicates with its model service is governed by that CLI's own privacy policy (claude → Anthropic, codex → OpenAI). The optional "always allow reading" host permission is off by default and granted only by explicit user action.
+PageDive has no servers, no accounts, and no API keys. When you click "summarize", the extension extracts the current page's content and sends it via Chrome Native Messaging directly to an AI CLI (claude / codex) installed and logged in on your own machine, where it is written to a per-task temp file (deleted the moment the task ends; crash leftovers are swept the next time you run a task, for files older than an hour) and staged in a stable working directory (`~/.ai-page-dive/agent-workspace/`, kept long-term as the anchor for follow-up questions in the same session — not deleted at task end; attachment links there are swept by the next task, and links to the temp body files remain as dangling links after the file itself is deleted at task end, containing no content) for that CLI to read. We never transmit, intermediate, or store your content: no telemetry, no analytics, no crash reports. History, workflows, skills, and any attachments you attach (persisted under `~/.ai-page-dive/attachments/` for history restoration) live under `~/.ai-page-dive/` on your machine; follow-up session state stays in Chrome session storage (cleared on browser restart). Note that the CLI you invoke keeps its own session transcripts of what it processes (e.g. claude under `~/.claude/projects/`) — that is the CLI's built-in behavior, governed by its own privacy policy and outside PageDive's control. The only outbound exit is user-initiated sharing (Settings → "Share"), which opens your chosen platform's share page with this product's link and name. How your CLI communicates with its model service is governed by that CLI's own privacy policy (claude → Anthropic, codex → OpenAI). The optional "always allow reading" host permission is off by default and granted only by explicit user action.
 
 ## 数据处理
 
@@ -19,8 +19,8 @@ PageDive has no servers, no accounts, and no API keys. When you click "summarize
 
 - 总结历史 / workflow / 技能：`~/.ai-page-dive/`
 - 附件（持久化，历史恢复可追溯）：`~/.ai-page-dive/attachments/`
-- 供 CLI 读取的任务工作目录（正文/附件符号链接与提示词组装）：`~/.ai-page-dive/agent-workspace/`（任务结束清理）
-- CLI 运行临时文件：系统临时目录 `/tmp/pagedive/`（任务结束即删；异常退出的残留由约 11 分钟定时与 1 小时兜底清扫回收）
+- 供 CLI 读取的任务工作目录（正文/附件符号链接与提示词组装）：`~/.ai-page-dive/agent-workspace/`——固定工作区，**追问会话的恢复锚点，长期保留、不随任务清理**（附件软链由下次任务启动时补扫；正文软链的本体临时文件随任务终局删除，软链自身残留为悬空链接，不含内容）
+- CLI 运行临时文件：系统临时目录 `/tmp/pagedive/`（任务结束即删；异常退出的残留在你下次总结时被兜底清扫回收——清 1 小时前的旧文件，无定时机制）
 - 追问会话状态：Chrome storage（session 域，浏览器重启即清）
 
 ### 你所选 CLI 自身的落盘（PageDive 之外）
