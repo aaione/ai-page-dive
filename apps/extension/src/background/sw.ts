@@ -56,10 +56,18 @@ let currentTask: {
 type Session = { agentId: string; sessionId: string; historyPath?: string; page?: { url: string; title: string } }
 const sessions = new Map<number, Session>()
 
-/** 面板收起期间错过的任务终局（r53 #5 / r54 #5）：task-error 广播时面板无接收端即
- *  静默丢，重开面板零痕迹（timeout/parse 类 host 侧有落盘但面板不自动恢复，spawn-fail
- *  连盘都没有——用户只看到永远 loading 或空态）。tabId → 终局帧，panel-ready 一次
- *  性消费（消费即清），随 storage.session 持久化（SW 回收后窗口仍在） */
+/** 面板收起期间错过的任务终局收件箱（r53 #5 / r54 #5）——不变式规约（r57 盲区5）：
+ *  ① 入箱仅 task-error 族（host 原生转发 :736 段 / SW 合成 emitTerminal×3（取消/
+ *    断连/丢片）/ SW 冷启动 ext-restarted）。task-done 不入箱：正常终局由 sessions
+ *    归档（historyPath/sessionPage）还原 UI，无需补发
+ *  ② owner 判定：帧 taskId === currentTask.taskId → currentTask.tabId；否则查 tabOf
+ *    台账（currentTask 已清后的迟到帧）；两者皆无 → 丢弃（无人认领，无处投递）
+ *  ③ 双写边界：SW 合成帧不查 cancelledTaskIds（它是面板唯一记录，拦了就丢「已取消」
+ *    补发）；host 原生帧查（防旧任务迟到帧覆盖同页签新任务的收件箱条目）
+ *  ④ 生命周期：每页签至多一条（Map 覆写）；panel-ready 消费即清不重放；页签关闭
+ *    随删；随 storage.session 持久化（SW 回收后窗口仍在）
+ *  动机：task-error 广播时面板无接收端即静默丢，重开面板零痕迹（timeout/parse 类
+ *  host 侧有落盘但面板不自动恢复，spawn-fail 连盘都没有——用户只看到永远 loading） */
 const lastTerminals = new Map<number, { t: 'task-error'; taskId: string; code?: string; message?: string; tabId?: number }>()
 
 /** taskId → 任务源页签台账（r53 #5 + r54 #3 根治）：currentTask 清空后仍保留——

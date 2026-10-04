@@ -369,6 +369,24 @@ describe('sw.ts 回归网', () => {
     expect(h.calls.badge).not.toContainEqual({ text: '✓' })
   })
 
+  // r57 盲区5（不变式④）：收件箱条随页签消亡——tab 复用同 id 的新会话不收过期终局。
+  // 锚 tab 关闭会连带 panelTabId=null 掩蔽读取面，故走非锚 tab + 落盘证据（r46 C1 骨架）
+  it('r57 盲区5：非锚 tab 关闭 → 其收件箱条随删（落盘证据），锚 tab 条目不受牵连', async () => {
+    const frame5 = { t: 'task-error', taskId: 'keep-1', code: 'timeout', tabId: 5 }
+    const h = await boot({
+      seed: {
+        lastTerminals: [[5, frame5], [9, { t: 'task-error', taskId: 'old-9', code: 'parse', tabId: 9 }]],
+        panelTabId: 5,
+        panelWindowId: 1,
+      },
+    })
+    await h.flush() // 种子恢复完成
+    h.events.onRemoved(9)
+    await h.flush()
+    // 9 的条目随页签消亡；5（锚）的条目不受非锚关闭牵连
+    expect(h.calls.storageSet.at(-1).lastTerminals).toEqual([[5, frame5]])
+  })
+
   it('task-error（currentTask 匹配）打 ! 角标 + 面板收起期间的错过进 lastTerminals 收件箱（r53 #1/#5）', async () => {
     const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
     const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
