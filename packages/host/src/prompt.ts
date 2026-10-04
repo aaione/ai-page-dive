@@ -101,6 +101,15 @@ export function buildPrompt(
     : lang === 'en' ? `\nAlways respond in English, regardless of the page language.\n`
     : ''
   const attachSect = attachSection(attachments)
+  // r57（#2）：截断发生时不得断言「完整正文」——agent 会把「后半缺席」当「文章
+  // 本来就没有」，在最长、最需要深读的文档上以可信口吻产出结构性错误总结
+  const contentSection = page.truncatedOriginalChars
+    ? `正文超长（原文约 ${page.truncatedOriginalChars.toLocaleString()} 字符），已截断保留前一部分（约 ${page.approxTokens} tokens，markdown）写入本地文件：
+${contentFile}
+请读取该文件后基于其中实际内容作答，并明确标注总结仅覆盖前文；缺席的后文不要臆测。`
+    : `完整正文（markdown，约 ${page.approxTokens} tokens）已写入本地文件：
+${contentFile}
+请读取该文件全文后再作答，不要只读开头。`
   // 围栏是模板恒定行（r4-sec M1 上提）：对所有任务段来源（instruction/任意 workflow/DEFAULT_TASKS 兜底）全覆盖——勿再往模板字符串里写维护批注，曾随每条 prompt 下发给 CLI（r5-fix-audit）
   return `你是深度阅读助手。请完成以下任务。
 
@@ -111,9 +120,7 @@ export function buildPrompt(
 ${meta}
 
 ## 正文
-完整正文（markdown，约 ${page.approxTokens} tokens）已写入本地文件：
-${contentFile}
-请读取该文件全文后再作答，不要只读开头。
+${contentSection}
 ${outlineSection}${skillsSection}${attachSect}
 ## 任务
 ${task}

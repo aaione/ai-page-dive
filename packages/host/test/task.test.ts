@@ -542,6 +542,19 @@ process.exit(0)`,
     expect(buildPrompt(PAGE as any, '/tmp/f.md', 'quick', undefined, undefined, undefined, '')).not.toContain('## 正文导航')
   })
 
+  it('buildPrompt：truncatedOriginalChars 时正文段如实声明截断，不再断言完整正文（r57 #2）', () => {
+    // 旧文案在 200k 截断后仍说「完整正文…读全文」——agent 把「后半缺席」当
+    // 「文章本来就没有」，在最长最需要深读的文档上产出结构性错误总结
+    const p = buildPrompt({ ...PAGE, truncatedOriginalChars: 480_000 } as any, '/tmp/f.md', 'quick')
+    expect(p).toContain('已截断保留前一部分')
+    expect(p).toContain('480,000')
+    expect(p).toContain('缺席的后文不要臆测')
+    expect(p).not.toContain('完整正文')
+    expect(p).not.toContain('请读取该文件全文后再作答')
+    // 未截路径原文案不变
+    expect(buildPrompt(PAGE as any, '/tmp/f.md', 'quick')).toContain('完整正文')
+  })
+
   it('instruction 优先于 workflow 正文（默认模式）', async () => {
     // ESM 模块 namespace 只读，不能桩 spawnCli——改为让假 CLI 把收到的 stdin
     // 写到临时文件，跑完读回断言 prompt 内容
@@ -603,6 +616,9 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))
     expect(prompt).toContain('## 附件')
     expect(prompt).toContain('数据.md')
     expect(prompt.endsWith('结合附件回答')).toBe(true)
+    // r57（#12）：首轮正文源文件已终局删除——追问轮前置声明，防模型按会话记忆
+    // 复读死路径产生工具失败噪声
+    expect(prompt).toContain('源文件已清理，请勿再尝试读取')
     // 纯函数：空附件返回空串
     expect(attachSection([])).toBe('')
     expect(attachSection(undefined)).toBe('')

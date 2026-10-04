@@ -14,4 +14,8 @@ export interface PageContent {
   approxTokens: number
   /** 提取质量提示（截断/低置信），panel tips 条展示；无则不渲染 */
   notice?: string
+  /** 原文超 200k 上限被截时的原始字符数（未截不落键）。r57（#2）：host prompt
+   *  据此把「完整正文」切换为截断如实文案——否则 agent 把「后半缺席」当
+   *  「文章本来就没有」，在最长最需要深读的文档上产出结构性错误总结 */
+  truncatedOriginalChars?: number
 }

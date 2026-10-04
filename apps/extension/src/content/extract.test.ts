@@ -67,6 +67,8 @@ describe('extractPage（jsdom 三形状）', () => {
     const page = r as Exclude<ReturnType<typeof extractPage>, { error: string }>
     expect(page.contentMarkdown.length).toBe(200_000)
     expect(page.notice).toMatch(/超上限，仅取前 200,000/)
+    // r57（#2）：结构化截断信号随 PageContent 进 TaskInput——host prompt 据此切换截断如实文案
+    expect(page.truncatedOriginalChars).toBeGreaterThan(200_000)
     // r56（#8）：截断的 20 万字几乎全 CJK——旧口径恒 50_000（低估 4 倍），新口径 ≈1 token/字
     expect(page.approxTokens).toBeGreaterThan(100_000)
   })

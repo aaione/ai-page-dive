@@ -160,11 +160,13 @@ export interface WorkflowsMsg {
   items: WorkflowItem[]
 }
 
-/** workflow-read 回包：完整 WORKFLOW.md 原文 */
+/** workflow-read 回包：完整 WORKFLOW.md 原文。超 NM 帧上限被截时 truncated 为真
+ *  （r57 #9——Settings 据此警示「保存将丢失未显示部分」，不再静默回写截断稿） */
 export interface WorkflowFileMsg {
   t: 'workflow-file'
   name: string
   content: string
+  truncated?: boolean
 }
 
 export interface WorkflowSavedMsg {

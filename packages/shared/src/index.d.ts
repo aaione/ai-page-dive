@@ -1,1 +1,0 @@
-export declare const SHARED_VERSION = "0.1.0";

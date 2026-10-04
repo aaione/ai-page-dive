@@ -25,20 +25,16 @@ export interface SpawnOpts {
 
 export interface SpawnedProc {
   child: ChildProcess
-  /** CLI 工作目录（tmpdir 下的空子目录，防读到用户项目配置） */
+  /** CLI 工作目录（恒固定工作区 stableCwd——claude 会话按 cwd 分区存储） */
   cwd: string
   reap: () => void
-}
-
-/** 预建 CLI 工作目录（buildArgs 需要 cwd 时——opencode --dir），spawn 前调用 */
-export async function makeAgentCwd(): Promise<string> {
-  return mkdtemp(join(tmpdir(), 'pagedive-'))
 }
 
 export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedProc> {
   return new Promise((resolve, reject) => {
     void (async () => {
-      const cwd = opts.cwd ?? await makeAgentCwd()
+      // cwd 缺省：一次性 tmp 子目录（测试/独立调用防读到用户项目配置；生产路径恒传固定工作区）
+      const cwd = opts.cwd ?? await mkdtemp(join(tmpdir(), 'pagedive-'))
       const child = spawn(opts.bin, opts.args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: true, // 子进程自成组长 → 可整树收割

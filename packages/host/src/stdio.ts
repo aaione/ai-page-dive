@@ -161,7 +161,9 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
               end = Math.max(0, end - 65536)
               body = content.slice(0, end) + '\n\n[... 已截断]'
             }
-            send({ t: 'workflow-file', name: msg.name, content: body })
+            // r57（#9）：truncated 标志——Settings 据此警示「保存将丢失未显示部分」，
+            // 不再静默把截断稿回写成完整 workflow
+            send({ t: 'workflow-file', name: msg.name, content: body, truncated: body !== content || undefined })
           })
           .catch((e) => send({ t: 'error', code: 'not-found', message: String(e?.message ?? e) }))
         break

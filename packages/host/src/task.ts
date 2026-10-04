@@ -10,7 +10,7 @@ import { getAgent } from './agents/registry.js'
 import { getSkillBodies } from './skills.js'
 import { appendHistoryTurn, buildHistoryPath, escapePd, pruneHistory, saveHistory } from './history.js'
 import { attachMarkers, attachSection, buildOutline, buildPrompt, expandWorkflowPlaceholders } from './prompt.js'
-import { makeAgentCwd, spawnCli, type SpawnedProc } from './spawn.js'
+import { spawnCli, type SpawnedProc } from './spawn.js'
 import { scheduleCleanup, writeContentFile } from './tmpfile.js'
 import { getWorkflow } from './workflows.js'
 
@@ -209,34 +209,24 @@ export class Task {
 
     const parser = def.streamFormat === 'claude-stream-json' ? createClaudeParser() : createCodexParser()
 
-    // cwd 语义：opencode --dir 钉死工作区 + 相对路径 prompt；claude 会话按 cwd 分区存储
-    // （~/.claude/projects/<编码>/），跨 host 重启必须可复现否则 --resume 报错——统一固定工作区
-    let agentCwd = def.filePathInPrompt && !isResume ? await makeAgentCwd() : undefined
-    if (isResume) {
-      // r52（review #13）：sessionCwds 预留映射已删——三适配器下 value 恒为 stableCwd
-      // （唯一走 mkdtemp 的 opencode 不产 sessionId，SW 侧无 sessionId 也不放行 resume），
-      // resume 一律回固定工作区即可复现 claude 会话
-      agentCwd = await getStableAgentCwd()
-    } else if (!agentCwd) {
-      agentCwd = await getStableAgentCwd()
-    }
-    let fileForPrompt = contentFile
-    // resume 轮 contentFile 为 ''：symlink('') 必抛被 catch 吞——直接跳过（r7-review）
-    if (def.filePathInPrompt && agentCwd && !isResume) {
-      await linkIntoCwd(contentFile, agentCwd)
-      fileForPrompt = def.filePathInPrompt({ contentFile, contentRelPath: basename(contentFile), agentCwd })
-    }
+    // cwd 语义：claude 会话按 cwd 分区存储（~/.claude/projects/<编码>/），跨 host 重启
+    // 必须可复现否则 --resume 报错——统一固定工作区。r57（#6）：filePathInPrompt 沙箱
+    // 分支随 opencode 删除已零使用方，死代码连 linkIntoCwd/makeAgentCwd 一并删除
+    const agentCwd = await getStableAgentCwd()
     // 占位符只展开 workflow 正文：用户 instruction 可能合法含 {xx} 字面量，不展开
     const wfBody = !isResume && wf?.body && !this.input.instruction
-      ? expandWorkflowPlaceholders(wf.body, page, fileForPrompt)
+      ? expandWorkflowPlaceholders(wf.body, page, contentFile)
       : wf?.body
     // 大纲从内存正文提取（resume 轮上下文在 CLI 会话里，不需要）
     const outline = !isResume ? buildOutline(this.contentParts.join('')) : undefined
     // 附件：落盘（持久化）+ 软链 cwd，prompt 附件段给路径（resume 轮同样生效）
     this.attachFiles = await this.materializeAttachments(agentCwd)
+    // r57（#12）：首轮 prompt 里的正文文件路径在终局已删——追问轮不声明的话，
+    // 模型按会话记忆复读死路径，工具失败噪声直接伤追问质量
     const prompt = isResume
-      ? attachSection(this.attachFiles) + (this.input.instruction ?? '')
-      : buildPrompt(page, fileForPrompt, wfName, this.input.instruction || wfBody, skillBodies, this.input.lang, outline, this.attachFiles)
+      ? '（注：首轮正文源文件已清理，请勿再尝试读取，直接基于会话已有内容作答。）\n' +
+        attachSection(this.attachFiles) + (this.input.instruction ?? '')
+      : buildPrompt(page, contentFile, wfName, this.input.instruction || wfBody, skillBodies, this.input.lang, outline, this.attachFiles)
 
     this.startedAt = Date.now()
     this.cb.onStatus('spawned')
@@ -255,9 +245,6 @@ export class Task {
         },
       })
     } catch (e: any) {
-      // spawn 失败只回收 mkdtemp 的临时 cwd——固定工作区（stableCwd）是 resume 锚点，删了
-      // 后续 claude/codex 任务连锁 spawn 失败 + 历史会话 resume 失效
-      if (agentCwd && agentCwd !== stableCwd) rm(agentCwd, { recursive: true, force: true }).catch(() => {})
       this.cleanupCwd(contentFile)
       this.cb.onError('spawn-fail', String(e?.message ?? e))
       return
@@ -442,14 +429,10 @@ export class Task {
     }
   }
 
-  /** CLI 临时工作目录（mkdtemp）+ 正文临时文件的终局回收——固定工作区（stableCwd）不删
-   * （后续 resume 要用同 cwd）。r56（#2）：rm(contentFile) 从 5 散点收敛到此——a35d671 漏了
-   * is_error 与超时已交付两终局，PRIVACY「任务结束即删」曾在主失败通道为假 */
+  /** 正文临时文件的终局回收。r56（#2）：rm(contentFile) 从 5 散点收敛到此——a35d671 漏了
+   * is_error 与超时已交付两终局，PRIVACY「任务结束即删」曾在主失败通道为假。r57（#6）：
+   * mkdtemp cwd 回收分支随 filePathInPrompt 死代码删除——cwd 恒固定工作区 */
   private cleanupCwd(contentFile?: string): void {
-    const cwd = this.proc?.cwd
-    if (cwd && cwd !== stableCwd) {
-      rm(cwd, { recursive: true, force: true }).catch(() => {})
-    }
     if (contentFile) rm(contentFile, { force: true }).catch(() => {})
   }
 
@@ -555,11 +538,4 @@ export class Task {
     // 文件、无需清理；失败静默——清理失败不影响主流程，下次保存再清）
     await pruneHistory(this.input.historyLimit ?? 200).catch(() => {})
   }
-}
-
-/** 把正文文件软链进 CLI cwd（opencode 沙箱只准读 cwd） */
-async function linkIntoCwd(contentFile: string, cwd: string): Promise<void> {
-  try {
-    await symlink(contentFile, join(cwd, basename(contentFile)))
-  } catch { /* EEXIST 等：沙箱内已有同名，直接用 */ }
 }

@@ -28,6 +28,9 @@ interface EditorState {
   body: string
   builtin: boolean
   dirty: boolean
+  /** r57（#9）：workflow-read 帧被 NM 上限截断——正文不完整，保存会把截断稿静默
+   *  回写成完整 workflow（丢尾部）。警示条据此渲染 */
+  truncated?: boolean
 }
 
 /** 极简 frontmatter 解析：只取 description / category 两个 string 字段，正文原样返回 */
@@ -169,6 +172,7 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
             category: p.category ?? '',
             body: p.body,
             dirty: false,
+            truncated: m.truncated || undefined,
           })
           break
         }
@@ -520,6 +524,13 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
                   </div>
                   <div className="pd-set-field" style={{ marginBottom: 0 }}>
                     <span className="pd-set-label">正文（Markdown，即发送给 CLI 的模式指令）</span>
+                    {editor.truncated && (
+                      // r57（#9）：host 帧上限截断——此刻保存会把「只剩前半的稿子」静默
+                      // 回写成完整 workflow，尾部不可恢复地丢失
+                      <p className="pd-set-hint" style={{ color: '#b45309' }}>
+                        ⚠️ 该模式过大，读取已被截断——现在保存将丢失未显示的尾部内容（且本次编辑期间无法取回）
+                      </p>
+                    )}
                     <textarea
                       className="pd-set-textarea"
                       value={editor.body}

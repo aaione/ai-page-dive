@@ -140,6 +140,8 @@ export function extractPage(): PageContent | { error: string } {
       contentMarkdown: markdown,
       approxTokens: approxTokensOf(markdown),
       notice: notices.length ? notices.join('；') : undefined,
+      // r57（#2）：结构化截断信号——host prompt 据此切换截断如实文案（notice 只是 UI 提示）
+      truncatedOriginalChars: truncated ? originalChars : undefined,
     }
   } catch (e: any) {
     return { error: String(e?.message ?? e) }

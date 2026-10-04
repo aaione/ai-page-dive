@@ -105,7 +105,24 @@ describe('stdio 路由', () => {
       const f = sent.find(m => m.t === 'workflow-file')
       expect(f).toBeTruthy()
       expect(f.content).toContain('[... 已截断]')
+      // r57（#9）：结构化截断标志——Settings 据此警示「保存将丢失未显示部分」
+      expect(f.truncated).toBe(true)
       expect(Buffer.byteLength(JSON.stringify(f.content), 'utf8')).toBeLessThanOrEqual(NM_MAX - 1024)
+      // 小文件无截断：标志不落键（undefined 不序列化进帧）
+      const wf2 = join(homedir(), '.ai-page-dive', 'workflows', `pd-smallwf-${process.pid}`)
+      await mkdir(wf2, { recursive: true })
+      await writeFile(join(wf2, 'WORKFLOW.md'), 'ok', 'utf8')
+      try {
+        handle({ t: 'workflow-read', name: `pd-smallwf-${process.pid}` })
+        while (!sent.some(m => m.t === 'workflow-file' && m.name === `pd-smallwf-${process.pid}`) && Date.now() < deadline) {
+          await new Promise(r => setTimeout(r, 50))
+        }
+        const f2 = sent.find(m => m.t === 'workflow-file' && m.name === `pd-smallwf-${process.pid}`)
+        expect(f2?.truncated).toBeUndefined()
+        expect(f2?.content).toBe('ok')
+      } finally {
+        await rm(wf2, { recursive: true, force: true })
+      }
     } finally {
       await rm(wfDir, { recursive: true, force: true })
     }
