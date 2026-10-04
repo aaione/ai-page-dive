@@ -173,9 +173,9 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
     while (pending.length) pending.shift()!.res(snapshot())
     await new Promise((r) => setTimeout(r, 20))
   }
-  const fireMessage = (msg: any) =>
+  const fireMessage = (msg: any, sender: any = { id: chrome.runtime.id }) =>
     new Promise<any>((resolve) => {
-      onMessageL.at(-1)!(msg, { id: chrome.runtime.id }, resolve)
+      onMessageL.at(-1)!(msg, sender, resolve)
     })
   return {
     chrome,
@@ -211,6 +211,25 @@ describe('sw.ts 回归网', () => {
     // r46 C1：非锚关闭也落盘，但落的是「恢复后的内存态」——种子会话幸存
     expect(h.calls.storageSet[0].sessions).toEqual([[5, CLAUDE_SESS]])
     expect(h.calls.storageSet[0].panelTabId).toBe(5)
+  })
+
+  it('自家页面开在普通 tab 的消息不被拒收，外来扩展仍拒（r58 N4）', async () => {
+    const h = await boot({})
+    // 历史页等自家页面以 chrome.tabs.create 打开——其 runtime.sendMessage 的
+    // sender 带 tab。旧守卫 sender.tab != null 直接丢弃：自家页面一旦开进 tab
+    // 即静默失联。panel-ready 有响应即证明消息被处理
+    const resp = await Promise.race([
+      h.fireMessage({ t: 'panel-ready' }, { id: chrome.runtime.id, tab: { id: 7 } }),
+      wait(500).then(() => 'DROPPED'),
+    ])
+    expect(resp).not.toBe('DROPPED')
+    expect((resp as any).ok).toBe(true)
+    // 守卫收窄后安全属性不回退：外来扩展同形消息仍无响应（无特权操作触发）
+    const foreign = await Promise.race([
+      h.fireMessage({ t: 'cancel' }, { id: 'other-extension' }),
+      wait(300).then(() => 'NO-RESPONSE'),
+    ])
+    expect(foreign).toBe('NO-RESPONSE')
   })
 
   it('冷唤醒竞态：resume-history 先恢复再落盘——新会话写进恢复出的锚页签', async () => {

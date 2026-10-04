@@ -358,11 +358,12 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 // 注意：MV3 中 async listener 的返回值会被较新 Chrome 直接当响应回传（Promise 化），
 // 绕过 sendResponse——必须用同步壳 return true 保持 channel。
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // r33-sec：只收本扩展自家页面的消息——sender 带 tab（content script 场景）或
-  // id 非本扩展时拒收。消息面含 summarize/nm 转发等特权操作，放行外来同形帧
-  // 等于把 NM 通道暴露给任意注入脚本。本项目 content script 不发消息（提取走
-  // executeScript func 直调），拒收无副作用
-  if (sender.tab != null || sender.id !== chrome.runtime.id) return
+  // r33-sec：只收本扩展自家页面的消息——sender.id 由 Chrome 填定，外部扩展/
+  // 注入帧不可伪造。消息面含 summarize/nm 转发等特权操作，放行外来消息等于把
+  // NM 通道暴露给任意注入脚本。r58（N4）：不再拒 sender.tab——自家页面开在普通
+  // tab（如历史页）时 sender.tab 非 null，旧守卫把它们全部静默丢弃；本项目
+  // content script 不发消息（提取走 executeScript func 直调），收窄无副作用
+  if (sender.id !== chrome.runtime.id) return
   handleMessage(msg)
     .then((r) => {
       if (r !== undefined) sendResponse(r)
