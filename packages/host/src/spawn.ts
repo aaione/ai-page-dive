@@ -78,10 +78,8 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
           pending = pending.slice(i + 1)
           if (line.trim()) opts.onStdoutLine(line)
         }
-        // NM 出口背压：出口（process.stdout 管道到 Chrome）积压 >4MB 说明对端消费不动，
-        // 停读 CLI stdout 让内核管道缓冲顶住上游——否则 write 缓冲在 host 内存里无界涨。
-        // drain 排空即恢复；pause 期间 end/close 推迟，但 kill 走 exit 钩子、断连走
-        // shutdown，均有兜底出口（r47 C8）
+        // NM 出口背压：出口积压 >4MB 说明对端消费不动，停读 CLI stdout 让内核管道
+        // 顶住上游，drain 排空即恢复——否则 write 缓冲在 host 内存无界涨（r47 C8）
         const nmOut = process.stdout
         if (!child.stdout!.isPaused() && nmOut.writableLength > 4 * 1024 * 1024) {
           child.stdout!.pause()
@@ -99,15 +97,16 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
       child.stderr!.on('data', opts.onStderr)
 
       const reap = () => {
-        // child 已退出（exitCode 非 null）时 pid 可能已被 OS 复用——再 kill(-pid)
-        // 会误杀复用者恰为组长的无关进程组。只等不杀
+        // child 已退出后 pid 可能被 OS 复用——组杀会误杀复用者恰为组长的无关进程
         if (child.exitCode !== null || child.signalCode !== null) return
+        const pgid = child.pid!
         try {
-          process.kill(-child.pid!, 'SIGTERM')
+          process.kill(-pgid, 'SIGTERM')
         } catch { /* already gone */ }
+        // r58（N2）：SIGKILL 兜底不得被「组长已退」短路——组长死于 TERM 而抗信号
+        // 孙进程尚存时孙进程永久逃逸。3s 窗内 pgid 复用需 pid 绕回，不可达；ESRCH 被吞
         setTimeout(() => {
-          if (child.exitCode !== null || child.signalCode !== null) return
-          try { process.kill(-child.pid!, 'SIGKILL') } catch { /* gone */ }
+          try { process.kill(-pgid, 'SIGKILL') } catch { /* gone */ }
         }, REAP_GRACE_MS)
       }
 

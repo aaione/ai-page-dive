@@ -33,6 +33,8 @@ jobs:
       # 22 腿：全仓构建（host tsc + 扩展 vite）+ 全量测试（含红线断言）
       - run: pnpm -r build
         if: matrix.node == 22
+      - run: node scripts/check-install-dist.mjs # r58（N1）：dist 级 install 冒烟——vitest 走 env 注入跑 src/，发布断链只能在这里拦
+        if: matrix.node == 22
       - run: pnpm test # 内含 scripts/check-host-lines.mjs 行数红线断言
         if: matrix.node == 22
       - run: node scripts/check-version.mjs # r48（M10）：ext/host/manifest/install.sh 版本一致门禁

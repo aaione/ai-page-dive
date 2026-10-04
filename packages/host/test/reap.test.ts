@@ -81,4 +81,62 @@ setInterval(() => {}, 1e9)
       await rm(dir, { recursive: true, force: true }).catch(() => {})
     }
   }, 15_000)
+
+  // r58（N2）：组长不抗 SIGTERM（默认行为即死）、孙进程抗信号——旧实现的 SIGKILL
+  // 兜底被「组长已退（exitCode 非 null）」守卫短路，孙进程永久逃逸烧配额。
+  // 本测锚升级路径：组长死于 TERM 后，兜底仍须对残组发 SIGKILL
+  it('组长死于 SIGTERM 而孙进程抗信号：SIGKILL 兜底不被组长先退短路（r58 N2）', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pd-reap2-'))
+    const script = join(dir, 'cli.mjs')
+    // 假 CLI：组长【不】注册 SIGTERM handler（TERM 即死），孙进程忽略 TERM
+    await writeFile(
+      script,
+      `import { spawn } from 'node:child_process'
+const g = spawn(process.execPath, ['-e', "process.on('SIGTERM',()=>{});console.error('GC_READY');setInterval(()=>{},1e9)"], { stdio: ['ignore', 'pipe', 'inherit'] })
+console.log(JSON.stringify({ child: process.pid, grandchild: g.pid }))
+setInterval(() => {}, 1e9)
+`,
+      'utf8',
+    )
+    let ids: { child: number; grandchild: number } | undefined
+    let gcReady = false
+    const proc = await spawnCli({
+      bin: process.execPath,
+      args: [script],
+      stdinData: '',
+      onStdoutLine: (l) => {
+        try {
+          const m = JSON.parse(l)
+          if (m.grandchild) ids = m
+        } catch { /* 非 JSON 行忽略 */ }
+      },
+      onStderr: (d) => {
+        if (String(d).includes('GC_READY')) gcReady = true
+      },
+    })
+    try {
+      const ready = Date.now() + 5000
+      while ((!ids || !gcReady) && Date.now() < ready) await new Promise((r) => setTimeout(r, 50))
+      expect(ids, '假 CLI 印记行未到达').toBeTruthy()
+      expect(gcReady, '孙进程就绪标记未到达').toBe(true)
+
+      proc.reap()
+      await new Promise((r) => setTimeout(r, 500))
+      // 升级前提：组长已被 SIGTERM 杀死（exitCode 已置），孙进程靠抗信号存活
+      expect(alive(ids!.child), '组长应死于 SIGTERM（本测试的升级前提）').toBe(false)
+      expect(alive(ids!.grandchild), '孙进程不应被 SIGTERM 杀死（升级前提）').toBe(true)
+
+      // 旧实现在此形态下 SIGKILL 永不触发（组长先退守卫 return）→ 孙进程永活
+      const deadline = Date.now() + REAP_GRACE_MS + 3000
+      while (alive(ids!.grandchild) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      expect(alive(ids!.grandchild), 'SIGKILL 兜底应收割抗信号的孙进程').toBe(false)
+    } finally {
+      try {
+        process.kill(-proc.child.pid!, 'SIGKILL')
+      } catch { /* 已死 */ }
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  }, 15_000)
 })

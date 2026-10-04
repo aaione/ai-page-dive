@@ -1,8 +1,10 @@
 import { afterAll, describe, expect, it } from 'vitest'
+import { existsSync, writeFileSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { registerManifests, stableNodePath } from '../src/scripts/install.js'
+import { registerManifests, resolveHostEntry, stableNodePath } from '../src/scripts/install.js'
+import { uninstall } from '../src/scripts/uninstall.js'
 import { detectGlobalInstall, isTopLevelGlobal } from '../src/scripts/postinstall.js'
 
 /**
@@ -72,6 +74,45 @@ describe('registerManifests', () => {
     const p = await freshRegister(['aaaa', 'NOT-VALID', 'z'.repeat(33), 'p'.repeat(32)])
     const manifest = JSON.parse(await readFile(p, 'utf8'))
     expect(manifest.allowed_origins).toEqual([`chrome-extension://${'p'.repeat(32)}/`])
+  })
+
+  it('resolveHostEntry：dist/scripts/ 布局解析到上级 dist/index.js（r58 N1）', () => {
+    // 发布布局：bin = dist/index.js，install 编译产物在 dist/scripts/ 下——旧实现
+    // 算出 dist/scripts/index.js（不存在），真实用户 install 必败；vitest 走 env
+    // 注入跑 src/ 源码永远踩不中。env 注入优先级不变
+    const saved = process.env.PAGEDIVE_HOST_ENTRY
+    delete process.env.PAGEDIVE_HOST_ENTRY
+    try {
+      expect(resolveHostEntry('/g/dist/scripts/install.js')).toBe('/g/dist/index.js')
+      expect(resolveHostEntry('/g/src/scripts/install.ts')).toBe('/g/src/index.js')
+      process.env.PAGEDIVE_HOST_ENTRY = '/injected.js'
+      expect(resolveHostEntry('/g/dist/scripts/install.js')).toBe('/injected.js')
+    } finally {
+      process.env.PAGEDIVE_HOST_ENTRY = saved
+    }
+  })
+})
+
+describe('uninstall 如实计数（r58 R3）', () => {
+  it('只数真实删掉的注册——干净机器报 0，仅存 manifest 报 1', async () => {
+    // 自清场：上序 registerManifests 用例留下 manifest + wrapper。清后等同干净机器
+    // （Chrome 目录在、注册全无）；'Chrome for Testing' 目录不存在不计数。
+    // 旧实现 rmSync force 无条件 n++ → 恒 3
+    await rm(manifestPath, { force: true })
+    await rm(join(SANDBOX, '.ai-page-dive', 'host-wrapper.sh'), { force: true })
+    const logs: string[] = []
+    const orig = console.log
+    console.log = (s: unknown) => { logs.push(String(s)) }
+    try {
+      uninstall()
+      expect(logs.at(-1)).toContain('已清理 0 处')
+      writeFileSync(manifestPath, '{}')
+      uninstall()
+      expect(logs.at(-1)).toContain('已清理 1 处')
+      expect(existsSync(manifestPath)).toBe(false)
+    } finally {
+      console.log = orig
+    }
   })
 })
 

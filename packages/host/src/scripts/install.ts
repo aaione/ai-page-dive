@@ -12,11 +12,9 @@ export const HOST_NAME = 'com.pagedive.host'
 
 /**
  * NM host 由 Chrome 以极简 PATH（/usr/bin:/bin:…）exec——nvm/brew 的 node 不在
- * 其中，#!/usr/bin/env node 会失败。生成写死当前 node 绝对路径的 wrapper。
- * 稳定入口优先（r7-impl）：macOS libuv 的 process.execPath 走 realpath，brew 装的
- * node 被解析成 Cellar 版本化真实路径（…/Cellar/node/22.x.y/bin/node），brew
- * upgrade 清掉旧 Cellar 后即成死路径——改写 brew 的 opt 稳定软链（…/opt/node/bin/
- * node，跨版本由 brew 维护）。wrapper 三段回退：稳定链 → 原真实路径 → PATH node。
+ * 其中，wrapper 写死当前 node 绝对路径。稳定入口优先（r7-impl）：brew 的 Cellar
+ * 版本化路径会被 upgrade 清成死链，改写为 opt 稳定软链；三段回退：稳定链 →
+ * 原真实路径 → PATH node。
  */
 export function stableNodePath(execPath: string, existsFn: (p: string) => boolean = existsSync): string {
   // Cellar 版本化路径 → opt 稳定软链（Apple Silicon /opt/homebrew，Intel /usr/local）；
@@ -61,11 +59,16 @@ export function macOSManifestDirs(): string[] {
  * - 返回实际写入的 manifest 路径（postinstall 据此区分真成功/Chrome 未装）
  * 顺序约束：wrapper 必须先于所有 manifest 写入（半成功时 manifest 不指向死 wrapper）。
  */
+/** host 入口解析：本文件编译产物在 dist/scripts/ 下，bin 真实入口是上级 dist/index.js。
+ *  r58（N1）：原 `dirname(...)/index.js` 算出 dist/scripts/index.js（不存在）——发布后
+ *  真实用户 install 必败；vitest 靠 PAGEDIVE_HOST_ENTRY 注入跑 src/ 源码永远踩不中。
+ *  fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18 */
+export function resolveHostEntry(fromFile: string = fileURLToPath(import.meta.url)): string {
+  return process.env.PAGEDIVE_HOST_ENTRY ?? resolve(dirname(fromFile), '..', 'index.js')
+}
+
 export async function registerManifests(extIds: string[], quiet = false): Promise<string[]> {
-  // host 入口：本文件编译产物的真实路径（解析 npm global symlink）。
-  // fileURLToPath 而非 import.meta.dirname：后者 Node >=20.11 才有，engines 宣称 >=18。
-  // PAGEDIVE_HOST_ENTRY：测试注入（vitest 跑 src/ 源码时 dist 入口不存在）
-  const hostPath = process.env.PAGEDIVE_HOST_ENTRY ?? resolve(dirname(fileURLToPath(import.meta.url)), 'index.js')
+  const hostPath = resolveHostEntry()
   if (!existsSync(hostPath)) {
     throw new Error(`host entry not found: ${hostPath}`)
   }
