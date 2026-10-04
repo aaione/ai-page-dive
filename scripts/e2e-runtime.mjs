@@ -6,15 +6,15 @@
 import { execSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
-import { loadChromium } from './lib/playwright.mjs'
-const { chromium } = await loadChromium()
+import { loadChromium, REPO, HOST_DIST, EXT_DIST_E2E, browserExecutable } from './lib/playwright.mjs'
+const chromium = await loadChromium()
 
-const EXT = '/Users/apple/work/hs/ai-feature/ai-page-dive/apps/extension/dist-e2e'
+const EXT = EXT_DIST_E2E
 const PROFILE = '/tmp/pd-e2e-rt-profile'
 
 function install(extId) {
   execSync(
-    `PAGEDIVE_EXTRA_NM_DIR=${PROFILE}/NativeMessagingHosts ${process.execPath} /Users/apple/work/hs/ai-feature/ai-page-dive/packages/host/dist/index.js install --ext-id ${extId}`,
+    `PAGEDIVE_EXTRA_NM_DIR=${PROFILE}/NativeMessagingHosts ${process.execPath} ${HOST_DIST} install --ext-id ${extId}`,
     { stdio: 'pipe' },
   )
 }
@@ -22,7 +22,7 @@ function install(extId) {
 async function launch() {
   return chromium.launchPersistentContext(PROFILE, {
     // 正式 Chrome 137+ 默认忽略 --load-extension（安全收紧），必须用 Chrome for Testing
-    executablePath: '/Users/apple/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    executablePath: browserExecutable(chromium),
     headless: false,
     viewport: { width: 1280, height: 800 },
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--no-first-run', '--no-default-browser-check'],

@@ -9,14 +9,14 @@ import { createServer } from 'node:http'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadChromium } from './lib/playwright.mjs'
-const { chromium } = await loadChromium()
+import { loadChromium, REPO, EXT_DIST, browserExecutable } from './lib/playwright.mjs'
+const chromium = await loadChromium()
 
-const EXT = '/Users/apple/work/hs/ai-feature/ai-page-dive/apps/extension/dist'
+const EXT = EXT_DIST
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const APP = 'Google Chrome for Testing'
 
-spawnSync('pnpm', ['--filter', '@ai-page-dive/extension', 'build'], { stdio: 'inherit', cwd: new URL('..', import.meta.url).pathname })
+spawnSync('pnpm', ['--filter', '@ai-page-dive/extension', 'build'], { stdio: 'inherit', cwd: REPO })
 
 const server = createServer((_req, res) => {
   res.end('<html><body><h1>PageDive verify</h1></body></html>')
@@ -27,7 +27,7 @@ const PORT = server.address().port
 const PROFILE = mkdtempSync(join(tmpdir(), 'pd-verify-'))
 const ctx = await chromium.launchPersistentContext(PROFILE, {
   headless: false,
-  executablePath: `/Users/apple/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/${APP}.app/Contents/MacOS/${APP}`,
+  executablePath: browserExecutable(chromium),
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--no-first-run', '--no-default-browser-check'],
 })
 const page = await ctx.newPage()

@@ -6,17 +6,17 @@
 import { execSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
-import { loadChromium } from './lib/playwright.mjs'
-const { chromium } = await loadChromium()
+import { loadChromium, REPO, HOST_DIST, EXT_DIST_E2E, browserExecutable } from './lib/playwright.mjs'
+const chromium = await loadChromium()
 
 // E2E 变体构建（广权限）到 dist-e2e；产品 dist 不动。
 // 失败即退出：filter 名失配曾静默跑旧 dist-e2e 两天（@pagedive → @ai-page-dive 改名漏改），
 // E2E 虚假绿灯比不跑更危险
 import { spawnSync } from 'node:child_process'
-const EXT = '/Users/apple/work/hs/ai-feature/ai-page-dive/apps/extension/dist-e2e'
+const EXT = EXT_DIST_E2E
 const build = spawnSync('pnpm', ['--filter', '@ai-page-dive/extension', 'build:e2e'], {
   stdio: 'pipe',
-  cwd: '/Users/apple/work/hs/ai-feature/ai-page-dive',
+  cwd: REPO,
 })
 if (build.status !== 0) {
   console.error('[e2e] build:e2e 失败:\n' + build.stdout + '\n' + build.stderr)
@@ -28,7 +28,7 @@ const PROFILE = '/tmp/pd-e2e-profile'
 
 function install(extId) {
   execSync(
-    `PAGEDIVE_EXTRA_NM_DIR=${PROFILE}/NativeMessagingHosts ${process.execPath} /Users/apple/work/hs/ai-feature/ai-page-dive/packages/host/dist/index.js install --ext-id ${extId}`,
+    `PAGEDIVE_EXTRA_NM_DIR=${PROFILE}/NativeMessagingHosts ${process.execPath} ${HOST_DIST} install --ext-id ${extId}`,
     { stdio: 'pipe' },
   )
 }
@@ -46,7 +46,7 @@ function registeredIds() {
 
 async function launch() {
   return chromium.launchPersistentContext(PROFILE, {
-    executablePath: '/Users/apple/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    executablePath: browserExecutable(chromium),
     headless: false,
     viewport: { width: 1280, height: 800 },
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--no-first-run', '--no-default-browser-check'],
