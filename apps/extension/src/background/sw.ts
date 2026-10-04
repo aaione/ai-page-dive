@@ -509,7 +509,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       // r8-ext：命中加 60s TTL（见 agentsCacheAt 注释）——探测要 spawn CLI --version
       // 有秒级成本，60s 内的面板重开不重复探测；过期穿透让新装 CLI 一分钟内出现
       if (
-        (msg.msg as any)?.t === 'list-agents' &&
+        (msg.msg as ExtToHost | undefined)?.t === 'list-agents' &&
         agentsCache &&
         agentsCache.some((a) => a.available) &&
         Date.now() - agentsCacheAt < AGENTS_CACHE_TTL_MS
@@ -579,11 +579,13 @@ const frameTooLarge = (frame: unknown) => new Blob([JSON.stringify(frame)]).size
 
 // host → panel 直通
 nmPort.onMessage((m) => {
-  const msg = m as any
+  // r57（#22）：host→panel 直通面按 HostToExt 窄化（protocol 已全覆盖本 handler
+  // 消费的帧），不再 as any 整帧透传
+  const msg = m as HostToExt
   if (msg?.t === 'agents') {
     // host 探测结果可能晚于 task-meta（无 model）：merge lastModels 后缓存下发，
     // 并取代原帧（原样转发会把 panel 已 merge 的状态覆盖回无 model 版）
-    agentsCache = (msg.agents as AgentStatus[]).map((a) =>
+    agentsCache = msg.agents.map((a) =>
       lastModels.has(a.id) ? { ...a, model: lastModels.get(a.id) } : a,
     )
     agentsCacheAt = Date.now()
@@ -643,7 +645,9 @@ nmPort.onMessage((m) => {
         // || 而非 ??：host 首轮 persist 失败时回传空串（不虚构路径），跳过且保留
         // 上一会话已有路径（r7-review）；合法路径永非空串
         const sid = (typeof msg.sessionId === 'string' && msg.sessionId) || prev?.sessionId || ''
-        const hp = msg.historyPath || prev?.historyPath
+        // historyPath 只在 task-done 帧携带（meta 帧无此字段）——窄化后 tsc 揪出的
+        // 真判别，旧 as any 把它藏成「运行时恒 undefined 的宽松读」
+        const hp = (msg.t === 'task-done' ? msg.historyPath : undefined) || prev?.historyPath
         if (sid || hp) {
           sessions.set(tabId, { agentId: owner, sessionId: sid, historyPath: hp })
           persistSession()

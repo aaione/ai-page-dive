@@ -35,6 +35,8 @@ jobs:
         if: matrix.node == 22
       - run: node scripts/check-install-dist.mjs # r58（N1）：dist 级 install 冒烟——vitest 走 env 注入跑 src/，发布断链只能在这里拦
         if: matrix.node == 22
+      - run: pnpm --filter @ai-page-dive/extension exec tsc --noEmit # r57（#10）：扩展源码类型门禁——ci.yml 此前自述「类型检查」但从未对 ext 执行
+        if: matrix.node == 22
       - run: pnpm test # 内含 scripts/check-host-lines.mjs 行数红线断言
         if: matrix.node == 22
       - run: node scripts/check-version.mjs # r48（M10）：ext/host/manifest/install.sh 版本一致门禁

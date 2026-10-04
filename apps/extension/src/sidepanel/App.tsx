@@ -680,7 +680,7 @@ export function App() {
         case 'error':
           // r53（#9）：还原读取失败（文件被外部移动/删除，host 回 read-fail）——此前
           // 无消费端，干等 12s 兜底才降级。error 帧到达即走同一退回（reopened 语义）
-          if ((m as any).code === 'read-fail' && (m as any).ref === restorePathRef.current) {
+          if (m.code === 'read-fail' && m.ref === restorePathRef.current) {
             restorePathRef.current = null
             const mt = missedErrRef.current
             missedErrRef.current = null
