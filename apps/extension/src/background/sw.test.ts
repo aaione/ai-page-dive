@@ -514,6 +514,18 @@ describe('sw.ts 回归网', () => {
     })
     const st2 = await h2.fireMessage({ t: 'panel-ready' })
     expect(st2.sessionPage).toBeUndefined()
+    // r57 盲区3：codex 自 r7-impl 起也产 sessionId（thread_id）——正常轮 canResume=true
+    // （旧注释「codex 不产 sessionId」是漂移口径）；空串降级轮才 false
+    const h3 = await boot({
+      seed: {
+        sessions: [[5, { agentId: 'codex', sessionId: 'th-9', historyPath: '~/.ai-page-dive/history/2026/10/b.md' }]],
+        panelTabId: 5,
+        panelWindowId: 1,
+      },
+    })
+    const st3 = await h3.fireMessage({ t: 'panel-ready' })
+    expect(st3.canResume).toBe(true)
+    expect(st2.canResume).toBe(false)
   })
 
   // r55（#11）：nm 通用转发缺帧限门禁——超限帧会被 host 当协议失步自杀（连带收割

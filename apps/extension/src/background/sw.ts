@@ -49,7 +49,8 @@ let currentTask: {
 // 「看完总结 → 隔一分钟追问」场景下必丢（session-lost）。storage.session 随
 // 浏览器会话存活，SW 冷启动时恢复（restoreSession）。
 // historyPath：追问轮 append 进同一文件——历史详情还原完整多轮对话。
-// sessionId 可为空串：codex 不产 sessionId，仍归档 historyPath 供面板重开还原 UI（r47-ux）
+// sessionId 可为空串：codex 自 r7-impl 起 thread.started 发 thread_id 作 sessionId，
+// 空串仅剩 thread.started 未达的降级——仍归档 historyPath 供面板重开还原 UI（r47-ux 口径修订）
 // r57（#19）：page = 会话来源页（首轮总结时的顶层锚）——重开面板时 ctxAnchor 用它
 // 快照，不随页签内导航漂移成「错标新页标题」
 type Session = { agentId: string; sessionId: string; historyPath?: string; page?: { url: string; title: string } }
@@ -460,8 +461,9 @@ async function handleMessage(msg: any): Promise<unknown> {
           ? {
               hasSession: true,
               sessionAgentId: sess.agentId,
-              // r47-ux：无 sessionId（codex）不可 CLI 追问，但 hasSession + historyPath
-              // 仍用于重开还原——panel 按 canResume 决定是否开追问入口
+              // r47-ux：无 sessionId 不可 CLI 追问，但 hasSession + historyPath
+              // 仍用于重开还原——panel 按 canResume 决定是否开追问入口。
+              // codex 自 r7-impl 起也产 sessionId（thread_id），正常轮 canResume=true
               canResume: !!sess.sessionId,
               // r14-ux：带出历史文件路径——面板被收起后重开（React 态已丢）时，
               // panel 自动 history-read 还原完整多轮对话，而不是一句
@@ -486,8 +488,8 @@ async function handleMessage(msg: any): Promise<unknown> {
         // SW 恰在恢复中（微任务竞态窗）时补一次同步恢复——storage.session 读取 <1ms
         if (panelTabId === null || !sessions.get(panelTabId)) await restoreSession()
         const sess = panelTabId !== null ? sessions.get(panelTabId) : undefined
-        // r47-ux：无 sessionId（codex 归档仅有 historyPath）不可 resume——明示丢失，
-        // 勿把空串交给 CLI（会变成语义不明的 resume 失败）
+        // r47-ux：sessionId 空串（thread.started 未达的降级归档）不可 resume——明示
+        // 丢失，勿把空串交给 CLI（会变成语义不明的 resume 失败）
         if (!sess?.sessionId) return { error: 'session-lost' }
         const r = startFollowUp(sess.agentId, sess.sessionId, instruction ?? '', sess.historyPath, attachments)
         return { ...r, agentId: sess.agentId }
@@ -677,8 +679,8 @@ nmPort.onMessage((m) => {
       (currentTask && msg.taskId === currentTask.taskId ? currentAgentId : undefined)
     // r46（review C2）：取消台账命中的迟到帧不归档会话（见 cancelledTaskIds 注释）；
     // lastModels 的模型名记录与任务死活无关，保留
-    // r47-ux（review P7）：codex 不产 sessionId——仍归档 historyPath，重开面板可
-    // history-read 还原对话；sessionId 空串表示不可 CLI 追问（panel canResume=false）
+    // r47-ux（review P7）：sessionId 空串（codex thread.started 未达的降级）仍归档
+    // historyPath，重开面板可 history-read 还原对话；空串表示不可 CLI 追问（canResume=false）
     if (owner && !cancelledTaskIds.has(msg.taskId)) {
       const tabId = currentTask && msg.taskId === currentTask.taskId ? currentTask.tabId : panelTabId
       if (tabId !== null) {

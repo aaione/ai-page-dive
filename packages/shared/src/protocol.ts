@@ -372,8 +372,10 @@ export interface PanelReadyResp {
   /** r57（#19）：会话来源页（首轮总结时的顶层锚，随 sessions 持久化）——panel
    *  ctxAnchor 优先快照它，页签内导航后重开不再错标新页标题 */
   sessionPage?: { url: string; title: string }
-  /** r47-ux：该会话能否 CLI 级追问（有非空 sessionId）。codex 无 sessionId → false，
-   *  面板仍可经 historyPath 还原对话 UI，但不得开放「继续追问」假入口 */
+  /** r47-ux：该会话能否 CLI 级追问（有非空 sessionId；claude=init 会话 id、
+   *  codex=thread.started 的 thread_id——r7-impl 起双适配器均产）。sessionId 空串
+   *  仅剩降级归档（thread.started 未达）→ false，面板仍可经 historyPath 还原对话 UI，
+   *  但不得开放「继续追问」假入口 */
   canResume?: boolean
   activeTask?: { taskId: string; startedAt: number }
   /** r53（#5）：面板收起期间错过的错误终局（SW lastTerminals 收件箱一次性补发）——
