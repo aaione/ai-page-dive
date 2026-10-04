@@ -43,6 +43,8 @@ export interface TaskCallbacks {
     unrecognized?: number
   }) => void
   onError: (code: 'spawn-fail' | 'timeout' | 'cancelled' | 'parse' | 'no-agent', message: string) => void
+  /** r57（#24）：prune 实删了超限旧历史（removed>0）——触达 panel 的唯一信号 */
+  onPruned?: (removed: number, limit: number) => void
 }
 
 export class Task {
@@ -535,7 +537,9 @@ export class Task {
       })
       .catch(logFail)
     // r42：保留策略——首轮落盘后清理超出 historyLimit 的最旧历史（追问轮 append 不新增
-    // 文件、无需清理；失败静默——清理失败不影响主流程，下次保存再清）
-    await pruneHistory(this.input.historyLimit ?? 200).catch(() => {})
+    // 文件、无需清理；失败静默——清理失败不影响主流程，下次保存再清）。
+    // r57（#24）：实删计数上报——静默永久删除两周后回查「不存在」且无人知晓是可调的
+    const pruned = await pruneHistory(this.input.historyLimit ?? 200).catch(() => 0)
+    if (pruned > 0) this.cb.onPruned?.(pruned, this.input.historyLimit ?? 200)
   }
 }

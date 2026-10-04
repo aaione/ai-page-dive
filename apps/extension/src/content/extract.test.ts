@@ -3,7 +3,7 @@
 // r54：extractPage 三种 DOM 形状 + 注入 guard 此前零单测（真机行为全靠 e2e 兜）——
 // jsdom 下锚 readability 正常路径 / shadow DOM 兜底 / 超长截断三条主链
 import { describe, expect, it } from 'vitest'
-import { approxTokensOf, extractPage } from './extract.js'
+import { approxTokensOf, extractPage, looksLikeProse } from './extract.js'
 
 /** 每测重置文档：lang/title 直设，body 经 template 解析后整体换树
  *  （document.write 的 reopen 语义在 jsdom 下跨用例不稳——首测后清不干净） */
@@ -44,18 +44,36 @@ describe('extractPage（jsdom 三形状）', () => {
   })
 
   it('shadow DOM 正文：readability 拿壳 → collectShadowText 兜底 + 低置信提示', () => {
-    // 光 DOM 纯壳（无任何候选块）——Readability 必须空手，正文只在 shadow root 里
+    // 光 DOM 纯壳（无任何候选块）——Readability 必须空手，正文只在 shadow root 里。
+    // r57（#3）：正文体量过 looksLikeProse 双启发式（≥1000 字符 + 平均行长 ≥20）
     loadHtml('壳页标题', '<div id="host"></div>')
     const host = document.getElementById('host')!
     const sr = host.attachShadow({ mode: 'open' })
     sr.append(document.createElement('p'))
-    sr.querySelector('p')!.textContent = '影子里的正文内容。'.repeat(10)
+    sr.querySelector('p')!.textContent = '影子里的正文内容，是一段足够长的正文段落。'.repeat(60)
     const r = extractPage()
     const page = r as Exclude<ReturnType<typeof extractPage>, { error: string }>
     // cloneNode 不克隆 shadow root → Readability 空 → 逐字兜底链
     expect(page.extractor).toBe('innertext')
     expect(page.contentMarkdown).toContain('影子里的正文内容')
     expect(page.notice).toContain('结构解析失败')
+  })
+
+  it('r57 #3：shadow 短语杂讯不冒充正文——双启发式拦截后明确 empty-content，不产假总结', () => {
+    // 壳 + shadow 里只有播放器/菜单按钮枚举（几百字符短语）：修复前非空即当正文，
+    // CLI 对按钮文案总结得有模有样；修复后宁可明确失败
+    loadHtml('壳页标题', '<div id="host"></div>')
+    const sr = document.getElementById('host')!.attachShadow({ mode: 'open' })
+    for (let i = 0; i < 200; i++) {
+      const b = document.createElement('button')
+      b.textContent = ['播放', '暂停', '全屏', '设置'][i % 4]
+      sr.append(b)
+    }
+    expect(extractPage()).toEqual({ error: 'empty-content' })
+    // 双启发式各自独立拦：体量（长但全是短语）与行长（短但单行长文）
+    expect(looksLikeProse('播放\n暂停\n全屏\n设置'.repeat(100))).toBe(false)
+    expect(looksLikeProse('短')).toBe(false)
+    expect(looksLikeProse('这是一段足够长的正文，平均行长轻松越过二十字符的门槛。'.repeat(50))).toBe(true)
   })
 
   it('超长正文：200k 字符上限截断 + 提示透出', () => {

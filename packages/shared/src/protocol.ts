@@ -252,6 +252,15 @@ export interface TaskErrorMsg {
   message: string
 }
 
+/** r57（#24）：prune 实删超限旧历史的轻通知（done 帧后异步到达）——panel 据此给
+ *  首次触顶的单次可跳设置提示：静默永久删除会侵蚀「历史回查」的信任 */
+export interface HistoryPrunedMsg {
+  t: 'history-pruned'
+  taskId: string
+  removed: number
+  limit: number
+}
+
 export interface HistoryItem {
   path: string
   title: string
@@ -306,6 +315,7 @@ export type HostToExt =
   | TaskChunkMsg
   | TaskDoneMsg
   | TaskErrorMsg
+  | HistoryPrunedMsg
   | HistoryListResultMsg
   | HistoryFileMsg
   | DeletedMsg
@@ -350,12 +360,18 @@ export interface PanelReadyResp {
   hostVersion?: string
   nmError?: string
   outdated?: string
+  /** r57（#8）：host ≥ 下限但落后于扩展钉版——非阻断升级软提示（文案含两段命令）。
+   *  此前只有 <MIN 的阻断握手：已装机用户的 host 修复永远无人触达 */
+  upgrade?: string
   page: PageMetaMsg['page']
   panelTabId: number | null
   pageUnsupported?: boolean
   hasSession?: boolean
   sessionAgentId?: string
   historyPath?: string
+  /** r57（#19）：会话来源页（首轮总结时的顶层锚，随 sessions 持久化）——panel
+   *  ctxAnchor 优先快照它，页签内导航后重开不再错标新页标题 */
+  sessionPage?: { url: string; title: string }
   /** r47-ux：该会话能否 CLI 级追问（有非空 sessionId）。codex 无 sessionId → false，
    *  面板仍可经 historyPath 还原对话 UI，但不得开放「继续追问」假入口 */
   canResume?: boolean

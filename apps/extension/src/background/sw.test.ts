@@ -382,6 +382,28 @@ describe('sw.ts 回归网', () => {
     expect(st2.missedTerminal).toBeUndefined()
   })
 
+  // r57（#4/#14）：SW 自合成的三路终局（连坐取消/断连/丢片）此前只广播——面板
+  // 收起即丢，重开零交代；丢片帧还缺 tabId 邮戳（提前 return 盖不到统一 stamp）
+  it('r57 #4/#14：SW 合成终局（取消/断连/丢片）入收件箱 + mismatch 帧盖 tabId 邮戳', async () => {
+    // —— 连坐取消：锚 5 在跑追问，再起一轮收割它——收件箱留 cancelled 交代 ——
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const r1 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    const r2 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'y' })
+    expect(r2.ok).toBe(true)
+    expect((await h.fireMessage({ t: 'panel-ready' })).missedTerminal).toMatchObject({ taskId: r1.taskId, code: 'cancelled', tabId: 5 })
+    // —— 断连：在跑任务随 host 连接死亡 → 收件箱留 host-disconnected ——
+    h.fireDisconnect()
+    expect((await h.fireMessage({ t: 'panel-ready' })).missedTerminal).toMatchObject({ taskId: r2.taskId, code: 'host-disconnected', tabId: 5 })
+    // —— 丢片：mismatch 终局帧自带 tabId 邮戳 + 入箱（panel-ready 已把 target 锚到
+    //    tab 5，正文任务源页签即 5——修复前帧裸发无 tabId，跨页签穿透新面板）——
+    ;(h.chrome.scripting.executeScript as any).mockResolvedValue([{ result: { ...PAGE, contentMarkdown: 'body' } }])
+    const r3 = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    h.fireNm({ t: 'content-received', taskId: r3.taskId, chars: 3 })
+    await wait(20)
+    expect(h.calls.sent.find((m) => m.t === 'task-error' && m.code === 'content-mismatch')).toMatchObject({ taskId: r3.taskId, tabId: 5 })
+    expect((await h.fireMessage({ t: 'panel-ready' })).missedTerminal).toMatchObject({ taskId: r3.taskId, code: 'content-mismatch', tabId: 5 })
+  })
+
   it('迟到终局帧盖原 tab 邮戳（r53 #5 / r54 #3）：currentTask 清空后 tabOf 台账仍供邮戳，panel foreignAdopt 可核拒', async () => {
     const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
     const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
@@ -401,6 +423,26 @@ describe('sw.ts 回归网', () => {
     expect(st.outdated).toContain('install --ext-id test-ext-id')
   })
 
+  // r57（#8）：升级触达——host ≥ 下限但落后于扩展钉版时给非阻断软提示；此前升级
+  // 无任何触达（已装机用户永远收不到 host 修复），与 Onboarding「仅此一次」矛盾
+  it('r57 #8：host 落后钉版（≥下限）→ upgrade 软提示；过旧阻断优先；同版不打扰', async () => {
+    const h = await boot({ hostVersion: '0.1.2' })
+    const st = await h.fireMessage({ t: 'panel-ready' })
+    expect(st.upgrade).toContain('0.1.2 → 0.1.3')
+    expect(st.upgrade).toContain('install --ext-id test-ext-id')
+    expect(st.outdated).toBeUndefined() // 非阻断：不下限横幅
+    // 过旧仍走阻断横幅，upgrade 与之互斥
+    const h2 = await boot({ hostVersion: '0.0.9' })
+    const st2 = await h2.fireMessage({ t: 'panel-ready' })
+    expect(st2.outdated).toBeTruthy()
+    expect(st2.upgrade).toBeUndefined()
+    // 同版零提示
+    const h3 = await boot({ hostVersion: '0.1.3' })
+    const st3 = await h3.fireMessage({ t: 'panel-ready' })
+    expect(st3.upgrade).toBeUndefined()
+    expect(st3.outdated).toBeUndefined()
+  })
+
   it('r12：会话按任务源页签归档——锚在 6、任务跑在 11 的会话不写进 6（多 tab 隔离）', async () => {
     const h = await boot({ seed: { panelTabId: 6, panelWindowId: 1 } })
     const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
@@ -408,7 +450,8 @@ describe('sw.ts 回归网', () => {
     // 任务源 tab = query 活跃页 11（tabsDb 的 5 仅 tabs.get 命中，query mock 恒返 11）
     h.fireNm({ t: 'task-meta', taskId: r.taskId, agentId: 'claude', sessionId: 's-9' })
     const persist = h.calls.storageSet.filter((s) => Array.isArray(s.sessions)).at(-1)
-    expect(persist.sessions).toContainEqual([11, { agentId: 'claude', sessionId: 's-9' }])
+    // r57（#19）：来源页随会话归档（任务源页签的真实顶层锚，不是锚定页签 6）
+    expect(persist.sessions).toContainEqual([11, { agentId: 'claude', sessionId: 's-9', page: { url: 'https://x/active', title: 'Active' } }])
     expect(persist.sessions.some((e: any) => e[0] === 6)).toBe(false)
   })
 
@@ -447,6 +490,30 @@ describe('sw.ts 回归网', () => {
     expect(h.local.pdRunningTask).toEqual({ taskId: r.taskId, tabId: 5 })
     h.fireNm({ t: 'task-done', taskId: r.taskId, agentId: 'claude' })
     expect(h.local.pdRunningTask).toBeUndefined()
+  })
+
+  // r57（#19）：会话来源页随 sessions 持久化并经 panel-ready 透出——「关面板→页签
+  // 导航→重开」路径 ctxAnchor 不再错标导航后的新页（活 pageMeta 只是兜底）
+  it('r57 #19：panel-ready 透出 sessionPage（SW 会话来源页），无 page 的旧会话不透出', async () => {
+    const h = await boot({
+      seed: {
+        sessions: [[5, { agentId: 'claude', sessionId: 's-1', page: { url: 'https://a/origin', title: '来源页' } }]],
+        panelTabId: 5,
+        panelWindowId: 1,
+      },
+    })
+    const st = await h.fireMessage({ t: 'panel-ready' })
+    expect(st.sessionPage).toEqual({ url: 'https://a/origin', title: '来源页' })
+    // 无 page（旧版本落盘的会话 / codex 纯 historyPath 还原）：不透出，panel 走 pageMeta 兜底
+    const h2 = await boot({
+      seed: {
+        sessions: [[5, { agentId: 'codex', sessionId: '', historyPath: '~/.ai-page-dive/history/2026/10/a.md' }]],
+        panelTabId: 5,
+        panelWindowId: 1,
+      },
+    })
+    const st2 = await h2.fireMessage({ t: 'panel-ready' })
+    expect(st2.sessionPage).toBeUndefined()
   })
 
   // r55（#11）：nm 通用转发缺帧限门禁——超限帧会被 host 当协议失步自杀（连带收割

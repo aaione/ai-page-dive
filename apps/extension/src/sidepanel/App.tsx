@@ -134,6 +134,12 @@ export function App() {
   const [stream, setStream] = useState<TaskStreamState>(BLANK)
   const [agentId, setAgentId] = useState('')
   const [pageMeta, setPageMeta] = useState<PageMeta | null>(null)
+  /** r57（#19）：SW 会话来源页（panel-ready 带回，随 sessions 持久化）——
+   *  ctxAnchor 优先快照它，页签内导航后重开不错标新页标题 */
+  const [sessionPage, setSessionPage] = useState<{ url: string; title: string } | null>(null)
+  /** r57（#24）：prune 首次触顶的单次提示（历史超限实删旧档）——静默永久删除
+   *  会让重度用户回查三周前总结时发现「不存在且不知可调」，侵蚀历史回查信任 */
+  const [pruneNotice, setPruneNotice] = useState<{ removed: number; limit: number } | null>(null)
   // r8-ux：当前锚定页不可提取（chrome:// 等）——placeholder 直接说明，失败前移
   const [pageUnsupported, setPageUnsupported] = useState(false)
   /** SW 侧活会话归属的 CLI（panel-ready 回带）：面板重开后头部下拉的初始显示——
@@ -261,8 +267,11 @@ export function App() {
         setHostOk(!!resp?.ok)
         if (typeof resp?.panelTabId === 'number') anchorTabIdRef.current = resp.panelTabId
         if (resp?.outdated) setOutdated(String(resp.outdated))
+        // r57（#8）：升级软提示复用同一条横幅位（过旧阻断优先，二者互斥）
+        else if (resp?.upgrade) setOutdated(String(resp.upgrade))
         if (resp?.ok) requestLists()
         if (resp?.page) setPageMeta(resp.page)
+        setSessionPage(resp?.sessionPage ?? null)
         setPageUnsupported(!!resp?.pageUnsupported)
         // SW 侧态对齐（r4-ux）：面板切 tab 被收起后重开，React 态已丢——活会话 →
         // 恢复 resumable（追问不再静默降级为全量重总结+抹掉 SW 会话）；在跑任务 →
@@ -494,6 +503,14 @@ export function App() {
               : messages
             return { ...s, taskId: m.taskId, activeId, pending: false, messages: patched, aliveAt: Date.now(), phase: PHASE_LABEL[m.phase] ?? m.phase }
           })
+          break
+        case 'history-pruned':
+          // r57（#24）：prune 实删通知（done 帧后异步到）——localStorage 标记只提示
+          // 首次触顶，之后静默（不随每次总结重复打扰）
+          if (!localStorage.getItem('pd-prune-noticed')) {
+            try { localStorage.setItem('pd-prune-noticed', '1') } catch { /* quota */ }
+            setPruneNotice({ removed: m.removed, limit: m.limit })
+          }
           break
         case 'task-done':
           // r51 A2③：漂移感知排障信号——CLI 版本高于适配器实测时流中会出现未知事件。
@@ -962,7 +979,7 @@ export function App() {
             </button>
           </div>
         )}
-        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} resumable={stream.resumable} sessionAgentId={sessionAgent} pageUnsupported={pageUnsupported} agentsLoaded={agentsLoaded} />
+        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} sessionPage={sessionPage} resumable={stream.resumable} sessionAgentId={sessionAgent} pageUnsupported={pageUnsupported} agentsLoaded={agentsLoaded} pruneNotice={pruneNotice} onDismissPruneNotice={() => setPruneNotice(null)} onOpenSettings={openSettingsData} />
       </main>
 
       {/* r35-motion：overlay 关闭先播 160ms 退场再卸载（useExitValue 期间保持旧值渲染） */}

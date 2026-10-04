@@ -72,6 +72,11 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
               ...(info.unrecognized ? { unrecognized: info.unrecognized } : {}),
             })
           },
+          // r57（#24）：prune 完成晚于 done 帧（终局后异步 IO）——独立轻帧，不阻塞完成反馈
+          onPruned: (removed, limit) => {
+            if (t.superseded) return
+            send({ t: 'history-pruned', taskId: task.taskId, removed, limit })
+          },
           onError: (code, message) => {
             if (tasks.get(task.taskId) === t) tasks.delete(task.taskId)
             if (t.superseded) return

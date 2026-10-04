@@ -5,23 +5,31 @@ import remarkGfm from 'remark-gfm'
 /** 大文本降级阈值（字符）：超过后不再全量 remark parse（主线程会被秒级卡死） */
 const HEAVY = 128 * 1024
 
-/** r25 代码块复制按钮：读 pre 文本写剪贴板，1.5s 已复制态（SVG 图标，禁 emoji） */
+/** r25 代码块复制按钮：读 pre 文本写剪贴板，1.5s 已复制态（SVG 图标，禁 emoji）。
+ *  r57（#15）：剪贴板被拒时不再谎报 ✓——对齐 Onboarding/SummarizeView 的
+ *  copied/copyFail 双态口径（aria-label + title 如实切换） */
 function PreWithCopy({ children }: { children?: ReactNode }) {
   const ref = useRef<HTMLPreElement>(null)
   const [copied, setCopied] = useState(false)
+  const [copyFail, setCopyFail] = useState(false)
   return (
     <pre ref={ref}>
       {children}
       <button
         type="button"
         className="pd-md-copy"
-        aria-label={copied ? '已复制' : '复制代码'}
+        aria-label={copied ? '已复制' : copyFail ? '复制失败——请手动选中复制' : '复制代码'}
+        title={copied ? '已复制' : copyFail ? '复制失败——请手动选中复制' : '复制代码'}
         onClick={async () => {
           try {
             await navigator.clipboard.writeText(ref.current?.textContent ?? '')
-          } catch { /* 剪贴板权限被拒：静默 */ }
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1500)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+          } catch {
+            /* 剪贴板权限被拒/面板失焦：显式失败态，不静默谎报 ✓（r57 #15） */
+            setCopyFail(true)
+            setTimeout(() => setCopyFail(false), 1500)
+          }
         }}
       >
         {copied ? (
@@ -156,7 +164,11 @@ export const StreamMarkdown = memo(function StreamMarkdown({
     return (
       <div ref={scrollerRef}>
         <p className="mb-2 text-[11.5px] leading-[1.9] text-pd-ink-2">
-          {done ? '（内容较长，已切换为纯文本显示——完整 markdown 可用下方「下载」保存）' : '（内容较长，完成后纯文本显示）'}
+          {/* r57（#5）：下方 slice(-40_000) 实际只渲染末尾 4 万字符——「纯文本显示」
+              不点名会让用户以为全文在场。如实声明仅尾部 + 指路下载 */}
+          {done
+            ? '（内容较长，已切换为纯文本显示——仅显示末尾约 4 万字符，更早的内容请用下方「下载」保存后查看）'
+            : '（内容较长，完成后纯文本显示）'}
         </p>
         <pre className="pd-mono whitespace-pre-wrap wrap-anywhere rounded-[4px] bg-pd-code-bg p-2.5 text-[11.5px] leading-[1.6] text-pd-ink">
           {rendered.slice(-40_000)}

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { readFileSync } from 'node:fs'
@@ -77,6 +77,7 @@ function makeCbs() {
     chunks: [] as [string, number][],
     done: null as any,
     errors: [] as [string, string][],
+    pruned: [] as [number, number][],
   }
   return {
     cbs,
@@ -86,6 +87,7 @@ function makeCbs() {
         onMeta: (info) => (cbs.meta = info),
         onChunk: (text, seq) => cbs.chunks.push([text, seq]),
         onDone: (info) => (cbs.done = info),
+        onPruned: (removed, limit) => cbs.pruned.push([removed, limit]),
         onError: (code, message) => cbs.errors.push([code, message]),
       }),
   }
@@ -168,6 +170,36 @@ describe('Task 状态机', () => {
     }
     AGENTS[0].buildArgs = orig
     await rm(cbs.done.historyPath, { force: true }).catch(() => {})
+    await rm(join(script, '..'), { recursive: true, force: true })
+  }, 30_000)
+
+  // r57（#24）：prune 实删上报 onPruned——触顶静默永久删除无任何提示会侵蚀
+  // 「历史回查」信任；panel 的首触顶单次提示链（history-pruned 帧）由此起跳
+  it('prune 实删超限旧历史时上报 onPruned（removed/limit），未触顶不上报', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const script = await FAKE_CLI('ok')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    // 预置 10 个旧历史（fakeHome 隔离树）：本轮落盘 1 个 → 总 11、limit 10 → 实删 1
+    const root = join(fakeHome, '.ai-page-dive', 'history', '2026', '09', '01')
+    await mkdir(root, { recursive: true })
+    for (let i = 0; i < 10; i++) await writeFile(join(root, `${String(i).padStart(6, '0')}-old.md`), 'x', 'utf8')
+    const { task: mk, cbs } = makeCbs(); const task = mk('prune-1')
+    task.start({ taskId: 'prune-1', agentId: 'claude', workflow: 'quick', page: PAGE as any, historyLimit: 10 })
+    task.appendContent(BODY, true)
+    await task.run()
+    await new Promise(r => setTimeout(r, 300)) // 等 persist → prune 异步链
+    expect(cbs.pruned).toEqual([[1, 10]])
+    // 未触顶（预置清空，limit 内）：不上报
+    await rm(root, { recursive: true, force: true })
+    const { task: mk2, cbs: cbs2 } = makeCbs(); const task2 = mk2('prune-2')
+    task2.start({ taskId: 'prune-2', agentId: 'claude', workflow: 'quick', page: PAGE as any, historyLimit: 200 })
+    task2.appendContent(BODY, true)
+    await task2.run()
+    await new Promise(r => setTimeout(r, 300))
+    expect(cbs2.pruned).toEqual([])
+    AGENTS[0].buildArgs = orig
     await rm(join(script, '..'), { recursive: true, force: true })
   }, 30_000)
 

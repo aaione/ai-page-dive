@@ -50,7 +50,9 @@ let currentTask: {
 // 浏览器会话存活，SW 冷启动时恢复（restoreSession）。
 // historyPath：追问轮 append 进同一文件——历史详情还原完整多轮对话。
 // sessionId 可为空串：codex 不产 sessionId，仍归档 historyPath 供面板重开还原 UI（r47-ux）
-type Session = { agentId: string; sessionId: string; historyPath?: string }
+// r57（#19）：page = 会话来源页（首轮总结时的顶层锚）——重开面板时 ctxAnchor 用它
+// 快照，不随页签内导航漂移成「错标新页标题」
+type Session = { agentId: string; sessionId: string; historyPath?: string; page?: { url: string; title: string } }
 const sessions = new Map<number, Session>()
 
 /** 面板收起期间错过的任务终局（r53 #5 / r54 #5）：task-error 广播时面板无接收端即
@@ -419,6 +421,14 @@ async function handleMessage(msg: any): Promise<unknown> {
         r.ok && r.hostVersion && versionLt(r.hostVersion, MIN_HOST_VERSION)
           ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），请在终端执行：npm i -g @aaione/ai-page-dive@${chrome.runtime.getManifest().version} && ai-page-dive install --ext-id ${chrome.runtime.id}`
           : undefined
+      // r57（#8）：升级触达——host ≥ 下限但落后于扩展钉版时给非阻断软提示（过旧
+      // 阻断横幅优先）。此前升级无任何触达：已装机用户的 host 永远收不到修复，
+      // 而 Onboarding 承诺「仅此一次」
+      const extV = chrome.runtime.getManifest().version
+      const upgrade =
+        !outdated && r.ok && r.hostVersion && versionLt(r.hostVersion, extV)
+          ? `本机组件有新版本（${r.hostVersion} → ${extV}），建议升级：npm i -g @aaione/ai-page-dive@${extV} && ai-page-dive install --ext-id ${chrome.runtime.id}`
+          : undefined
       // 面板收起期间错过的任务终局一次性补发（r53 #5）：面板无接收端时广播静默丢，
       // 重开面板永远停在 loading。消费即清——防重复补发
       const missed = panelTabId !== null ? lastTerminals.get(panelTabId) : undefined
@@ -436,6 +446,8 @@ async function handleMessage(msg: any): Promise<unknown> {
         ...r,
         ...(r.ok ? {} : { nmError: nmPort.lastError }),
         ...(outdated ? { outdated } : {}),
+        // r57（#8）：升级软提示（与过旧阻断横幅互斥，panel 复用同一横幅位）
+        ...(upgrade ? { upgrade } : {}),
         // r53 #5：面板收起期间错过的任务终局——panel 据此补一次错误呈现，不再零痕迹
         ...(missed ? { missedTerminal: missed } : {}),
         page: pageMeta(),
@@ -455,6 +467,9 @@ async function handleMessage(msg: any): Promise<unknown> {
               // panel 自动 history-read 还原完整多轮对话，而不是一句
               // 「此前对话已清空」（切页签回来内容消失感的另一半根因）
               ...(sess.historyPath ? { historyPath: sess.historyPath } : {}),
+              // r57（#19）：会话来源页透出——panel ctxAnchor 优先快照它（活 pageMeta
+              // 是导航后新页，会把「对话上下文」错标成新页标题）
+              ...(sess.page ? { sessionPage: sess.page } : {}),
             }
           : {}),
         ...(currentTask && currentTask.tabId === panelTabId ? { activeTask: { taskId: currentTask.taskId, startedAt: currentTask.startedAt } } : {}),
@@ -535,6 +550,21 @@ async function handleMessage(msg: any): Promise<unknown> {
  *  插入序 Set，cap 16 防无界 */
 const cancelledTaskIds = new Set<string>()
 
+/** SW 合成终局（取消/断连/丢片）的统一出口（r57 #4）：广播 + 收件箱双写。
+ *  此前三处只广播——面板收起期间无接收端即静默丢，重开零交代（连坐取消甚至
+ *  显得凭空终止）。收件箱写不查 cancelledTaskIds：那道闸拦的是 host 迟到的
+ *  同义终局帧（r46 C2 防旧会话复活），SW 自合成帧恰是面板错过的唯一交代 */
+function emitTerminal(
+  frame: { t: 'task-error'; taskId: string; code?: string; message?: string; tabId?: number },
+  ownerTab: number | null | undefined,
+) {
+  chrome.runtime.sendMessage(frame).catch(() => {})
+  if (ownerTab !== null && ownerTab !== undefined && ownerTab >= 0) {
+    lastTerminals.set(ownerTab, { ...frame, tabId: ownerTab })
+    persistSession()
+  }
+}
+
 /** 取消进行中任务（new-session 复用）；返回 undefined 表示无任务在跑 */
 function cancelCurrent() {
   if (currentTask) {
@@ -545,17 +575,19 @@ function cancelCurrent() {
     // 同义帧会被面板 finished 列表拒收——双窗口下也绝不错终局另一面板的新任务。
     // r16：被砍任务属别的页签时（本页签起新总结连坐）文案点名来源页——被折叠的
     // 旧锚面板切回时能看到「谁被取消了」，不再是无解释的凭空终止
+    // r57（#4）：经 emitTerminal 入箱——被折叠面板重开也能看到这次取消
     const cross = panelTabId !== null && currentTask.tabId !== panelTabId
     const title = (currentTask.page.title || '其他页签').slice(0, 24)
-    chrome.runtime
-      .sendMessage({
+    emitTerminal(
+      {
         t: 'task-error',
         taskId: currentTask.taskId,
         code: 'cancelled',
         message: cross ? `已取消「${title}」页签的在跑任务` : '已取消',
         tabId: currentTask.tabId,
-      })
-      .catch(() => {})
+      },
+      currentTask.tabId,
+    )
     currentTask = null
     clearRunningTask() // r55（#10）
     return { ok: true }
@@ -616,9 +648,18 @@ nmPort.onMessage((m) => {
     if (currentTask.expectedChars !== undefined && msg.chars !== currentTask.expectedChars) {
       console.warn(`[pd] content mismatch: sent ${currentTask.expectedChars}, host got ${msg.chars}`)
       nmPort.send({ t: 'task-cancel', taskId: msg.taskId })
-      chrome.runtime
-        .sendMessage({ t: 'task-error', taskId: msg.taskId, code: 'content-mismatch', message: '正文传输不完整（NM 丢片），已取消——请重试' })
-        .catch(() => {})
+      // r57（#14）：此处提前 return，走不到下方统一盖戳——帧须自带 tabId 邮戳
+      // （跨页签不串台）；#4：经 emitTerminal 入箱，面板收起期间丢片终局不蒸发
+      emitTerminal(
+        {
+          t: 'task-error',
+          taskId: msg.taskId,
+          code: 'content-mismatch',
+          message: '正文传输不完整（NM 丢片），已取消——请重试',
+          tabId: currentTask.tabId,
+        },
+        currentTask.tabId,
+      )
       currentTask = null
       clearRunningTask() // r55（#10）
     }
@@ -648,8 +689,14 @@ nmPort.onMessage((m) => {
         // historyPath 只在 task-done 帧携带（meta 帧无此字段）——窄化后 tsc 揪出的
         // 真判别，旧 as any 把它藏成「运行时恒 undefined 的宽松读」
         const hp = (msg.t === 'task-done' ? msg.historyPath : undefined) || prev?.historyPath
+        // r57（#19）：来源页随会话归档——首轮 task-start 的 currentTask.page 即顶层
+        // 锚；追问轮 page 是「追问」占位（url 空），保留 prev 来源页不覆盖
+        const pg =
+          (currentTask && msg.taskId === currentTask.taskId && currentTask.page.url
+            ? { url: currentTask.page.url, title: currentTask.page.title }
+            : undefined) || prev?.page
         if (sid || hp) {
-          sessions.set(tabId, { agentId: owner, sessionId: sid, historyPath: hp })
+          sessions.set(tabId, { agentId: owner, sessionId: sid, historyPath: hp, page: pg })
           persistSession()
         }
       }
@@ -702,12 +749,21 @@ nmPort.onDisconnect(() => {
   // r6-sec：带断连时在跑任务的 taskId（panel 据此拒收迟到帧、不误伤重 spawn 后的
   // 新一轮）；同步清 currentTask——断连 = 该连接上的任务必死（Chrome 收割 NM host
   // 进程树），句柄残留会让后续 cancel 发向死连接、新任务误判「已有在跑」
-  const tid = currentTask?.taskId
+  const dying = currentTask
+  const tid = dying?.taskId
   currentTask = null
   clearRunningTask() // r55（#10）：断连 = 该连接上的任务必死，指针不留
   chrome.runtime
     .sendMessage({ t: '__host-disconnected', ...(tid ? { taskId: tid } : {}) } as HostToExt)
     .catch(() => {})
+  // r57（#4）：断连终局也入箱——面板收起时 host 崩，__host-disconnected 广播同样
+  // 无接收端，重开只见「探测失败」而无「在跑任务被断连杀死」的交代
+  if (dying) {
+    emitTerminal(
+      { t: 'task-error', taskId: dying.taskId, code: 'host-disconnected', message: '本机组件连接中断，任务已终止——请重试' },
+      dying.tabId,
+    )
+  }
 })
 
 /** 追问轮：上下文在 CLI 会话里，host 直接 resume，无提取/无正文 */

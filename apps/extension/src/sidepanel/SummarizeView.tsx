@@ -16,6 +16,13 @@ interface Props {
   beginTurn: (text: string, attachments?: { name: string; kind?: 'text' | 'image' }[], skills?: string[], wf?: string) => void
   beginSession: () => void
   pageMeta: PageMeta | null
+  /** r57（#19）：SW 会话来源页（随 sessions 持久化，panel-ready 带回）——ctxAnchor
+   *  优先快照它；活 pageMeta（导航即变）仅作无会话数据时兜底 */
+  sessionPage?: { url: string; title: string } | null
+  /** r57（#24）：prune 首次触顶单次提示（null = 不显示）；dismiss 与跳设置共用清空 */
+  pruneNotice?: { removed: number; limit: number } | null
+  onDismissPruneNotice?: () => void
+  onOpenSettings?: () => void
   /** 会话是否可追问（CLI 回带过 sessionId）：codex 无 sessionId → false，关掉假追问入口 */
   resumable: boolean
   /** SW 侧活会话归属的 CLI（panel-ready 回带）：面板重开后头部下拉初始显示与
@@ -97,7 +104,7 @@ export function useSetting(key: string): [string, (v: string) => void] {
  * 重采样后同步更新此处）——低于即在下拉内联提示；只警告不硬拒跑（与零配置支柱一致） */
 const MIN_VERSIONS: Record<string, string> = { claude: '2.1.162', codex: '0.156.1' }
 
-export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, resumable, sessionAgentId, pageUnsupported, agentsLoaded }: Props) {
+export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, sessionPage, pruneNotice, onDismissPruneNotice, onOpenSettings, resumable, sessionAgentId, pageUnsupported, agentsLoaded }: Props) {
   const disabledClis = useDisabledClis()
   const getEnabledSkills = useEnabledSkills()
   const [sumLang] = useSetting('pd-sum-lang')
@@ -246,12 +253,18 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   // r56（#12）：resume 态的上下文锚——hasSession 建立时快照来源页 title/url。page-meta
   // 是活数据（页签内导航即更新），不锚定的话 tips 会把「对话上下文」错标成新页标题，
   // 而 CLI --resume 的内容仍是快照页；firstId 变化（新对话/重开还原）时重置重捕
+  // r57（#19）：优先 SW 会话来源页（sessions 持久化）——「关面板→页签导航→重开」
+  // 路径下活 pageMeta 已是新页，#12 的锚定在此路径原样复发；sessionPage 才是
+  // CLI --resume 真正的内容来源页
   const firstId = messages[0]?.id
   const [ctxAnchor, setCtxAnchor] = useState<{ title: string; url: string } | null>(null)
   useEffect(() => { setCtxAnchor(null) }, [firstId])
   useEffect(() => {
-    if (canFollowUp && !ctxAnchor && pageMeta) setCtxAnchor({ title: pageMeta.title, url: pageMeta.url })
-  }, [canFollowUp, ctxAnchor, pageMeta])
+    if (canFollowUp && !ctxAnchor) {
+      const src = sessionPage ?? (pageMeta ? { title: pageMeta.title, url: pageMeta.url } : null)
+      if (src) setCtxAnchor(src)
+    }
+  }, [canFollowUp, ctxAnchor, pageMeta, sessionPage])
 
   const wfs = useMemo(() => {
     const order: Record<string, number> = { quick: 0, deep: 1, paper: 2 }
@@ -685,6 +698,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           usableCount={usable.length}
           hasSession={hasSession}
           pageUnsupported={pageUnsupported}
+          pruneNotice={pruneNotice}
+          onDismissPruneNotice={onDismissPruneNotice}
+          onOpenSettings={onOpenSettings}
           onStart={send}
           onCancel={cancel}
           onAttach={() => fileRef.current?.click()}
@@ -1017,10 +1033,15 @@ function ActionBar({
   input, workflowNotice, noFollowUpHint, onInputChange, inputRef,
   running, usableCount, hasSession, pageUnsupported,
   onStart, onCancel, onAttach, attachCount, attachRef, onPickFiles,
+  pruneNotice, onDismissPruneNotice, onOpenSettings,
 }: {
   input: string
   /** 非空 = 输入自定义问题时提示所选模式将被替代（r5-ux） */
   workflowNotice?: string
+  /** r57（#24）：prune 首次触顶单次提示（null = 不显示）；两动作共用清空 */
+  pruneNotice?: { removed: number; limit: number } | null
+  onDismissPruneNotice?: () => void
+  onOpenSettings?: () => void
   /** true = 当前 CLI 定稿后不可追问（codex 无 sessionId），输入框旁提示新提问独立成轮 */
   noFollowUpHint?: boolean
   onInputChange: (v: string) => void
@@ -1062,6 +1083,18 @@ function ActionBar({
       {noFollowUpHint && (
         <p role="note" className="pd-bar-note">
           此 CLI 暂不支持追问：新提问将开始全新总结（不含以上对话）
+        </p>
+      )}
+      {/* r57（#24）：prune 首次触顶单次提示——最早历史已被永久清理，指路可调 */}
+      {pruneNotice && (
+        <p role="note" className="pd-bar-note">
+          历史已达保留上限 {pruneNotice.limit} 条，最早的 {pruneNotice.removed} 条已自动清理——
+          <button type="button" className="pd-note-link" onClick={() => { onDismissPruneNotice?.(); onOpenSettings?.() }}>
+            去设置调大
+          </button>
+          <button type="button" className="pd-note-link" onClick={() => onDismissPruneNotice?.()}>
+            知道了
+          </button>
         </p>
       )}
       <div className="pd-action-bar-inner">

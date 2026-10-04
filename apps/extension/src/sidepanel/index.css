@@ -2129,6 +2129,17 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   color: var(--pd-text-1);
 }
 
+/* r57（#24）：pd-bar-note 内的文本动作链（prune 触顶提示的「去设置调大/知道了」） */
+.pd-note-link {
+  background: none;
+  border: none;
+  padding: 0 0 0 4px;
+  font: inherit;
+  color: var(--pd-accent, #4f7cff);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* r47-audit：前庭保护（WCAG 2.3.3）——系统「减少动态」下进场动效与按压反馈全退场。
    本块必须置于文件末尾（所有动画声明之后）且加 !important：@media 不增加优先级，
    同特异性时源顺序靠后者胜，早置或漏 !important 都会让降级被应用点覆盖（原块在

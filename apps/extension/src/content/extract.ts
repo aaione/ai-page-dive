@@ -20,6 +20,16 @@ export function approxTokensOf(s: string): number {
   return cjk + Math.ceil((s.length - cjk) / 4)
 }
 
+/** r57（#3）：shadow 兜底文本的「像正文」判定（双启发式）：体量 ≥1000 字符 +
+ *  非空行平均行长 ≥20。UI 组件杂讯（播放器/菜单按钮）是短语枚举，两项皆短；
+ *  真正文无论 CJK/拉丁，段落行长轻松过线。 */
+export function looksLikeProse(s: string): boolean {
+  if (s.length < 1000) return false
+  const lines = s.split('\n').filter((l) => l.trim())
+  if (!lines.length) return false
+  return lines.reduce((a, l) => a + l.length, 0) / lines.length >= 20
+}
+
 /** shadow DOM 文本收集：cloneNode/innerText 都进不去 shadow root，正文整体渲染
  * 在 shadow 里的站点会拿到壳。深度受限防深嵌套 DoS（采集器跑在页面进程里） */
 function collectShadowText(root: Element, depth = 0): string {
@@ -109,8 +119,16 @@ export function extractPage(): PageContent | { error: string } {
     // 站点 Readability 拿到的是壳）→ 正文全文逐字兜底，截断防数 MB 正文烧穿订阅
     let originalChars = 0
     if (!markdown.trim()) {
+      // r57（#3）：shadow 兜底「非空即正文」会放行组件杂讯——正文在 light DOM 的
+      // 站点上 Readability 失败时，shadow 里常是播放器/菜单短语，几百字符的按钮
+      // 枚举被 CLI 总结得有模有样，比明确失败更误导（与丢片同罪）。looksLikeProse
+      // 双启发式过线且不短于 innerText 才采纳 shadow 文本
+      // jsdom 无 innerText（真实 Chrome 才有）——?? '' 保持兜底链可求值
+      const innerText = document.body.innerText ?? ''
       const shadowText = collectShadowText(document.body)
-      const source = article?.textContent || shadowText || document.body.innerText
+      const source =
+        article?.textContent ||
+        (looksLikeProse(shadowText) && shadowText.length >= innerText.length ? shadowText : innerText)
       originalChars = source.length
       markdown = source.slice(0, MAX_CONTENT)
     } else {
