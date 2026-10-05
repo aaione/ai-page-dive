@@ -41,6 +41,13 @@ let currentTask: {
   startedAt: number
 } | null = null
 
+// r58（#28）：正文对账超时兜底——done 片或回执被吞时 host 侧无超时（等正文到
+// 齐才开跑/回执），SW 侧也无则三重放大：host 心跳永生保活 SW + panel 无限
+// loading + CLI 永不启动。发送完成后起表，content-received（齐额或 mismatch
+// 都算到达）即清；超时未到按传输中断终局。仅等回执，与 CLI 运行时长无关
+export const RECONCILE_TIMEOUT_MS = 15_000
+let reconcileTimer: ReturnType<typeof setTimeout> | null = null
+
 // 各页签最近完成的会话（追问用）：agent + CLI 会话 id + 首轮历史文件路径。
 // r12 按页签归档：会话跟「总结目标页签」走——A 页签的会话绝不串进 B 页签的
 // 新对话（B 独立开新总结），切回 A 追问仍接原会话。tab 关闭即清理。
@@ -620,7 +627,11 @@ function cancelCurrent() {
     clearRunningTask() // r55（#10）
     return { ok: true }
   }
-  return undefined
+  // r58（#30）：SW 指针空 ≠ host 侧空——扩展 reload 折叠指针后 host 可能还在跑
+  //（迟到终局/ext-restarted 幻影对账依赖 pdRunningTask，但那只在 SW 存活期内可靠）。
+  // 无 taskId 的 cancel 让 host 取本连接最近任务，白烧订阅额度的空跑就此闭合
+  nmPort.send({ t: 'task-cancel' })
+  return { ok: true }
 }
 
 /** 新任务起跑前统一收割旧任务：不取消则旧取消句柄被覆盖丢失，
@@ -673,6 +684,7 @@ nmPort.onMessage((m) => {
   // 正文完整性回执：与发送侧 total 对账，不一致 = NM 途中丢片——取消任务。
   // 半截正文会被 CLI 总结得「有模有样」，比直接失败更误导
   if (msg?.t === 'content-received' && currentTask && msg.taskId === currentTask.taskId) {
+    if (reconcileTimer) { clearTimeout(reconcileTimer); reconcileTimer = null } // r58（#28）：回执到达即对账通道活着
     if (currentTask.expectedChars !== undefined && msg.chars !== currentTask.expectedChars) {
       console.warn(`[pd] content mismatch: sent ${currentTask.expectedChars}, host got ${msg.chars}`)
       // r58（#6）：登记取消台账——host 迟到的同义终局（cancelled/timeout）不得经 :744
@@ -1042,5 +1054,20 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // 回执对账挂 currentTask.expectedChars：content-received 到达时校验
   currentTask.content = ''
   currentTask.expectedChars = total
+  // r58（#28）：对账超时兜底——done 片或回执被吞时 host 侧无超时（等正文齐才开跑），
+  // 三重放大：host 心跳永生保活 SW + panel 无限 loading + CLI 永不启动。仅等回执，
+  // 与 CLI 运行时长无关；安全门（taskId 比对）让过期定时器自然失效，无需到处清理
+  reconcileTimer = setTimeout(() => {
+    if (!currentTask || currentTask.taskId !== taskId) return
+    cancelledTaskIds.add(taskId)
+    if (cancelledTaskIds.size > 16) for (const id of cancelledTaskIds) { cancelledTaskIds.delete(id); break }
+    nmPort.send({ t: 'task-cancel', taskId })
+    emitTerminal(
+      { t: 'task-error', taskId, code: 'content-mismatch', message: '正文传输确认超时（NM 通道异常），已取消——请重试', tabId: tab.id! },
+      tab.id!,
+    )
+    currentTask = null
+    clearRunningTask()
+  }, RECONCILE_TIMEOUT_MS)
   return { ok: true, taskId, agentId } // r11：panel 对齐实际执行 CLI（与追问轮返回形态一致）
 }

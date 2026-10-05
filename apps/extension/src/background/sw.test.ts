@@ -601,4 +601,41 @@ describe('sw.ts 回归网', () => {
     expect(resp).toEqual({ error: 'frame-too-large' })
     expect(h.calls.nmSent).toEqual([])
   })
+
+  // r58（#30）：SW 指针空 ≠ host 侧空——扩展 reload 折叠指针后 host 可能还在跑。
+  // idle 的 cancel 发无 taskId 的 task-cancel 让 host 取本连接最近任务；任务在跑
+  // 时仍带 taskId（精确收割不误杀）
+  it('r58 #30：cancel 空闲发无 taskId task-cancel；在跑带 taskId', async () => {
+    const h = await boot()
+    expect(await h.fireMessage({ t: 'cancel' })).toEqual({ ok: true })
+    expect(h.calls.nmSent).toContainEqual({ t: 'task-cancel' }) // 无 taskId——host 取最近任务
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect(r.ok).toBe(true)
+    await h.fireMessage({ t: 'cancel' })
+    expect(h.calls.nmSent).toContainEqual({ t: 'task-cancel', taskId: r.taskId })
+  })
+
+  // r58（#28）：正文对账超时兜底——回执被吞（done 片或 content-received 丢失）时
+  // host 侧无超时（等正文齐才开跑），无 SW 侧兜底则三重放大：host 心跳永生保活
+  // SW + panel 无限 loading + CLI 永不启动。15s 未到即取消终局；回执按期到达撤表
+  it('r58 #28：对账超时 15s 未到 → cancel + content-mismatch 终局；回执到达 → 撤表不误杀', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true }) // 真实等待 15s 太慢；advance 快进，微任务链不受影响
+    try {
+      const h = await boot()
+      const r1 = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+      expect(r1.ok).toBe(true)
+      vi.advanceTimersByTime(15_000) // 回执被吞的极端通道
+      expect(h.calls.nmSent).toContainEqual({ t: 'task-cancel', taskId: r1.taskId })
+      expect(h.calls.sent.find((m) => m.t === 'task-error' && m.code === 'content-mismatch')).toMatchObject({ taskId: r1.taskId })
+      // 对照组：回执按期到达（默认正文 'x' → total=1）→ 撤表，快进后不再误杀
+      const r2 = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+      expect(r2.ok).toBe(true)
+      h.fireNm({ t: 'content-received', taskId: r2.taskId, chars: 1 })
+      vi.advanceTimersByTime(15_000)
+      expect(h.calls.nmSent.filter((m) => m.t === 'task-cancel' && m.taskId === r2.taskId)).toEqual([])
+      expect(h.calls.sent.filter((m) => m.t === 'task-error' && m.taskId === r2.taskId)).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

@@ -39,8 +39,7 @@ export function createFrameReader(onMsg: (obj: any) => void, maxLength = NM_MAX,
         // host（多附件可组出 >1MB 单帧）。r6-sec：丢缓冲降级同样不可救——失步后
         // 后续字节被解析成随机帧头，协议永久毒化，host 成哑巴直到 SW 看门狗
         // 120s 假超时。失步唯一正确响应是终结本进程：断连可由 SW 重 spawn 自愈
-        // （panel 收尾气泡提示重试），失步不可自愈。优先走 onDesync（收割在跑的
-        // CLI 进程树再退，防泄漏空烧订阅），未传时裸退出
+        //（失步不可自愈）。优先 onDesync（收割在跑的 CLI 进程树再退），未传时裸退出
         console.error(`[pd] frame length ${len} exceeds max ${maxLength}, NM stream desynced — terminating host`)
         desynced = true
         if (onDesync) onDesync()
@@ -50,8 +49,9 @@ export function createFrameReader(onMsg: (obj: any) => void, maxLength = NM_MAX,
       if (buf.length < 4 + len) break
       try {
         onMsg(JSON.parse(buf.subarray(4, 4 + len).toString('utf8')))
-      } catch {
-        // 单条 JSON 损坏：丢弃该帧，不崩协议
+      } catch (e) {
+        // r58（#27）：分型如实报——handler 同步异常此前伪装「JSON 损坏」被静默吞帧（r54 #10 可观测）；丢帧不崩协议
+        console.error('[pd] frame dropped:', e instanceof SyntaxError ? 'bad json' : `handler threw: ${e}`)
       }
       buf = buf.subarray(4 + len)
     }

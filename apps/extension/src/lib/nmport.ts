@@ -24,6 +24,9 @@ export class NmPort {
       this.port = null
       return false
     }
+    // r58（#29）：断连错误不跨代——上一代的 lastError 若不清，重连后 probe 超时
+    // 会把旧死因当本次错误上报（诊断被上一代崩溃误导）
+    this.lastDisconnectError = ''
     this.port.onMessage.addListener((m: HostToExt) => {
       for (const h of this.handlers) h(m)
     })

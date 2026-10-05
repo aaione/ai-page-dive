@@ -102,7 +102,7 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         break
       }
       case 'task-cancel': {
-        tasks.get(msg.taskId)?.cancel()
+        tasks.get(msg.taskId ?? [...tasks.values()].at(-1)?.taskId ?? '')?.cancel() // r58（#30）：无 taskId = 本连接最近任务（SW 指针丢失但 host 在跑时的通道闭合；'' 恒查无 = no-op）
         break
       }
       case 'history-list':

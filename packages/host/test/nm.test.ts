@@ -38,4 +38,31 @@ describe('NM 帧编解码', () => {
     expect(desynced).toEqual([1])
     expect(got).toEqual([])
   })
+
+  // r58（#27）：handler 同步异常此前与 JSON 损坏共用一个 catch——真实异常被伪装成
+  // 「bad json」静默吞帧（r54 #10 可观测），排障方向被带偏。分型上报 + 缓冲照常前进
+  it('handler 同步异常：分型上报（handler threw ≠ bad json）+ 缓冲前进不吞后续帧（r58 #27）', () => {
+    const errs: string[] = []
+    const origErr = console.error
+    console.error = (...a: unknown[]) => errs.push(a.map(String).join(' '))
+    try {
+      const got: any[] = []
+      const feed = createFrameReader((o) => {
+        if (o.t === 'boom') throw new Error('handler kaboom')
+        got.push(o)
+      })
+      // 手工组坏 JSON 帧（encodeFrame 只产合法 JSON）：SyntaxError 分型
+      const garbage = Buffer.from('{"broken')
+      const head = Buffer.alloc(4)
+      head.writeUInt32LE(garbage.length, 0)
+      feed(Buffer.concat([head, garbage]))
+      feed(encodeFrame({ t: 'boom' })) // handler 同步抛错：非 SyntaxError 分型
+      feed(encodeFrame({ t: 'ping' })) // 前两帧的异常都不得吃掉缓冲——本帧照常解出
+      expect(got).toEqual([{ t: 'ping' }])
+      expect(errs.some((e) => e.includes('bad json'))).toBe(true)
+      expect(errs.some((e) => e.includes('handler threw:') && e.includes('handler kaboom'))).toBe(true)
+    } finally {
+      console.error = origErr
+    }
+  })
 })

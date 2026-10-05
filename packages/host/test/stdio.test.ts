@@ -199,4 +199,27 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'完成',usage:{
       await rm(fakeHome, { recursive: true, force: true })
     }
   }, 15_000)
+
+  // r58（#30）：SW 侧任务指针丢失（扩展 reload 折叠）而 host 侧还在跑时，无 taskId
+  // 的 task-cancel 是唯一收割通道——修复前 get(undefined) 恒 no-op，CLI 空跑烧额度
+  it('无 taskId 的 task-cancel 收割本连接最近任务（r58 #30）', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const dir = await mkdtemp(join(tmpdir(), 'pd-nc-'))
+    const script = join(dir, 'cli.mjs')
+    await writeFile(script, `setTimeout(() => console.log(JSON.stringify({type:'result',is_error:false,result:'ok'})), 60000)`, 'utf8')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    try {
+      const { handle, tasks } = makeSession()
+      handle({ t: 'task-start', task: { taskId: 'orphan', agentId: 'claude', page: PAGE as any } })
+      await new Promise(r => setTimeout(r, 400)) // spawn 起跑
+      handle({ t: 'task-cancel' }) // 无 taskId
+      await new Promise(r => setTimeout(r, 800)) // SIGTERM → 终局自删
+      expect(tasks.has('orphan')).toBe(false)
+    } finally {
+      AGENTS[0].buildArgs = orig
+      await rm(dir, { recursive: true, force: true })
+    }
+  }, 15_000)
 })

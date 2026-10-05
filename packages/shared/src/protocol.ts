@@ -36,7 +36,9 @@ export interface TaskContentMsg {
 
 export interface TaskCancelMsg {
   t: 'task-cancel'
-  taskId: string
+  /** r58（#30）：可缺省——SW 侧任务指针丢失（扩展 reload）而 host 侧还在跑时，
+   *  无 taskId 的 cancel 让 host 取本连接最近任务（per-connection 单任务模型） */
+  taskId?: string
 }
 
 export interface HistoryListMsg {
