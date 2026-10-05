@@ -9,8 +9,7 @@ import { codexDef } from './codex.js'
 
 const execFileP = promisify(execFile)
 
-// r40 下架 → r55 删除（DECISIONS.md D5 2026-10-01 修订：Gatekeeper 死结无解期，
-// 适配器文件删除守 host 行数红线，上游修复打包形态后从 git 历史恢复）
+// r40 下架 → r55 删除（D5 2026-10-01 修订：Gatekeeper 死结；上游修复后从 git 历史恢复）
 export const AGENTS: AgentDef[] = [claudeDef, codexDef]
 
 /** r11：HOME 残缺（空串/缺失）时从 passwd 推导——homedir() 仅 HOME 完全缺失才走
@@ -68,7 +67,7 @@ export function getAgent(id: string): AgentDef | undefined {
   return AGENTS.find((a) => a.id === id)
 }
 
-async function resolveBin(def: AgentDef): Promise<string | undefined> {
+export async function resolveBin(def: AgentDef): Promise<string | undefined> { // r59（审计 T3）：导出供 task spawn 复用
   const bins = [def.bin, ...(def.fallbackBins ?? [])]
   for (const b of bins) {
     try {

@@ -120,6 +120,7 @@ export async function saveWorkflow(input: {
   await mkdir(dir, { recursive: true, mode: 0o700 })
   // r58（#9）：recursive mkdir 对已存在目录 mode 是 no-op——存量装机 0755 靠 chmod 收敛（同 agent-workspace 谱系）
   await chmod(dir, 0o700).catch(() => {})
+  await chmod(USER_DIR, 0o700).catch(() => {}) // r59（审计 T2）：根同收敛——mkdir 不罩已存在的 USER_DIR
   const final = join(dir, 'WORKFLOW.md')
   // r58（#33）：副本不存在（已删/内置首存）走 wx 撞名守卫——rename 无条件覆盖会绕过 r54 #8
   // 并发守卫；存在则覆盖自己见过的副本（并发编辑后存者胜为编辑器通例，版本凭据 v2+）

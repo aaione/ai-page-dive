@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { readFileSync } from 'node:fs'
@@ -216,6 +216,30 @@ describe('Task 状态机', () => {
     for (const d of chain) {
       expect((await stat(d)).mode & 0o777, `${d} 应为 0700`).toBe(0o700)
     }
+    AGENTS[0].buildArgs = orig
+    await rm(cbs.done.historyPath, { force: true }).catch(() => {})
+    await rm(join(script, '..'), { recursive: true, force: true })
+  }, 30_000)
+
+  // r59（审计 T2）：附件根与 YYYYMM 的存量 0755 收敛——mkdir mode 罩不住已存在目录（#15 同谱系）
+  it('附件根/YYYYMM 存量 0755 在附件落盘时被 chmod 收敛到 0700', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const script = await FAKE_CLI('ok')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    const ym = new Date().toISOString().slice(0, 7).replace('-', '')
+    const attRoot = join(fakeHome, '.ai-page-dive', 'attachments')
+    await mkdir(join(attRoot, ym), { recursive: true })
+    await chmod(attRoot, 0o755)
+    await chmod(join(attRoot, ym), 0o755)
+    const { task: mk, cbs } = makeCbs(); const task = mk()
+    task.start({ taskId: `attconv-${process.pid}`, agentId: 'claude', workflow: 'quick', page: PAGE as any, attachments: [{ name: 'a.txt', text: '内容' }] as any })
+    task.appendContent(BODY, true)
+    await task.run()
+    expect(cbs.done?.isError).toBe(false)
+    expect((await stat(attRoot)).mode & 0o777, attRoot).toBe(0o700)
+    expect((await stat(join(attRoot, ym))).mode & 0o777).toBe(0o700)
     AGENTS[0].buildArgs = orig
     await rm(cbs.done.historyPath, { force: true }).catch(() => {})
     await rm(join(script, '..'), { recursive: true, force: true })

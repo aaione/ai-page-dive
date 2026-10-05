@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { attachMarkers } from '../src/prompt.js'
-import { appendHistoryTurn, buildHistoryPath, deleteHistory, escapePd, escapeYamlForTest, extractSnippet, pruneHistory, readHistory, saveHistory, slugify } from '../src/history.js'
+import { appendHistoryTurn, buildHistoryPath, deleteHistory, escapePd, escapeYamlForTest, extractSnippet, listHistory, pruneHistory, readHistory, saveHistory, slugify } from '../src/history.js'
 
 // history ROOT 指向 ~/.ai-page-dive——测试隔离：monkeypatch homedir 不可行（模块级常量），
 // 故本组只测纯函数与写入格式；listHistory 的扫描逻辑由 M3 冒烟覆盖。
@@ -319,6 +319,18 @@ describe('r56：肥 frontmatter 头 + 存量 0755 收敛', () => {
     for (const d of [root, join(root, 'history'), year, month, day]) await chmod(d, 0o755)
     await saveHistory(file, { title: 'T', url: 'u', agent: 'claude', status: 'done' }, 'x')
     for (const d of [root, join(root, 'history'), year, month, day]) {
+      expect((await stat(d)).mode & 0o777, d).toBe(0o700)
+    }
+  })
+
+  it('r59 审计T2：list 顺带收敛存量 0755 的旧年/月/日——非本次写入路径也收敛', async () => {
+    const histRoot = join(fakeHome, '.ai-page-dive', 'history')
+    const old = join(histRoot, '2025', '12', '01')
+    await mkdir(old, { recursive: true })
+    await writeFile(join(old, '00000001-pd.md'), '---\ntitle: 旧\nagent: claude\nstatus: done\nts: 1\n---\n正文', 'utf8')
+    for (const d of [histRoot, join(histRoot, '2025'), join(histRoot, '2025', '12'), old]) await chmod(d, 0o755)
+    expect((await listHistory()).length).toBe(1)
+    for (const d of [histRoot, join(histRoot, '2025'), join(histRoot, '2025', '12'), old]) {
       expect((await stat(d)).mode & 0o777, d).toBe(0o700)
     }
   })

@@ -94,9 +94,8 @@ export async function saveHistory(
   meta: HistoryMeta,
   body: string,
 ): Promise<string> {
-  // r55（#9）：ROOT 与其父（~/.ai-page-dive 根）也收进 0700 口径（历史首写即建；
-  // chmod 收敛存量 0755——recursive mkdir 对已存在目录 no-op，r10 的 mode 罩不住
-  // 早于此创建的根。用 historyRoot() 推导，不做 '..' 层数赌博——浅一层会把 chmod 打到 HOME）
+  // r55（#9）：ROOT 与其父（~/.ai-page-dive）收进 0700 口径——chmod 收敛存量 0755
+  //（mkdir mode 对已存在目录 no-op）；historyRoot() 推导层级，不赌 '..' 层数
   const root = dirname(historyRoot())
   await mkdir(root, { recursive: true, mode: 0o700 }).catch(() => {})
   await chmod(root, 0o700).catch(() => {})
@@ -193,6 +192,7 @@ export async function listHistory(query?: string, limit = 200): Promise<HistoryI
     (typeof b === 'string' ? b : b.name).localeCompare(typeof a === 'string' ? a : a.name)
   const paths: string[] = []
   const walk = async (dir: string, depth: number): Promise<void> => {
+    await chmod(dir, 0o700).catch(() => {}) // r59（审计 T2）：list 顺带收敛存量 0755 的旧年/月/日目录（含根）
     const entries = (await readdir(dir, { withFileTypes: true }).catch(() => [] as any[])).sort(desc)
     for (const e of entries) {
       if (depth === 3) { if (e.isFile() && e.name.endsWith('.md')) paths.push(join(dir, e.name)) }

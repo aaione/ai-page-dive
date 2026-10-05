@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -167,5 +167,20 @@ description: 输出风格指南
     const noFm = parseSkillMd('直接正文', 'my-skill')
     expect(noFm.description).toBe('my-skill')
     expect(noFm.body).toBe('直接正文')
+  })
+})
+
+describe('r59 审计T2：USER_DIR 根存量 0755 收敛（真实 USER_DIR 唯一 pid 命名，测后即删）', () => {
+  it('saveWorkflow 把 0755 的 USER_DIR 收敛到 0700', async () => {
+    const name = `convroot${process.pid}`
+    const userDir = join(homedir(), '.ai-page-dive', 'workflows')
+    await mkdir(userDir, { recursive: true })
+    await chmod(userDir, 0o755)
+    try {
+      await saveWorkflow({ name, description: 'd', body: 'x' })
+      expect((await stat(userDir)).mode & 0o777, userDir).toBe(0o700)
+    } finally {
+      await rm(join(userDir, name), { recursive: true, force: true })
+    }
   })
 })

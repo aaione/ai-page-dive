@@ -6,7 +6,7 @@ import type { AgentEvent, TaskInput } from '@ai-page-dive/shared'
 import { MAX_CHUNK } from './nmconst.js'
 import { createClaudeParser } from './agents/claude.js'
 import { createCodexParser } from './agents/codex.js'
-import { getAgent } from './agents/registry.js'
+import { getAgent, resolveBin } from './agents/registry.js'
 import { getSkillBodies } from './skills.js'
 import { appendHistoryTurn, buildHistoryPath, escapePd, pruneHistory, saveHistory } from './history.js'
 import { attachMarkers, attachSection, buildOutline, buildPrompt, expandWorkflowPlaceholders } from './prompt.js'
@@ -134,7 +134,8 @@ export class Task {
       const safe = a.name.replace(/[^A-Za-z0-9_.一-龥-]/g, '_').slice(0, 64) || 'attachment'
       try {
         const dir = join(homedir(), '.ai-page-dive', 'attachments', new Date().toISOString().slice(0, 7).replace('-', ''))
-        if (!madeDir) { await mkdir(dir, { recursive: true, mode: 0o700 }); madeDir = true }
+        // r59（审计 T2）：mkdir mode 不罩已存在目录——附件根与 YYYYMM 双双 chmod 收敛存量 0755
+        if (!madeDir) { await mkdir(dir, { recursive: true, mode: 0o700 }); await chmod(join(dir, '..'), 0o700).catch(() => {}); await chmod(dir, 0o700).catch(() => {}); madeDir = true }
         // taskId 内联消毒：resume 轮可绕过上层校验，此处兜底防路径穿越（净零行）
         const p = join(dir, `${this.taskId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 't'}-${i + 1}-${safe}`)
         await writeFile(p, kind === 'image' ? Buffer.from(a.b64!, 'base64') : a.text ?? '', { mode: 0o600 })
@@ -238,7 +239,7 @@ export class Task {
     let stderrTail = ''
     try {
       this.proc = await spawnCli({
-        bin: def.bin,
+        bin: (await resolveBin(def)) ?? def.bin, // r59（审计 T3）：绝对路径 spawn——探测与执行同源，杜绝 PATH 影子面/探测版本≠执行版本
         args: def.buildArgs({ contentFile, agentCwd, resumeSessionId: this.input.resumeSessionId }),
         cwd: agentCwd,
         stdinData: prompt,
