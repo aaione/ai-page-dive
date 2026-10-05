@@ -3,7 +3,7 @@ import { existsSync, writeFileSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { registerManifests, resolveHostEntry, stableNodePath } from '../src/scripts/install.js'
+import { install, registerManifests, resolveHostEntry, stableNodePath } from '../src/scripts/install.js'
 import { uninstall } from '../src/scripts/uninstall.js'
 import { detectGlobalInstall, isTopLevelGlobal, manifestHasOrigins } from '../src/scripts/postinstall.js'
 
@@ -79,6 +79,19 @@ describe('registerManifests', () => {
   it('r58 #13：升级口径判据 manifestHasOrigins——空 origins（首装）false / 已登记 true', async () => {
     expect(manifestHasOrigins(await freshRegister([]))).toBe(false)
     expect(manifestHasOrigins(await freshRegister([ID_A]))).toBe(true)
+  })
+
+  it('r58 #25：空登记 install([]) 恒 exitCode 3——未登记优先于零 CLI（RC=2 的「无需重跑」是假话）', async () => {
+    await freshRegister([]) // manifest 在、origins 空
+    const saved = process.exitCode
+    process.exitCode = undefined
+    try {
+      await install([])
+      // 无论本机有无 CLI（anyCli 环境依赖）：hasOrigins=false 必先落 3
+      expect(process.exitCode).toBe(3)
+    } finally {
+      process.exitCode = saved
+    }
   })
 
   it('resolveHostEntry：dist/scripts/ 布局解析到上级 dist/index.js（r58 N1）', () => {

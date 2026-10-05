@@ -50,7 +50,14 @@ fi
 
 # ── 3. 注册 NM host + 探测本机 CLI（幂等，origins 追加不覆盖）──
 if ! command -v ai-page-dive >/dev/null 2>&1; then
-  die "npm 安装完成但 ai-page-dive 命令不可用——请重开终端（刷新 PATH）后重跑本命令"
+  # r58（#24）：自定义 npm prefix（npm config set prefix ~/.npm-global 等）用户
+  # 重开终端也刷不出命令——PATH 从未含该 bin，「重开终端重跑」永远死在这一步。
+  # 探测真实全局 bin，给可直接粘贴的 PATH 行
+  NPM_BIN="$(npm prefix -g 2>/dev/null)/bin"
+  die "npm 安装完成但 ai-page-dive 命令不可用——npm 全局命令目录（$NPM_BIN）不在 PATH。
+  本会话临时启用：export PATH=\"$NPM_BIN:\$PATH\"
+  永久启用（zsh）：echo 'export PATH=\"$NPM_BIN:\$PATH\"' >> ~/.zshrc && source ~/.zshrc
+  然后重跑本命令。"
 fi
 # 退出码语义：0=完全就绪 / 2=组件就绪但零可用 CLI / 其他=硬失败（install 已打印原因）
 set +e
@@ -68,3 +75,7 @@ case "$RC" in
   3) say "⚠️ 本机组件已就绪，但未带扩展 ID——扩展尚未登记。请回到扩展面板复制完整命令（末尾带一串扩展 ID）重跑本命令即可。" ;;
   *) die "安装未完全成功（exit $RC）——请按上方 ⚠️ 提示处理后重跑；仍卡住请携输出反馈到 GitHub Issues" ;;
 esac
+
+# r58（#26）：尾行哨兵——curl|sh 传输截断（连接中断）时不可能执行到这行；
+# 用户看到它 = 脚本完整跑完（中途 die 的路径不会到达此处）
+say "📄 install.sh 完整执行完毕。"

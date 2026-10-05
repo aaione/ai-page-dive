@@ -150,8 +150,11 @@ export async function install(extIds: string[]): Promise<void> {
   if (anyCli) console.log('💡 请确保上方 ✅ 的 CLI 已完成登录（在终端跑一次该 CLI 确认无鉴权提示）。')
   const hasOrigins = written.some((p) => readFileSyncSafe(p).allowed_origins?.length)
   if (!written.length || (extIds.length > 0 && valid.length === 0)) process.exitCode = 1
-  else if (!anyCli) process.exitCode = 2
+  // r58（#25）：未登记（3）优先于零 CLI（2）——install.sh 无 EXT_ID 路径下两者
+  // 同时成立时，RC=2 的「装好 CLI 即可用，无需重跑」是假话（扩展从未登记，必
+  // forbidden）；先指路带 ID 重跑，登记后重跑自然落 2 提示装 CLI
   else if (!hasOrigins) process.exitCode = 3
+  else if (!anyCli) process.exitCode = 2
 }
 
 function readFileSyncSafe(p: string): any {
