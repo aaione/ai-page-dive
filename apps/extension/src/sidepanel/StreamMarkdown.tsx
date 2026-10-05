@@ -36,6 +36,11 @@ function PreWithCopy({ children }: { children?: ReactNode }) {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M4.5 12.75l6 6 9-13.5" />
           </svg>
+        ) : copyFail ? (
+          // r58（#21）：失败态 ✗ icon（r57 #15 口径——title 单独换不够，静音图标让失败不可见）
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ color: 'var(--color-pd-danger)' }} aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
         ) : (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="9" y="9" width="11" height="11" rx="2" />
@@ -85,9 +90,6 @@ export const StreamMarkdown = memo(function StreamMarkdown({
   const [rendered, setRendered] = useState('')
   const bufRef = useRef(text)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const scrollerRef = useRef<HTMLDivElement>(null)
-  // 吸底开关：用户上滚即停，滚回底部恢复（不打断回看前文）
-  const stickyRef = useRef(true)
 
   bufRef.current = text
 
@@ -115,59 +117,21 @@ export const StreamMarkdown = memo(function StreamMarkdown({
     if (timerRef.current) clearTimeout(timerRef.current)
   }, [])
 
-  // 用户上滚暂停吸底、滚回底部附近恢复。用 wheel/keydown 等用户意图事件判定方向，
-  // 不用 scroll 事件——程序化 snap 自己触发的 scroll 无法与用户滚动区分，
-  // 会把吸底重新点燃并掐断触控板惯性滚动
-  useEffect(() => {
-    if (done) return
-    const userUp = () => { stickyRef.current = false }
-    const onKey = (e: KeyboardEvent) => {
-      if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) stickyRef.current = false
-      if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) stickyRef.current = true
-    }
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0) userUp()
-      else stickyRef.current = true
-    }
-    window.addEventListener('wheel', onWheel, { passive: true })
-    window.addEventListener('keydown', onKey)
-    // 触控板轻扫不走 wheel？macOS Chrome 走；触摸屏兜底 touchstart 方向判定
-    let touchY = 0
-    const onTouchStart = (e: TouchEvent) => { touchY = e.touches[0]?.clientY ?? 0 }
-    const onTouchMove = (e: TouchEvent) => {
-      const y = e.touches[0]?.clientY ?? 0
-      if (y > touchY + 4) stickyRef.current = false // 手指下移 = 内容上滚（看前文）
-      else if (y < touchY - 4) stickyRef.current = true
-      touchY = y
-    }
-    window.addEventListener('touchstart', onTouchStart, { passive: true })
-    window.addEventListener('touchmove', onTouchMove, { passive: true })
-    return () => {
-      window.removeEventListener('wheel', onWheel)
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('touchstart', onTouchStart)
-      window.removeEventListener('touchmove', onTouchMove)
-    }
-  }, [done])
-
-  // 流式期间吸底（仅当 sticky）：向上找最近的可滚动祖先（.pd-content 才是滚动
-  // 容器，直接 parentElement 是 .pd-chat-assistant——写 scrollTop 是 no-op）
-  useEffect(() => {
-    if (done || !stickyRef.current) return
-    let el: HTMLElement | null = scrollerRef.current
-    while (el && el.scrollHeight <= el.clientHeight) el = el.parentElement
-    if (el) el.scrollTop = el.scrollHeight
-  })
+  // r58（#18）：吸底判定收敛单一来源——本组件曾自带 stickyRef（wheel/key/touch
+  // 意图事件判定）+ 每帧拽底，与 SummarizeView 外层的 stickRef（scroll 事件距底
+  // 判定）双轨冲突：拖滚动条不产生意图事件，内层停不下来，每个节流帧把 scrollTop
+  // 拽回底部。跟随滚动完全由外层负责（HistoryView 恒 done，本就无跟随）
 
   // 大文本降级：流式期间与 done 后同标准（done 全量 parse 数百 KB 会冻结面板数秒）
   if (rendered.length > HEAVY) {
     return (
-      <div ref={scrollerRef}>
+      <div>
         <p className="mb-2 text-[11.5px] leading-[1.9] text-pd-ink-2">
           {/* r57（#5）：下方 slice(-40_000) 实际只渲染末尾 4 万字符——「纯文本显示」
-              不点名会让用户以为全文在场。如实声明仅尾部 + 指路下载 */}
+              不点名会让用户以为全文在场。r58（#19）：不再指路「下方下载」——本组件
+              也用于 HistoryView（无该按钮），指路对两个使用方都成立的路 */}
           {done
-            ? '（内容较长，已切换为纯文本显示——仅显示末尾约 4 万字符，更早的内容请用下方「下载」保存后查看）'
+            ? '（内容较长，已切换为纯文本显示——仅显示末尾约 4 万字符；完整内容可经工具栏「下载 markdown」导出，或在本地历史文件中查看）'
             : '（内容较长，完成后纯文本显示）'}
         </p>
         <pre className="pd-mono whitespace-pre-wrap wrap-anywhere rounded-[4px] bg-pd-code-bg p-2.5 text-[11.5px] leading-[1.6] text-pd-ink">
@@ -185,7 +149,7 @@ export const StreamMarkdown = memo(function StreamMarkdown({
   }, [rendered])
 
   return (
-    <div ref={scrollerRef} data-done={done ? 'true' : 'false'} className="pd-md">
+    <div data-done={done ? 'true' : 'false'} className="pd-md">
       {blocks.map((b, i) => (
         <Block key={i} block={b} />
       ))}

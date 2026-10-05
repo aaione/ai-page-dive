@@ -126,6 +126,7 @@ export function App() {
   const [pingStuck, setPingStuck] = useState(false)
   const [outdated, setOutdated] = useState('')
   const [cmdCopied, setCmdCopied] = useState(false) // r56（#14）：升级横幅一键复制命令的反馈态
+  const [cmdFail, setCmdFail] = useState(false) // r58（#20）：复制失败态（r57 #15 双态口径——catch 静默吞 = 谎报已复制）
   const [agents, setAgents] = useState<AgentStatus[]>([])
   /** host 探测结果是否已到（r14 首旅程）：区分「在途」与「真空」——空列表不该
    * 被渲染成「未检测到本机 AI CLI」假告示 */
@@ -732,11 +733,22 @@ export function App() {
       // 未达，nmport catch 清 port 后下次调用即重 spawn 自愈）——立即切 Onboarding
       // 会让已装用户看到假安装引导，且 probe 成功后 location.reload() 丢整段对话
       // 态（与 __host-disconnected 分支「不闪跳」的 r4-ux 决策矛盾）。先走错误
-      // 气泡，异步 probe 复核：真连不上才落安装引导
-      chrome.runtime
-        .sendMessage({ t: 'panel-ready' })
-        .then((r: unknown) => { if (!(r as { ok?: boolean } | null)?.ok) setHostOk(false) })
-        .catch(() => setHostOk(false))
+      // 气泡，异步 probe 复核：真连不上才落安装引导。
+      // r58（#23）：复核退避——SW 重 spawn 有竞态窗，零退避一次判死会在 host 恢复
+      // 途中就闪跳安装引导丢对话态；0ms/1.5s/4s 三探皆死才落
+      void (async () => {
+        const ok = async () => {
+          try { return !!((await chrome.runtime.sendMessage({ t: 'panel-ready' })) as { ok?: boolean } | null)?.ok }
+          catch { return false }
+        }
+        let dead = !(await ok())
+        for (const ms of [1500, 4000]) {
+          if (!dead) break
+          await new Promise((r) => setTimeout(r, ms))
+          dead = !(await ok())
+        }
+        if (dead) setHostOk(false)
+      })()
       resp = { ...resp, error: 'host-not-found-retry' }
     }
     if (resp?.error) {
@@ -972,10 +984,14 @@ export function App() {
                     setCmdCopied(true)
                     setTimeout(() => setCmdCopied(false), 1500)
                   })
-                  .catch(() => {})
+                  .catch(() => {
+                    // r58（#20）：面板失焦时 writeText reject——显式失败态，不静默谎报
+                    setCmdFail(true)
+                    setTimeout(() => setCmdFail(false), 2500)
+                  })
               }}
             >
-              {cmdCopied ? '已复制 ✓' : '复制命令'}
+              {cmdCopied ? '已复制 ✓' : cmdFail ? '复制失败——请手动选中复制' : '复制命令'}
             </button>
           </div>
         )}
@@ -1034,6 +1050,10 @@ function missedErrBubble(mt: { taskId: string; code?: string; message?: string }
     text: '',
     error: mt.code === 'timeout'
       ? '任务超时（上限 10 分钟）——请重新发起'
+      // r58（#22）：cancelled/content-mismatch 单用已定文案——host 的 message
+      //（"task cancelled" 等）与 label 同义，拼接成「已取消: task cancelled」双重前缀
+      : mt.code === 'cancelled' ? '已取消'
+      : mt.code === 'content-mismatch' ? (mt.message || '正文传输不完整，已取消——请重试')
       : `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`,
     isError: true,
     cliFault: mt.code !== 'cancelled' && mt.code !== 'content-mismatch' && mt.code !== 'ext-restarted',
