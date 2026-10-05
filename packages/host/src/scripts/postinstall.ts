@@ -13,6 +13,13 @@ function log(msg: string): void {
   console.log(`[ai-page-dive] ${msg}`)
 }
 
+/** r58（#13）：manifest 已带 origins = 升级场景（登记完整）——postinstall 据此换指引口径 */
+export function manifestHasOrigins(p: string): boolean {
+  try {
+    return (JSON.parse(readFileSync(p, 'utf8')).allowed_origins ?? []).length > 0
+  } catch { return false }
+}
+
 /** 用户终端里没有扩展 ID——真实命令只能从扩展面板复制（chrome.runtime.id 动态渲染） */
 function pointToPanel(): void {
   log('请回到扩展面板（AI PageDive 侧边栏），复制面板上显示的命令执行即可完成登记。')
@@ -96,6 +103,13 @@ async function main(): Promise<void> {
     const written = await registerManifests([], true)
     if (!written.length) {
       log('未发现 Chrome 数据目录（Chrome 未启动过？）。启动一次 Chrome 后，回到扩展面板按提示操作。')
+      return
+    }
+    // r58（#13）：升级路径（npm i -g 直跑，manifest 已带旧 origins）——登记实际已
+    // 完整，「回面板复制命令」与用户正在跑的 && ai-page-dive install 互相矛盾
+    //（r7-ux 同类在升级路径复发）；仅真缺 origins（首次安装）才指路面板
+    if (manifestHasOrigins(written[0])) {
+      log('NM host 已重新注册，沿用既有扩展登记（升级无需其他操作；扩展 ID 变更时在面板复制命令重登记）。')
       return
     }
     log('NM host 已自动注册（许可名单为空属预期）。')

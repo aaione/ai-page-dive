@@ -30,7 +30,7 @@ const cmp = (a, b) => {
 if (latest !== pinned) {
   console.error(
     cmp(latest, pinned) < 0
-      ? `✗ 仓库钉 ${pinned} 未发布（registry latest = ${latest}）——先 npm publish 再合：install.sh 此刻装出旧 host，扩展恒报「组件过旧」`
+      ? `✗ 仓库钉 ${pinned} 未发布（registry latest = ${latest}）——先 npm publish 再合：install.sh 此刻装出旧 host，新扩展的新协议消息它静默无响应（症状：按钮无反应/新功能失效，并非版本横幅）`
       : `✗ registry latest = ${latest} 领先仓库钉版 ${pinned}——升版提交漏了，把仓库版本跟上`,
   )
   process.exit(1)

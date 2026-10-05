@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { registerManifests, resolveHostEntry, stableNodePath } from '../src/scripts/install.js'
 import { uninstall } from '../src/scripts/uninstall.js'
-import { detectGlobalInstall, isTopLevelGlobal } from '../src/scripts/postinstall.js'
+import { detectGlobalInstall, isTopLevelGlobal, manifestHasOrigins } from '../src/scripts/postinstall.js'
 
 /**
  * registerManifests（postinstall 与 install 共用的注册核心）：
@@ -74,6 +74,11 @@ describe('registerManifests', () => {
     const p = await freshRegister(['aaaa', 'NOT-VALID', 'z'.repeat(33), 'p'.repeat(32)])
     const manifest = JSON.parse(await readFile(p, 'utf8'))
     expect(manifest.allowed_origins).toEqual([`chrome-extension://${'p'.repeat(32)}/`])
+  })
+
+  it('r58 #13：升级口径判据 manifestHasOrigins——空 origins（首装）false / 已登记 true', async () => {
+    expect(manifestHasOrigins(await freshRegister([]))).toBe(false)
+    expect(manifestHasOrigins(await freshRegister([ID_A]))).toBe(true)
   })
 
   it('resolveHostEntry：dist/scripts/ 布局解析到上级 dist/index.js（r58 N1）', () => {

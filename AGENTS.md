@@ -22,7 +22,7 @@ pnpm monorepo：
 - `packages/host` — 纯 Node >=18 + TS，运行时零依赖
 - `packages/shared` — AgentDef 类型 / NM 消息协议
 
-测试 vitest（host 流解析器 + buildArgs + 真实流 fixture 重放 + pgid 收割链（组长先退孙持组收割）/runNative 关停子进程集成 + spawn-fail 真诊断 + 终局删收敛（is_error/超时已交付零 tmp 残留）/肥 frontmatter 头兜底/存量 0755 收敛/prune 连带删附件 + extension 历史轮切分/SW 回归网（chrome shim 锚 session-lost 竞态/断连清理/丢片对账（取消登记防迟到覆写）/收件箱判接收端/迟到终局清指针/分片上限/迟到失败句柄守卫/iframe 顶层锚）+ jsdom 内容提取三形状/CJK token 口径等单测，184 用例）。
+测试 vitest（host 流解析器 + buildArgs + 真实流 fixture 重放 + pgid 收割链（组长先退孙持组收割）/runNative 关停子进程集成 + spawn-fail 真诊断 + 终局删收敛（is_error/超时已交付零 tmp 残留）/肥 frontmatter 头兜底/存量 0755 收敛/prune 连带删附件 + extension 历史轮切分/SW 回归网（chrome shim 锚 session-lost 竞态/断连清理/丢片对账（取消登记防迟到覆写）/收件箱判接收端/迟到终局清指针/分片上限/迟到失败句柄守卫/iframe 顶层锚）+ jsdom 内容提取三形状/CJK token 口径等单测，185 用例）。
 
 ## Dev Harness（UI 可视化自验）
 
@@ -30,7 +30,7 @@ chrome-extension:// 页面无法被自动化浏览器直接导航——`apps/ext
 
 ## Hard Constraints（违反即 bug）
 
-1. 权限只有 `activeTab` + `scripting` + `nativeMessaging` + `sidePanel` + `storage`，**不申请 `<all_urls>`**（`storage` 仅用 session 域——SW 30s 回收后恢复追问会话态，纯内存不落盘、零站点访问面，2026-09-08 修订加入；2026-09-23 修订：加 `optional_host_permissions` 供设置页「始终允许读取网页」开关用户主动授予，安装时零警告、默认关闭，见 DECISIONS.md D3）
+1. 权限只有 `activeTab` + `scripting` + `nativeMessaging` + `sidePanel` + `storage`，**不申请 `<all_urls>`**（`storage` 两处受限用途：session 域存追问会话态（SW 30s 回收后恢复，随浏览器会话存活、不落盘）；local 域仅存任务指针 `pdRunningTask`（SW 回收后对账迟到终局/防 ext-restarted 幻影，终局即清）。零站点访问面，2026-09-08 修订加入；2026-09-23 修订：加 `optional_host_permissions` 供设置页「始终允许读取网页」开关用户主动授予，安装时零警告、默认关闭，见 DECISIONS.md D3）
 2. CLI 的 prompt/正文**一律走 stdin**（argv 有长度上限）；正文写本地临时文件，prompt 给路径
 3. **零凭证接触**：只子进程调起用户自己登录的未修改官方 CLI 二进制；不碰 token/OAuth、不代理流量、永不对 CLI 用量收费
 4. claude 的运行内失败打在 stdout（`is_error`），不能只看退出码

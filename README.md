@@ -15,7 +15,7 @@
 
 ## 为什么是 PageDive
 
-- **深读，不是浅摘要**——复用你终端里的 CLI 做 agent 式多步精读（claude / codex 双引擎）：通读全文、markdown 流式输出、多轮追问（claude），总结质量与终端同源
+- **深读，不是浅摘要**——复用你终端里的 CLI 做 agent 式多步精读（claude / codex 双引擎）：通读全文、markdown 流式输出、多轮追问，总结质量与终端同源
 - **零账号 · 零 API key**——直接复用已登录的 CLI 订阅，无任何注册与配置
 - **只信本机**——正文经 Chrome Native Messaging 直交本机 CLI，无服务器、零遥测、不碰凭证（[PRIVACY.md](PRIVACY.md)）
 - **点到哪读到哪**——安装时仅 5 项权限 + 1 项默认关闭的可选读取权限（用户主动开启），不申请 `<all_urls>`：默认 activeTab 点哪读哪，其余页面零访问面
@@ -75,7 +75,7 @@ npm i -g @aaione/ai-page-dive@0.1.3 && ai-page-dive install --ext-id <扩展ID>
 <details>
 <summary>和浏览器自带的页面摘要 AI 有什么区别？</summary>
 
-浏览器原生摘要免费预装，但锁自家模型、多为单次浅摘要，页面数据经厂商云端处理。PageDive 复用你已有的 CLI 订阅做 agent 式多步深读（通读全文、workflow 可插拔、可追问（claude）），正文经 Native Messaging 直交本机 CLI，不经 PageDive 任何服务器。
+浏览器原生摘要免费预装，但锁自家模型、多为单次浅摘要，页面数据经厂商云端处理。PageDive 复用你已有的 CLI 订阅做 agent 式多步深读（通读全文、workflow 可插拔、多轮追问），正文经 Native Messaging 直交本机 CLI，不经 PageDive 任何服务器。
 </details>
 
 <details>
@@ -87,7 +87,7 @@ npm i -g @aaione/ai-page-dive@0.1.3 && ai-page-dive install --ext-id <扩展ID>
 <details>
 <summary>支持哪些 CLI？支持 Windows 吗？</summary>
 
-v1 支持 claude 与 codex 双引擎（完整支持）；曾实验性支持 opencode，因 macOS 上游 Gatekeeper 死结已移除（详见 [DECISIONS.md](DECISIONS.md)）。追问能力：claude 支持多轮追问（复用 CLI 会话）；codex 暂不支持（CLI 不回传会话 id，每次新提问独立成轮）。v1 仅支持 macOS + Chrome，Windows / Edge / Brave 在路线图上（[DECISIONS.md](DECISIONS.md)）。
+v1 支持 claude 与 codex 双引擎（完整支持）；曾实验性支持 opencode，因 macOS 上游 Gatekeeper 死结已移除（详见 [DECISIONS.md](DECISIONS.md)）。追问能力：claude 与 codex 均支持多轮追问——claude 复用 CLI 会话 id；codex 以 thread_id 续接会话（CLI 未回传 thread 信息的罕见降级下，该轮独立成新轮，其余轮次不受影响）。v1 仅支持 macOS + Chrome，Windows / Edge / Brave 在路线图上（[DECISIONS.md](DECISIONS.md)）。
 </details>
 
 <details>

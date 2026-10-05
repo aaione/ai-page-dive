@@ -1,8 +1,8 @@
 /**
  * SW 编排中枢：action 点击开 Side Panel → 提取 → task-start/content → 转发流。
  * 消息面（与 Side Panel 的 runtime 通信）刻意最小：
- *   panel → SW: {t:'summarize', agentId, workflow, skills?} / {t:'cancel'} / {t:'new-session'} / {t:'panel-ready'} / {t:'nm', msg}
- *   SW → panel: 直接转发 host 的 HostToExt 帧
+ *   panel → SW: {t:'summarize'（首轮 agentId/workflow 或追问 followUp/instruction）} / {t:'resume-history'} / {t:'cancel'} / {t:'new-session'} / {t:'panel-ready'} / {t:'nm', msg}
+ *   SW → panel: 转发 host 的 HostToExt 帧 + SW 自合成终局（连坐取消/断连/丢片）+ panel-ready 回包（missedTerminal 补发错过的终局）
  */
 import { nmPort } from '../lib/nmport.js'
 import type { AgentStatus, ExtToHost, HostToExt, PageContent } from '@ai-page-dive/shared'
@@ -48,7 +48,6 @@ let currentTask: {
 // 同步持久化到 chrome.storage.session：MV3 SW 30s 空闲即回收，纯内存态在
 // 「看完总结 → 隔一分钟追问」场景下必丢（session-lost）。storage.session 随
 // 浏览器会话存活，SW 冷启动时恢复（restoreSession）。
-// historyPath：追问轮 append 进同一文件——历史详情还原完整多轮对话。
 // sessionId 可为空串：codex 自 r7-impl 起 thread.started 发 thread_id 作 sessionId，
 // 空串仅剩 thread.started 未达的降级——仍归档 historyPath 供面板重开还原 UI（r47-ux 口径修订）
 // r57（#19）：page = 会话来源页（首轮总结时的顶层锚）——重开面板时 ctxAnchor 用它
