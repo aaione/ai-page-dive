@@ -6,7 +6,7 @@
 
 | # | 决策位 | 结论 |
 |---|---|---|
-| 1 | 定位 | **零配置一键深度阅读 agent**（候选 A）。适配层是底层能力顺带产出，垂直场景由 workflow 生态承载 |
+| 1 | 定位 | **零配置一键深度阅读 agent**（候选 A）。适配层是底层能力顺带产出，垂直场景由 workflow 生态承载。**2026-10-05 修订（r59）**：对外口径为「零账号 · 零 API key · 一键深度阅读」——「零配置」字面承诺已于 0.1.2 期间收回（本机组件需一次终端安装），内部档同步对齐 |
 | 2 | 命名 | **PageDive**（弃用 read-one）。npm 包 `ai-page-dive`，安装命令 `ai-page-dive install`。项目目录：`/Users/apple/work/hs/ai-feature/ai-page-dive/`。**2026-09-27 修订（r52）**：双名规则——manifest/CWS 展示名用「AI PageDive」（商店内 "AI" 检索词），正文文案短名「PageDive」，npm 包名不变 |
 | 3 | 通信底座 | **Native Messaging 薄 host + Side Panel 主 UI**。否决 localhost daemon 主通道（Chrome 147 LNA 政策风险）。host 预留 `--daemon` 升级位。权限：`activeTab` + `scripting` + `nativeMessaging` + `sidePanel`，不申请 `<all_urls>`。**2026-09-23 修订（r46）**：加 `optional_host_permissions: ["<all_urls>"]`——安装时依然零权限警告，设置页「始终允许读取网页」开关由用户主动授予（Chrome 弹一次确认）；解决换页后 activeTab 收权导致的「尚未授权提取」反复重授权痛点。默认关闭，最小权限叙事不变 |
 | 4 | 历史记录 | **host 侧 markdown 落盘 + 档 B+**：`~/.ai-page-dive/history/年/月/日/时间戳-slug.md`（frontmatter 元数据）+ 历史列表/查看/删除/Finder 定位 + 过滤 + 搜索。**2026-09-26 修订（r51-audit）**：搜索已含全文（r17 起——正文命中返回前后片段，title/url 命中免读全文的快路径）；导入导出/对话关联 → v2 |
@@ -69,7 +69,7 @@
 
 ### Host 分发形态定案（2026-09-06 全网调研 + 三评委裁决，D10）
 
-- **结论：npm 主线不变（`npm i -g @aaione/ai-page-dive && ai-page-dive install`），补失败兜底文案；二进制/安装器路线全部否决。** 三评委（UX/成本/风险）一致最高分给「npm + 兜底增强」。2026-09-15 修订：npm 组织 `aaione` 建立，包名由裸名 `ai-page-dive` 改为 `@aaione/ai-page-dive`（bin 命令名 `ai-page-dive` 不变，用户全局命令零感知；NM host 名 `com.pagedive.host` 与包名解耦不受影响）。
+- **结论：npm 主线不变（`npm i -g @aaione/ai-page-dive && ai-page-dive install`），补失败兜底文案；二进制/安装器路线全部否决。** 三评委（UX/成本/风险）一致最高分给「npm + 兜底增强」。2026-09-15 修订：npm 组织 `aaione` 建立，包名由裸名 `ai-page-dive` 改为 `@aaione/ai-page-dive`（bin 命令名 `ai-page-dive` 不变，用户全局命令零感知；NM host 名 `com.pagedive.host` 与包名解耦不受影响）。**2026-10-05 修订（r59 补记）**：安装主线已换 install.sh（`curl -fsSL .../install.sh | sh -s -- <扩展ID>` 一条命令：Node≥18 探测 + brew 兜底 + npm 钉版本 + NM 注册），npm 两连命令降为折叠手动备选（README 快速开始）。
 - 否决编译单二进制（deno compile / bun --compile / node SEA / @yao-pkg/pkg）：① 受众零增益——用户必先装 AI CLI（claude/codex 官方 2026 起首选 native installer，**不依赖 Node**；npm 版仅备选——原「均需 Node」论断已被证伪并修正：host 的 cliPath 已补 `~/.local/bin` 探测），「免 Node」收益在装过 npm 版 CLI 的用户为零、在 native 安装用户由 install.sh 的 Node 探测兜底；② 本地审计确认 3 个 fatal blocker（`workflows.ts:11`/`skills.ts:12` 的 builtins 相对 `import.meta.url` 解析、`install.ts:35` hostPath 校验——编译产物下内置 workflows/skills 静默消失、install 直接 throw），修复 2.5 人日 + 永久维护二进制管线；③ vercel/pkg 已归档。
 - 否决 dmg/pkg/.command 无签名安装器：macOS Sequoia 起 Gatekeeper 对未公证产物的「Open Anyway」路径更严苛，Chrome 拉起 NM host 时同样过 Gatekeeper——体验反而比 npm 差；签名公证需 $99/年 + 永久 CI。
 - CWS 政策核实：扩展引导用户**自行**安装本机 NM host 不触红线（KeePassXC 70 万 / 1Password 700 万在架先例）；NM host 不属 remote code。红线是扩展运行时自下载执行代码。
@@ -96,7 +96,9 @@
 
 ## v2 路线图（已明确延后）
 
-`--daemon` 常驻（关面板不中断）/ 全文搜索 / 导入导出 / 追问对话 + 对话历史 / Windows / Edge/Brave / marketplace / OpenCode 等更多适配器 / dsh 深度支持
+`--daemon` 常驻（关面板不中断）/ 导入导出 / Windows / Edge/Brave / marketplace / OpenCode 等更多适配器 / dsh 深度支持
+
+> 2026-10-05 修订（r59）：追问对话 + 对话历史（含 codex thread_id 续接）、全文搜索（r17 起 title/url/正文三域）已在 v1 交付，移出路线图。
 
 ## 待办素材
 
