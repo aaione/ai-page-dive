@@ -11,8 +11,8 @@ import type { TaskInput } from '@ai-page-dive/shared'
 /** 网页元数据单行消毒：页面可控字段（title/byline 等）去控制字符/换行、截单行——防恶意网页伪造段落结构注入指令（url 亦清洗，scheme 已由扩展侧 isNormalPage 限制） */
 function sanitizeMeta(v: string, max = 300): string {
   const cleaned = v
-    // 控制字符 + 零宽(U+200B-200F) + 行/段分隔与 bidi(U+2028-202F) + 不可见运算符(U+2060-206F) + BOM/非字符。逐段精确区间——曾误写成 \x7f-\u2061 连续大区间，把希腊/西里尔/阿拉伯/带变音拉丁整段文字删成空格（r3-impl M1）
-    .replace(/[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufeff\ufffe\uffff]/g, ' ')
+    // 控制字符 + 零宽 + 行/段分隔与 bidi + 不可见运算符 + BOM/非字符 + r58（#31）补：软连字符(U+00AD)/蒙文变选(U+180B-180E)/变体选择符(U+FE00-FE0F)/tag 区(U+E0000-E007F)——对用户不可见对 CLI 可读，meta 行 smuggling 面。逐段精确区间——曾误写成 \x7f- 连续大区间，把希腊/西里尔/阿拉伯/带变音拉丁整段文字删成空格（r3-impl M1）
+    .replace(/[\x00-\x1f\x7f\u00ad\u180b-\u180e\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufe00-\ufe0f\ufeff\ufffe\uffff\u{e0000}-\u{e007f}]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
   return Array.from(cleaned).slice(0, max).join('') // 码点截断，防劈开代理对

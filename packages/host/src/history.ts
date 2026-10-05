@@ -306,9 +306,9 @@ export async function readHistory(path: string): Promise<string> {
 async function deleteAttachmentsOf(path: string): Promise<void> {
   try {
     const m = (await readFmHead(path))?.match(/^attachments: (\[.*\])$/m)
-    const attRoot = resolve(join(homedir(), '.ai-page-dive', 'attachments'))
+    const attRoot = realOrSelf(resolve(join(homedir(), '.ai-page-dive', 'attachments')))
     for (const ap of m ? (JSON.parse(m[1]) as string[]) : []) {
-      const rp = resolve(ap)
+      const rp = realOrSelf(resolve(ap)) // r58（#32）：resolve 不穿链——attachments 目录内 symlink 可词法过检、rm 跟链走越树删任意文件（与 assertInRoot 同口径）
       if (rp !== attRoot && rp.startsWith(attRoot + sep)) await rm(rp, { force: true }).catch(() => {})
     }
   } catch { /* frontmatter 头读失败/解析失败：照删 md */ }

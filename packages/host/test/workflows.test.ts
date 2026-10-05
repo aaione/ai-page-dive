@@ -96,6 +96,15 @@ describe('saveWorkflow 落盘（真实 USER_DIR 唯一 pid 命名，测后即删
     expect((await readdir(join(userDir, A))).filter((f) => f.endsWith('.tmp'))).toEqual([])
   })
 
+  it('r58 #33：副本已删时 originalName===name 转新建 wx——守卫归位，编辑稿落盘不留 tmp', async () => {
+    await saveWorkflow({ name: A, description: 'd', body: 'v1' })
+    await rm(join(userDir, A, 'WORKFLOW.md')) // 副本被删（另一窗口/面板外）
+    // 修复前无条件 tmp+rename：绕过 wx 撞名守卫（r54 #8 旁路）；现走 wx 创建路径
+    await saveWorkflow({ name: A, description: 'd', body: '编辑稿', originalName: A })
+    expect(await readFile(join(userDir, A, 'WORKFLOW.md'), 'utf8')).toContain('编辑稿')
+    expect((await readdir(join(userDir, A))).filter((f) => f.endsWith('.tmp'))).toEqual([])
+  })
+
   it('改名保存：新名落盘 + 旧目录删除（防孤儿）', async () => {
     await saveWorkflow({ name: A, description: 'd', body: 'x' })
     await saveWorkflow({ name: B, description: 'd', body: 'x', originalName: A })

@@ -239,6 +239,27 @@ describe('assertInRoot 穿链防护（r47-sec）', () => {
       await rm(outsideDir, { recursive: true, force: true })
     }
   })
+
+  it('r58 #32：attachments 目录内 symlink 指向树外——穿链校验，树外文件不删', async () => {
+    const attDir = join(homedir(), '.ai-page-dive', 'attachments')
+    await mkdir(attDir, { recursive: true })
+    const outsideDir = await mkdtemp(join(tmpdir(), 'pd-att-link-'))
+    const outsideFile = join(outsideDir, 'precious.txt')
+    await writeFile(outsideFile, 'PRECIOUS', 'utf8')
+    const link = join(attDir, `pd-link-${process.pid}.txt`)
+    await symlink(outsideFile, link) // 词法在根内、真实目标在根外
+    const md = join(root, `pd-attlink-${process.pid}.md`)
+    await writeFile(md, `---\ntitle: t\nagent: claude\nstatus: done\nts: 1\nattachments: ${JSON.stringify([link])}\n---\n正文`, 'utf8')
+    try {
+      await deleteHistory(md)
+      // 修复前 resolve 词法过检 → rm 跟链走删掉树外目标；realOrSelf 解析后拒绝
+      expect(existsSync(link)).toBe(true)
+      expect(await readFile(outsideFile, 'utf8')).toBe('PRECIOUS')
+    } finally {
+      await rm(link, { force: true })
+      await rm(outsideDir, { recursive: true, force: true })
+    }
+  })
 })
 
 // r56（#5/#15）：#5 readFmHead 4KB 截断——页面可控的超长 title/url 撑破 frontmatter 头后

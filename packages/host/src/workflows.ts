@@ -1,6 +1,6 @@
 /** workflow 懒扫描 + CRUD：每次 list 重扫，用户目录 shadow 内置同名 */
 import { spawn } from 'node:child_process'
-import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -121,10 +121,9 @@ export async function saveWorkflow(input: {
   // r58（#9）：recursive mkdir 对已存在目录 mode 是 no-op——存量装机 0755 靠 chmod 收敛（同 agent-workspace 谱系）
   await chmod(dir, 0o700).catch(() => {})
   const final = join(dir, 'WORKFLOW.md')
-  if (input.originalName !== input.name) {
-    // 新建/改名：撞名守卫即 wx 占位本身（r54 #8：原先 readFile 探测与写之间的窗口，
-    // 双面板并发改名可双双过检、后者覆盖前者原创——创建即检查，原子）。面板预检只
-    // 对 panel 内存快照有效（r4-regression），host 是事实源（F7）
+  // r58（#33）：副本不存在（已删/内置首存）走 wx 撞名守卫——rename 无条件覆盖会绕过 r54 #8
+  // 并发守卫；存在则覆盖自己见过的副本（并发编辑后存者胜为编辑器通例，版本凭据 v2+）
+  if (input.originalName !== input.name || (await access(final).then(() => false, () => true))) {
     try {
       await writeFile(final, buildWorkflowMd(input), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
     } catch (e: any) {
@@ -137,8 +136,7 @@ export async function saveWorkflow(input: {
     await writeFile(tmp, buildWorkflowMd(input), { encoding: 'utf8', mode: 0o600 })
     await rename(tmp, final)
   }
-  // 删旧目录放在写新成功之后（r3-sec m2）：先 rm 再写曾在写失败时把用户原创模式
-  // 直接丢掉——非原子操作里，可重建的（新目录）先做，不可恢复的（删旧）最后做
+  // 删旧目录在写新成功之后（r3-sec m2）：非原子操作里可重建的先做、不可恢复的（删原创）最后做
   if (input.originalName && input.originalName !== input.name) {
     await rm(join(USER_DIR, input.originalName), { recursive: true, force: true })
   }

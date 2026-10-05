@@ -547,6 +547,16 @@ process.exit(0)`,
     expect(zw).toContain('a b c')
   })
 
+  it('buildPrompt：r58（#31）补齐不可见区间——软连字符/蒙文变选/变体选择符/tag 区被清', () => {
+    // U+00AD/U+180E/U+FE0F/U+E0001/U+E0041 对用户不可见、对 CLI 可读（meta 行
+    // smuggling 面），修复前原样透传进 prompt；可见文字不受牵连（M1 误伤再确认）
+    const evil = 'a\u00adb\u180ec\ufe0fd\u{e0001}e\u{e0041}f'
+    const out = buildPrompt({ ...PAGE, title: evil }, '/tmp/f.md', 'quick')
+    expect(out).toContain('a b c d e f')
+    expect(out).not.toContain(evil)
+    expect(buildPrompt({ ...PAGE, title: '中文 English Ελληνικά' }, '/tmp/f.md', 'quick')).toContain('中文 English Ελληνικά')
+  })
+
   it('expandWorkflowPlaceholders：四占位符展开，未知/大小写变体原样保留', () => {
     const out = expandWorkflowPlaceholders(
       '看 {url} 和 {title}，正文在 {file}，元数据 {meta}；未知 {foo} 与 {URL} 不动',
