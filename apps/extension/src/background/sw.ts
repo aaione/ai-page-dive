@@ -265,8 +265,12 @@ async function ensureTabsDisabled() {
  * CLI 跑完落盘、面板永 loading）。sidePanel 唯一可靠通路是 runtime 广播；
  * panel 侧 finished/taskId 台账已把迟到/跨任务帧的拒收兜住。真正的定向
  * （换锚后旧任务流不漏进新面板、跨窗口双面板互不劫持）需 port 架构，v2 再做 */
-function sendToPanel(m: unknown): void {
-  chrome.runtime.sendMessage(m).catch(() => {})
+function sendToPanel(m: unknown): Promise<boolean> {
+  // r59（审计 T4）：送达位——runtime.sendMessage 无接收端时 reject（面板收起常态），
+  // task-error 入箱据此对齐 emitTerminal 的「有接收端不入箱」判据
+  return chrome.runtime
+    .sendMessage(m)
+    .then(() => true, () => false)
 }
 
 chrome.action.onClicked.addListener((tab) => {
@@ -535,8 +539,11 @@ async function handleMessage(msg: any): Promise<unknown> {
     }
     case 'cancel':
       // 带 taskId 时只收割匹配任务：看门狗跨窗口场景——本面板判死的旧任务可能
-      // 早已结清、另一窗口正跑新任务，无条件 cancelCurrent 会错杀新面板的任务
-      if (msg.taskId && currentTask && msg.taskId !== currentTask.taskId) return { ok: false }
+      // 早已结清、另一窗口正跑新任务，无条件 cancelCurrent 会错杀新面板的任务。
+      // r59（审计 T1）：currentTask 为空同样拒收——指针已清（终局竞态/SW 回收）时
+      // 落入 cancelCurrent 会发无 taskId cancel，host 收割「最近任务」恰可能是
+      // 别窗口正在跑的新任务；拒收是唯一不误杀的答案
+      if (msg.taskId && (!currentTask || msg.taskId !== currentTask.taskId)) return { ok: false }
       return cancelCurrent()
     case 'new-session':
       // 面板「新对话」：在跑的任务走既有取消路径，本页签会话清空——
@@ -583,8 +590,7 @@ const cancelledTaskIds = new Set<string>()
  *  不查 cancelledTaskIds：那道闸拦的是 host 迟到的同义终局帧（r46 C2 防旧会话复活），
  *  SW 自合成帧恰是面板错过的唯一交代。
  *  ponytail: 「任一 listener 在听」≠「owner 面板在听」——双窗口双面板并发时折叠侧
- *  不入箱（升级路径：panel 心跳登记可见性）；host 原生帧路径仍无条件入箱，由
- *  task-done 清同 tab 陈条兜底（r58 #5） */
+ *  不入箱（升级路径：panel 心跳登记可见性）；host 原生帧路径同款判据（r59 审计 T4） */
 function emitTerminal(
   frame: { t: 'task-error'; taskId: string; code?: string; message?: string; tabId?: number },
   ownerTab: number | null | undefined,
@@ -724,8 +730,11 @@ nmPort.onMessage((m) => {
     // r47-ux（review P7）：sessionId 空串（codex thread.started 未达的降级）仍归档
     // historyPath，重开面板可 history-read 还原对话；空串表示不可 CLI 追问（canResume=false）
     if (owner && !cancelledTaskIds.has(msg.taskId)) {
-      const tabId = currentTask && msg.taskId === currentTask.taskId ? currentTask.tabId : panelTabId
-      if (tabId !== null) {
+      // r59（审计 T5）：兜底改查 tabOf 台账而非 panelTabId——迟到帧归档到任务源页签；
+      // 台账无记录（SW 重启丢账/幽灵帧）则丢弃：别页签绝不捡会话（r12 不变式），
+      // B 页签不再 resume A 的 CLI 会话
+      const tabId = currentTask && msg.taskId === currentTask.taskId ? currentTask.tabId : tabOf.get(msg.taskId)
+      if (tabId !== undefined) {
         const prev = sessions.get(tabId)
         // || 而非 ??：host 首轮 persist 失败时回传空串（不虚构路径），跳过且保留
         // 上一会话已有路径（r7-review）；合法路径永非空串
@@ -764,7 +773,7 @@ nmPort.onMessage((m) => {
   const tid = (msg as { taskId?: string })?.taskId
   const stamp =
     currentTask && tid === currentTask.taskId ? currentTask.tabId : tabOf.get(tid ?? '')
-  sendToPanel(stamp !== undefined ? { ...(msg as object), tabId: stamp } : m)
+  const delivered = sendToPanel(stamp !== undefined ? { ...(msg as object), tabId: stamp } : m)
   // r16（3-agent P1）：任务完成打 ✓ 角标——面板被收起期间 done 广播无接收端，
   // 「deep 跑 2 分钟切走干别的」回不回看全靠记忆。SW 由任务期心跳保活必活着，
   // setBadgeText 免权限；面板重新唤起（panel-ready）或下一轮起跑时清除。
@@ -781,11 +790,17 @@ nmPort.onMessage((m) => {
   }
   if (msg?.t === 'task-error') {
     // r53（#5）/r54（#5）：面板收起期间到达的错误终局存收件箱（panel-ready 一次性
-    // 补发）——广播无接收端时此帧 otherwise 静默丢，重开面板零痕迹
+    // 补发）——广播无接收端时此帧 otherwise 静默丢，重开面板零痕迹。
+    // r59（审计 T4）：入箱判据对齐 emitTerminal——广播有接收端即有人显示此帧，
+    // 再入箱必在重开时复读；仅无接收端（reject）才入箱
     const owner = currentTask && msg.taskId === currentTask.taskId ? currentTask.tabId : tabOf.get(msg.taskId)
     if (owner !== undefined && owner >= 0 && !cancelledTaskIds.has(msg.taskId)) {
-      lastTerminals.set(owner, { t: 'task-error', taskId: msg.taskId, code: msg.code, message: msg.message, tabId: owner })
-      persistSession()
+      delivered.then((ok) => {
+        if (!ok) {
+          lastTerminals.set(owner, { t: 'task-error', taskId: msg.taskId, code: msg.code, message: msg.message, tabId: owner })
+          persistSession()
+        }
+      })
     }
   }
   if (msg?.t === 'task-done' || msg?.t === 'task-error') {
@@ -914,6 +929,12 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // 归入 unsupported 而非误导用户的 no-permission）
   if (!isNormalPage(tab.url)) {
     return { error: 'unsupported-page', url: tab.url }
+  }
+  // r59（审计 T9）：PDF 专项分型——Chrome 的 PDF 查看器页提取不到正文，会落进
+  // empty-content 的「滚动触发懒加载」指引（对 PDF 必然无效）；URL 特征识别即可
+  //（content-type 需 webRequest 权限，为一个分型扩权不值）
+  if (/\.pdf(\?|#|$)/i.test(tab.url ?? '')) {
+    return { error: 'pdf-page', url: tab.url }
   }
 
   // U1：注入+提取可 await 数秒（重页面）——先把任务位占上（提取窗口内取消/

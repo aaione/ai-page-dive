@@ -199,9 +199,9 @@ export function App() {
         return
       }
       // 判死即取消（r7-ux，对齐 sw.ts「不白烧订阅额度」收敛原则）：SW 活/host 卡死
-      // 场景收割在跑任务；SW 已死场景消息会唤醒 SW（currentTask 内存已空，无操作）
-      // 但 host 早随 port 消亡被 Chrome 收割，无害。带 taskId：双窗口场景 SW 只对
-      // 号收割本面板绑定的任务，绝不错杀另一窗口面板正在跑的新任务
+      // 场景收割在跑任务；SW 已死场景消息会唤醒 SW（currentTask 内存已空，带 taskId
+      // 的取消被 SW 拒收、无操作），host 早随 port 消亡被 Chrome 收割，无害。带
+      // taskId：双窗口场景 SW 只对号收割本面板绑定的任务，绝不错杀别窗口新任务
       chrome.runtime.sendMessage({ t: 'cancel', taskId: streamRef.current.taskId ?? undefined }).catch(() => {})
       setStream((s) => {
         if (s.activeId === null && !s.pending) return s
@@ -461,7 +461,9 @@ export function App() {
             // 首帧绑定或已绑定同任务；绑定后不同 taskId = 过期帧（取消后尾随），丢弃
             if (s.taskId !== null && s.taskId !== m.taskId) return s
             // r6-ux seq 跳变检测：host 每 chunk 递增 seq，SW 重放/断连窗口丢片时跳变
-            // ——静默缺头比失败更误导，标记气泡，终局后提示重试（host 零改动）
+            // ——静默缺头比失败更误导，标记气泡，终局后提示重试（host 零改动）。
+            // r59（审计 T6）：重复帧（seq ≤ 已收——重试/重放路径）整帧丢弃，防正文拼二遍
+            if (typeof s.lastChunkSeq === 'number' && typeof m.seq === 'number' && m.seq <= s.lastChunkSeq) return s
             const gap =
               typeof s.lastChunkSeq === 'number' && typeof m.seq === 'number' && m.seq > s.lastChunkSeq + 1
             const activeId = s.activeId ?? `a${m.taskId}`
@@ -625,7 +627,7 @@ export function App() {
                         // ERROR_LABEL 会「正文传输不完整」重复两遍；单用 message
                         : m.code === 'content-mismatch' && m.message
                           ? m.message
-                          : `${ERROR_LABEL[m.code] ?? m.code}: ${authHint(m.message)}`,
+                          : `${ERROR_LABEL[m.code] ?? `未知错误（码 ${m.code}）`}: ${authHint(m.message)}`,
                     isError: true,
                     cliFault: m.code !== 'cancelled' && m.code !== 'content-mismatch',
                     cancelled: m.code === 'cancelled',
@@ -756,6 +758,7 @@ export function App() {
         resp.error === 'host-not-found-retry' ? '本机组件连接闪断——通常已自动恢复，请重试'
         : resp.error === 'no-tab' ? '没有可总结的页面（先在普通网页上点扩展图标）'
         : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
+        : resp.error === 'pdf-page' ? 'PDF 页面暂不支持总结——转存为 HTML 页面，或复制正文粘贴为附件后直接追问'
         : resp.error === 'inject-failed' ? `扩展文件加载失败（content.js 缺失——多为更新或加载不完整）${resp.detail ? `〔${String(resp.detail).slice(0, 120)}〕` : ''}——请在 chrome://extensions 刷新 PageDive 后重试`
         : resp.error === 'tab-closed' ? '刚看的页面已关闭——在要总结的页面上重试'
         : resp.error === 'page-not-ready' ? '页面尚未就绪（或正在显示错误页）——刷新页面后重试'
@@ -1054,15 +1057,18 @@ function missedErrBubble(mt: { taskId: string; code?: string; message?: string }
       //（"task cancelled" 等）与 label 同义，拼接成「已取消: task cancelled」双重前缀
       : mt.code === 'cancelled' ? '已取消'
       : mt.code === 'content-mismatch' ? (mt.message || '正文传输不完整，已取消——请重试')
-      : `${ERROR_LABEL[mt.code ?? ''] ?? mt.code ?? 'error'}${mt.message ? `: ${mt.message}` : ''}`,
+      : `${ERROR_LABEL[mt.code ?? ''] ?? `未知错误（码 ${mt.code ?? 'error'}）`}${mt.message ? `: ${authHint(mt.message)}` : ''}`,
     isError: true,
     cliFault: mt.code !== 'cancelled' && mt.code !== 'content-mismatch' && mt.code !== 'ext-restarted',
   }
 }
 
-/** CLI 鉴权类错误归一化（r7-ux）：install 探测不含登录态（--version 无需登录），
- * 未登录用户首次总结才见 CLI 原始英文鉴权报错——前置中文指引；非鉴权文本原样返回 */
+/** CLI 鉴权/额度类错误归一化（r7-ux）：install 探测不含登录态（--version 无需登录），
+ * 未登录用户首次总结才见 CLI 原始英文鉴权报错——前置中文指引；非鉴权文本原样返回。
+ * r59（审计 T8）：额度耗尽同置顶——「复用已有订阅」卖点下的高频真实失败 */
 function authHint(text: string): string {
+  if (/usage ?limit|limit reached|quota|insufficient credits|额度/i.test(text))
+    return `订阅额度已用尽——等待额度重置、升级套餐或切换账号后重试。原始信息：${text}`
   return /log ?in|sign ?in|authenticat|unauthorized|api[ _-]?key|credential|401/i.test(text)
     ? `该 CLI 尚未登录或凭证已失效——请在终端运行一次该 CLI 完成登录后重试。原始信息：${text}`
     : text
