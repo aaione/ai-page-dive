@@ -53,8 +53,9 @@ export function buildOutline(content: string): string {
   const out: string[] = []
   let total = 0
   let inCode = false
+  const fenced = (content.match(/^```/gm)?.length ?? 0) % 2 === 0 // r58（#16）：奇数围栏（畸形文档）会永久翻转状态机丢半篇标题——宁误纳代码注释不丢导航；r58（#15）：截断须披露，防 agent 把「大纲到这」当「文章到这」
   for (const line of content.split('\n')) {
-    if (/^```/.test(line)) { // 代码围栏内的 # 注释行不是标题
+    if (fenced && /^```/.test(line)) { // 代码围栏内的 # 注释行不是标题
       inCode = !inCode
       continue
     }
@@ -64,7 +65,7 @@ export function buildOutline(content: string): string {
     const indent = '  '.repeat(m[1].length - 1)
     // 标题文本页面完全可控、未经消毒——「正文只走文件」围栏的唯一旁路。过 sanitizeMeta 去控制字符/零宽/bidi + 单行化（防逐行铺伪造指令），与 meta 字段同一信任边界
     const item = `${indent}- ${sanitizeMeta(m[2].trim(), 200)}`
-    if (total + item.length > 2000 || out.length >= 60) break
+    if (total + item.length > 2000 || out.length >= 60) { out.push('- （大纲超上限已截断，完整结构以正文文件为准）'); break }
     out.push(item)
     total += item.length
   }

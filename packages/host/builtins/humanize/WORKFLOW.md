@@ -90,6 +90,15 @@ category: writing
 1. 改写后的**全文**（保持原文章节结构；无意义的结构可合并）
 2. 结尾附「主要修改」清单（10 条以内，每条注明删掉的模式，如「删『此外』×4（AI 高频词）」）
 
+### 超长正文：分段交付，不许静默半途
+
+单次回复有输出上限——正文很长（约 3 万字以上）时「篇幅相当的全文改写」一次发不完。
+**禁止**为此悄悄砍掉后半或只改开头：那不是改写，是用户以为完整、实际截半的废稿。
+按章节分多段交付：每段交付一部分改写，段首注明「第 N 段，覆盖：<起止章节>」，
+段尾注明「未完，回复“继续”接下一段」；最后一段附上面的「主要修改」清单并写明
+「全文改写完毕，共 N 段」。若正文在源头已被截断（prompt 会注明只覆盖前一部分），
+照实改写已有部分并在结尾声明未覆盖的后文范围。
+
 ---
 
 规则集移植自 [Humanizer-zh](https://github.com/op7418/Humanizer-zh)（MIT，原作者：歸藏；其上游 [blader/humanizer](https://github.com/blader/humanizer) 与 stop-slop，基于维基百科 [Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)）。完整许可与版权声明见本目录 [LICENSE](./LICENSE)。

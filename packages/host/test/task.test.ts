@@ -591,15 +591,21 @@ process.exit(0)`,
     const outline = buildOutline(md)
     expect(outline).toBe('- 一级\n  - 二级\n    - 三级')
     expect(buildOutline('没有标题的正文')).toBe('')
-    // 截断：65 个 H1 条目只收 60 条
+    // 截断：65 个 H1 条目只收 60 条 + 末行披露（r58 #15）
     const many = Array.from({ length: 70 }, (_, i) => `# 标题${i}`).join('\n')
-    expect(buildOutline(many).split('\n')).toHaveLength(60)
+    const manyOut = buildOutline(many).split('\n')
+    expect(manyOut).toHaveLength(61)
+    expect(manyOut.at(-1)).toContain('已截断')
     // 代码围栏内的 # 注释不算标题；围栏外的正常收
     const fenced = ['# 引言', '```bash', '# 这是 bash 注释不是标题', 'npm i -g ai-page-dive', '```', '## 方法'].join('\n')
     expect(buildOutline(fenced)).toBe('- 引言\n  - 方法')
     // 长文不因行数上限截断（400 行上限已移除，靠 60 条/2000 字符硬截断）
     const longBody = Array.from({ length: 500 }, () => '正文段落').join('\n')
     expect(buildOutline(longBody + '\n# 深处标题')).toBe('- 深处标题')
+    // r58（#16）：奇数个 ```（未闭合围栏）不再永久翻转状态机——围栏后标题照收；
+    // 代价是围栏内 # 注释行也被误纳（导航语境无害，宁误纳不丢半篇）
+    const oddFence = ['# 引言', '```bash', '# 注释', '正文', '## 围栏未闭合后的标题'].join('\n')
+    expect(buildOutline(oddFence)).toBe('- 引言\n- 注释\n  - 围栏未闭合后的标题')
   })
 
   it('buildPrompt：outline 非空注入「正文导航」段，空/缺省不注入', () => {
