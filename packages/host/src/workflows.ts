@@ -1,6 +1,6 @@
 /** workflow 懒扫描 + CRUD：每次 list 重扫，用户目录 shadow 内置同名 */
 import { spawn } from 'node:child_process'
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -118,6 +118,8 @@ export async function saveWorkflow(input: {
   if (input.originalName) assertValidWorkflowName(input.originalName)
   const dir = join(USER_DIR, input.name)
   await mkdir(dir, { recursive: true, mode: 0o700 })
+  // r58（#9）：recursive mkdir 对已存在目录 mode 是 no-op——存量装机 0755 靠 chmod 收敛（同 agent-workspace 谱系）
+  await chmod(dir, 0o700).catch(() => {})
   const final = join(dir, 'WORKFLOW.md')
   if (input.originalName !== input.name) {
     // 新建/改名：撞名守卫即 wx 占位本身（r54 #8：原先 readFile 探测与写之间的窗口，

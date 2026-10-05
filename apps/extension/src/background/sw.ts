@@ -57,13 +57,14 @@ type Session = { agentId: string; sessionId: string; historyPath?: string; page?
 const sessions = new Map<number, Session>()
 
 /** 面板收起期间错过的任务终局收件箱（r53 #5 / r54 #5）——不变式规约（r57 盲区5）：
- *  ① 入箱仅 task-error 族（host 原生转发 :736 段 / SW 合成 emitTerminal×3（取消/
- *    断连/丢片）/ SW 冷启动 ext-restarted）。task-done 不入箱：正常终局由 sessions
- *    归档（historyPath/sessionPage）还原 UI，无需补发
+ *  ① 入箱仅 task-error 族（host 原生转发 :744 段 / SW 合成 emitTerminal——取消/
+ *    断连/丢片/启动前失败族 r58 #3#4 / SW 冷启动 ext-restarted）。task-done 不入箱
+ *    且清同页签陈条（r58 #5）：正常终局由 sessions 归档还原 UI，无需补发
  *  ② owner 判定：帧 taskId === currentTask.taskId → currentTask.tabId；否则查 tabOf
  *    台账（currentTask 已清后的迟到帧）；两者皆无 → 丢弃（无人认领，无处投递）
- *  ③ 双写边界：SW 合成帧不查 cancelledTaskIds（它是面板唯一记录，拦了就丢「已取消」
- *    补发）；host 原生帧查（防旧任务迟到帧覆盖同页签新任务的收件箱条目）
+ *  ③ 双写边界：emitTerminal 以「广播无接收端」为入箱条件（r58 #5——面板在听即有人
+ *    显示，入箱必在重开时复读）；host 原生帧无条件入箱但查 cancelledTaskIds（防旧
+ *    任务迟到帧覆盖同页签新任务的收件箱条目）
  *  ④ 生命周期：每页签至多一条（Map 覆写）；panel-ready 消费即清不重放；页签关闭
  *    随删；随 storage.session 持久化（SW 回收后窗口仍在）
  *  动机：task-error 广播时面板无接收端即静默丢，重开面板零痕迹（timeout/parse 类
@@ -108,6 +109,16 @@ function setRunningTask(taskId: string, tabId: number) {
 function clearRunningTask() {
   try {
     chrome.storage?.local?.remove?.('pdRunningTask')?.catch?.(() => {})
+  } catch { /* 无 storage 权限：退化 */ }
+}
+/** r58（#7）：迟到终局的指针清理——读指针比对同 id 才删（新任务已立新指针时不误清）。
+ *  终局清理原先绑死「currentTask 匹配」：SW 重启/换锚后到达的终局帧清不掉指针，
+ *  已交付终局的任务被下次冷启动 restoreSession 折算成 ext-restarted 幻影 */
+function clearRunningTaskIf(taskId: string) {
+  try {
+    chrome.storage?.local?.get?.('pdRunningTask')?.then?.((s: any) => {
+      if (s?.pdRunningTask?.taskId === taskId) chrome.storage?.local?.remove?.('pdRunningTask')?.catch?.(() => {})
+    })?.catch?.(() => {})
   } catch { /* 无 storage 权限：退化 */ }
 }
 // SW 顶层不能 await（listener 注册必须同步）——恢复放微任务。⚠️ r52（review P1）
@@ -560,19 +571,27 @@ async function handleMessage(msg: any): Promise<unknown> {
  *  插入序 Set，cap 16 防无界 */
 const cancelledTaskIds = new Set<string>()
 
-/** SW 合成终局（取消/断连/丢片）的统一出口（r57 #4）：广播 + 收件箱双写。
- *  此前三处只广播——面板收起期间无接收端即静默丢，重开零交代（连坐取消甚至
- *  显得凭空终止）。收件箱写不查 cancelledTaskIds：那道闸拦的是 host 迟到的
- *  同义终局帧（r46 C2 防旧会话复活），SW 自合成帧恰是面板错过的唯一交代 */
+/** SW 合成终局（取消/断连/丢片/启动前失败 r58 #3#4）的统一出口：广播 + 收件箱双写。
+ *  入箱判据 = 广播无接收端（r58 #5）：有 panel listener 在听即有人显示此帧，再入箱
+ *  必在重开时复读（面板开着点取消→收起→重开复读陈旧「已取消」的病灶）。收件箱写
+ *  不查 cancelledTaskIds：那道闸拦的是 host 迟到的同义终局帧（r46 C2 防旧会话复活），
+ *  SW 自合成帧恰是面板错过的唯一交代。
+ *  ponytail: 「任一 listener 在听」≠「owner 面板在听」——双窗口双面板并发时折叠侧
+ *  不入箱（升级路径：panel 心跳登记可见性）；host 原生帧路径仍无条件入箱，由
+ *  task-done 清同 tab 陈条兜底（r58 #5） */
 function emitTerminal(
   frame: { t: 'task-error'; taskId: string; code?: string; message?: string; tabId?: number },
   ownerTab: number | null | undefined,
 ) {
-  chrome.runtime.sendMessage(frame).catch(() => {})
-  if (ownerTab !== null && ownerTab !== undefined && ownerTab >= 0) {
-    lastTerminals.set(ownerTab, { ...frame, tabId: ownerTab })
-    persistSession()
-  }
+  chrome.runtime
+    .sendMessage(frame)
+    .then(() => {}, () => {
+      // 无接收端（面板收起/未开）——入箱待 panel-ready 一次性补发
+      if (ownerTab !== null && ownerTab !== undefined && ownerTab >= 0) {
+        lastTerminals.set(ownerTab, { ...frame, tabId: ownerTab })
+        persistSession()
+      }
+    })
 }
 
 /** 取消进行中任务（new-session 复用）；返回 undefined 表示无任务在跑 */
@@ -657,6 +676,10 @@ nmPort.onMessage((m) => {
   if (msg?.t === 'content-received' && currentTask && msg.taskId === currentTask.taskId) {
     if (currentTask.expectedChars !== undefined && msg.chars !== currentTask.expectedChars) {
       console.warn(`[pd] content mismatch: sent ${currentTask.expectedChars}, host got ${msg.chars}`)
+      // r58（#6）：登记取消台账——host 迟到的同义终局（cancelled/timeout）不得经 :744
+      // 段无条件入箱覆写 content-mismatch 条目（修复指引文案被裸 cancelled 顶掉）
+      cancelledTaskIds.add(msg.taskId)
+      if (cancelledTaskIds.size > 16) for (const id of cancelledTaskIds) { cancelledTaskIds.delete(id); break }
       nmPort.send({ t: 'task-cancel', taskId: msg.taskId })
       // r57（#14）：此处提前 return，走不到下方统一盖戳——帧须自带 tabId 邮戳
       // （跨页签不串台）；#4：经 emitTerminal 入箱，面板收起期间丢片终局不蒸发
@@ -737,6 +760,10 @@ nmPort.onMessage((m) => {
   // r53（#1/#2）：isError 的 done 打 !——CLI 运行内失败也打 ✓ 是误报「成功」
   if (msg?.t === 'task-done') {
     chrome.action.setBadgeText({ text: msg.isError ? '!' : '✓' }).catch(() => {})
+    // r58（#5）：成功终局清同页签收件箱陈条——旧任务的 cancelled/失败补发不得在重开
+    // 时盖过新终局（「取消入箱→新任务 done→重开复读陈旧已取消」的复读链）
+    const doneOwner = currentTask && msg.taskId === currentTask.taskId ? currentTask.tabId : tabOf.get(msg.taskId)
+    if (doneOwner !== undefined && lastTerminals.delete(doneOwner)) persistSession()
   }
   if (msg?.t === 'task-error' && currentTask && msg.taskId === currentTask.taskId) {
     chrome.action.setBadgeText({ text: '!' }).catch(() => {})
@@ -750,9 +777,15 @@ nmPort.onMessage((m) => {
       persistSession()
     }
   }
-  if ((msg?.t === 'task-done' || msg?.t === 'task-error') && currentTask && msg.taskId === currentTask.taskId) {
-    currentTask = null
-    clearRunningTask() // r55（#10）
+  if (msg?.t === 'task-done' || msg?.t === 'task-error') {
+    if (currentTask && msg.taskId === currentTask.taskId) {
+      currentTask = null
+      clearRunningTask() // r55（#10）
+    } else {
+      // r58（#7）：迟到/重复终局（currentTask 已清或易主）同清同 id 指针——已交付终局
+      // 的任务不得被下次冷启动 restoreSession 折算成 ext-restarted 幻影
+      clearRunningTaskIf(msg.taskId)
+    }
   }
 })
 nmPort.onDisconnect(() => {
@@ -791,7 +824,10 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
   }
   if (frameTooLarge(frame)) return { error: 'frame-too-large' }
   const ok = nmPort.send(frame)
-  if (!ok) return { error: 'host-not-found', lastError: nmPort.lastError }
+  if (!ok) {
+    emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '本机组件未就绪，追问未发出——请重试', tabId: panelTabId ?? -1 }, panelTabId ?? -1) // r58（#4）
+    return { error: 'host-not-found', lastError: nmPort.lastError }
+  }
   currentTask = { taskId, tabId: panelTabId ?? -1, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
   rememberTab(taskId, panelTabId ?? -1)
   setRunningTask(taskId, panelTabId ?? -1) // r55（#10）：host 已受理，任务有了可死的实体
@@ -800,6 +836,7 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
   if (!nmPort.send({ t: 'task-content', taskId, seq: 0, text: '', done: true })) {
     currentTask = null
     clearRunningTask() // r55（#10）
+    emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '追问发送中断（本机组件连接失败）——请重试', tabId: panelTabId ?? -1 }, panelTabId ?? -1) // r58（#4）
     return { error: 'host-not-found', lastError: nmPort.lastError }
   }
   return { ok: true, taskId }
@@ -906,6 +943,18 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     // r56（#4）：守卫同下方 :852——注入/提取 await 数秒，期间新任务可能已接管
     // currentTask（入口 cancelCurrent 只收割 NM 侧），无条件清句柄会击穿新任务
     if (currentTask?.taskId === taskId) currentTask = null
+    // r58（#3）：启动前失败族同走 emitTerminal——注入/提取 await 数秒间面板可能已
+    // 收起，sendResponse 无接收端即静默丢，重开面板永久 loading（提问蒸发）
+    emitTerminal(
+      {
+        t: 'task-error',
+        taskId,
+        code: /Could not load file/i.test(injectErr) ? 'inject-failed' : /No tab with id/i.test(injectErr) ? 'tab-closed' : 'no-permission',
+        message: injectErr,
+        tabId: tab.id!,
+      },
+      tab.id!,
+    )
     // r46：文件加载失败（dist 不完整/升级中，真机曾因单段构建误报授权失效）不是
     // 授权问题——单独归因，免得「点图标重授权」指引对缺文件场景空转
     if (/Could not load file/i.test(injectErr)) return { error: 'inject-failed', detail: injectErr }
@@ -917,6 +966,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   const page = await extractBest(tab.id!)
   if ('error' in page) {
     if (currentTask?.taskId === taskId) currentTask = null // r56（#4）：同上，迟到失败不清他人句柄
+    emitTerminal({ t: 'task-error', taskId, code: page.error, message: page.detail ?? '', tabId: tab.id! }, tab.id!) // r58（#3）：同 inject 族
     return { error: page.error }
   }
   // 提取窗口内被取消/被新任务顶替（currentTask 已易主）：终止，绝不再发 task-start。
@@ -943,11 +993,13 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   }
   if (frameTooLarge(frame)) {
     currentTask = null
+    emitTerminal({ t: 'task-error', taskId, code: 'frame-too-large', message: '任务起跑帧超 NM 上限——请减少附件或缩短输入', tabId: tab.id! }, tab.id!) // r58（#3）
     return { error: 'frame-too-large' }
   }
   const ok = nmPort.send(frame)
   if (!ok) {
     currentTask = null
+    emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '本机组件未就绪——请重试', tabId: tab.id! }, tab.id!) // r58（#3）
     return { error: 'host-not-found', lastError: nmPort.lastError }
   }
   setRunningTask(taskId, tab.id!) // r55（#10）：host 已受理，任务有了可死的实体
@@ -981,6 +1033,7 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
     if (!sent) {
       currentTask = null
       clearRunningTask() // r55（#10）：半途而废的正文同样终结任务
+      emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '正文发送中断（本机组件连接失败）——请重试', tabId: tab.id! }, tab.id!) // r58（#4）
       return { error: 'host-not-found', lastError: nmPort.lastError }
     }
     i = end

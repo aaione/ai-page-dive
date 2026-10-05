@@ -18,8 +18,7 @@ describe('Task 超时终局（r47-audit M4）', () => {
     // 复用 r33 孙进程持写端机制（test/task.test.ts 同款）：孙进程 200ms 吐 result 后
     // 持 stdout 写端到 4s——1500ms 超时到点时 gotResultOk 已置位但 close 未触发。
     // 旧实现：onError('timeout') + persist('interrupted')——用户看到失败但结果已完整交付。
-    // （持端窗口不能 60s：reap 对已退出的直接子进程只等不杀（spawn.ts 守卫），close
-    // 只能等孙进程自然退出，测试会挂到超时）
+    // （r58 #1 后 reap 探组存活——组长已退也收割持组孙进程，close 及时到达，无需等自然退出）
     const dir = await mkdtemp(join(tmpdir(), 'pd-m4-'))
     const script = join(dir, 'cli.mjs')
     await writeFile(

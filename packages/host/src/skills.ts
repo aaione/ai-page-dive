@@ -1,6 +1,6 @@
 /** skills 懒扫描：~/.ai-page-dive/skills/<name>/SKILL.md；内置在 builtins-skills/（默认关），用户目录 shadow 同名 */
 import { constants } from 'node:fs'
-import { copyFile, mkdir, readdir, readFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -66,6 +66,7 @@ export async function revealSkill(name?: string): Promise<void> {
   // 先建根目录：DIR 不存在时 `open` 静默失败；同时从内置拷一份格式说明（wx 幂等，
   // 用户改过即不覆盖）——空目录首次打开不再是「没有任何文件」
   await mkdir(DIR, { recursive: true, mode: 0o700 })
+  await chmod(DIR, 0o700).catch(() => {}) // r58（#9）：存量 0755 收敛（同 workflows）
   await copyFile(join(BUILTIN_SKILL_DIRS[0], 'README.md'), join(DIR, 'README.md'), constants.COPYFILE_EXCL).catch(() => {})
   let target = DIR
   if (name) {

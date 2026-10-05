@@ -454,6 +454,29 @@ process.exit(0)`,
     }
   }, 30_000)
 
+  it('CLI 二进制缺失（ENOENT）：终局 spawn-fail 带真实错误信息（r58 #2）', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const origBin = AGENTS[0].bin
+    AGENTS[0].bin = '/nonexistent-pd-cli-bin' // spawn 失败走异步 'error' 事件（reject 在 resolve 后是 no-op）
+    const fakeHome = await mkdtemp(join(tmpdir(), 'pd-home-'))
+    const origHome = process.env.HOME
+    process.env.HOME = fakeHome
+    try {
+      const { task: mk, cbs } = makeCbs(); const task = mk('t-spawn-enoent')
+      task.start({ taskId: 't-spawn-enoent', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+      task.appendContent(BODY, true)
+      await task.run()
+      expect(cbs.errors.length).toBe(1)
+      expect(cbs.errors[0][0]).toBe('spawn-fail')
+      // 真实诊断信息（修前恒为泛化 'child runtime error'，CLI 缺失不可辨）
+      expect(cbs.errors[0][1]).toContain('ENOENT')
+    } finally {
+      process.env.HOME = origHome
+      AGENTS[0].bin = origBin
+      await rm(fakeHome, { recursive: true, force: true })
+    }
+  }, 15_000)
+
   it('未知 agent → no-agent，不 spawn', async () => {
     const { task: mk, cbs } = makeCbs(); const task = mk()
     task.start({ taskId: 't3', agentId: 'nope', workflow: 'quick', page: PAGE as any })
@@ -477,11 +500,12 @@ process.exit(0)`,
     await rm(join(script, '..'), { recursive: true, force: true })
   }, 30_000)
 
-  it('buildPrompt：workflow body 优先于内置默认', () => {
+  it('buildPrompt：workflow body 优先，无 body 走通用兜底（r58 #17：DEFAULT_TASKS 影抄已删）', () => {
     const p1 = buildPrompt(PAGE as any, '/tmp/f.md', 'mywf', '自定义任务 {url}')
     expect(p1).toContain('自定义任务')
     const p2 = buildPrompt(PAGE as any, '/tmp/f.md', 'quick')
-    expect(p2).toContain('5-8 条要点')
+    expect(p2).toContain('未找到，使用默认') // 兜底如实披露，不再静默顶替影抄文案
+    expect(p2).toContain('quick')
     expect(p2).toContain('/tmp/f.md')
   })
 
@@ -493,10 +517,10 @@ process.exit(0)`,
     expect(pDefault).toContain('安全边界')
   })
 
-  it('buildPrompt：空串任务段回退内置默认（r5-ux：仅附件发送曾产出空「## 任务」）', () => {
-    // '' 对 ?? 是非 nullish 不回退——曾让 CLI 收到无指令的 prompt
+  it('buildPrompt：空串任务段回退通用兜底（r5-ux：仅附件发送曾产出空「## 任务」）', () => {
+    // '' 对 ?? 是非 nullish 不回退——曾让 CLI 收到无指令的 prompt；|| 链兜住
     const p = buildPrompt(PAGE as any, '/tmp/f.md', 'quick', '')
-    expect(p).toContain('5-8 条要点')
+    expect(p).toContain('未找到，使用默认')
     // prompt 里无内部批注泄漏（r5-fix-audit：维护者批注曾随模板下发）
     expect(p).not.toContain('r4-sec')
     expect(p).not.toContain('r5')

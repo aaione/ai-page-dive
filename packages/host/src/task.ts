@@ -147,6 +147,8 @@ export class Task {
 
   /** 被同 id 新任务顶掉（stdio 重入防御，r8-review）：置位后回调层静默全部帧 */
   superseded = false
+  /** r58（#2）：spawn 失败真实错误（ENOENT 等）——spawnCli 的 reject 在 resolve 后是 no-op，经 onSpawnError 捕获 */
+  spawnErr: Error | null = null
 
   cancel(): void {
     if (this.finished) return
@@ -163,8 +165,9 @@ export class Task {
 
   /** 同步 SIGKILL 整组（stdio exit 钩子专用）：事件循环已停，reap() 的 SIGTERM→3s→SIGKILL 异步链跑不完 */
   killNow(): void {
+    // r58（#1）：组长先退守卫删除（同 reap 修正）——孙进程持组时照杀；组亡/无 pid 由 catch 吞
     const { child } = this.proc ?? {}
-    if (child && child.exitCode === null && child.signalCode === null) { try { process.kill(-child.pid!, 'SIGKILL') } catch { /* gone */ } }
+    try { process.kill(-child!.pid!, 'SIGKILL') } catch { /* gone */ }
   }
 
   /** 正文齐了且 agent 可用 → 组装 prompt 并 spawn（幂等：重复 done:true 只跑一次） */
@@ -197,7 +200,7 @@ export class Task {
       scheduleCleanup(contentFile, 11 * 60_000)
     }
 
-    // workflow 正文即任务段：用户目录 shadow 内置，未命中走 DEFAULT_TASKS
+    // workflow 正文即任务段：用户目录 shadow 内置，未命中走通用兜底文案（r58 #17）
     const wfName = this.input.workflow ?? 'quick'
     const wf = await getWorkflow(wfName)
 
@@ -245,6 +248,7 @@ export class Task {
         onStderr: (s) => {
           stderrTail = (stderrTail + s).slice(-2000)
         },
+        onSpawnError: (err) => { this.spawnErr = err }, // r58（#2）：ENOENT 等异步 spawn 失败
       })
     } catch (e: any) {
       this.cleanupCwd(contentFile)
@@ -313,6 +317,13 @@ export class Task {
       this.proc!.child.on('close', async (code, signal) => {
         if (this.finished || this.doneSent || this.timeoutSent) return resolve() // isError/timeout/error 已发终局勿重复（r11：error 后仍可触 exit）
         this.finished = true
+        // r58（#2）：负退出码 = spawn 失败（UV errno，ENOENT=-2；实测 error 先于 close，此为事件序兜底）——防 parse 误判
+        if (code !== null && code < 0) {
+          clearTimeout(this.timeoutTimer)
+          this.cleanupCwd(contentFile)
+          this.cb.onError('spawn-fail', this.spawnErr ? String(this.spawnErr.message ?? this.spawnErr) : `spawn error (${code})`)
+          return resolve()
+        }
         await this.finish(code, signal, stderrTail, contentFile)
         resolve()
       })
@@ -330,7 +341,8 @@ export class Task {
           this.proc?.reap()
           this.cleanupCwd(contentFile)
           resolve()
-          this.cb.onError('spawn-fail', 'child runtime error')
+          // r58（#2）：真实错误信息（如 spawn claude ENOENT）直达诊断——泛化文案看不出 CLI 缺失
+          this.cb.onError('spawn-fail', this.spawnErr ? String(this.spawnErr.message ?? this.spawnErr) : 'child runtime error')
         }
       })
     })

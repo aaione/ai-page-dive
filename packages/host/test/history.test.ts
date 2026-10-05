@@ -272,6 +272,23 @@ describe('r56：肥 frontmatter 头 + 存量 0755 收敛', () => {
     await expect(stat(att)).rejects.toThrow()
   })
 
+  it('r58 #8：pruneHistory 连带删附件——不再留附件孤儿', async () => {
+    const histRoot = join(fakeHome, '.ai-page-dive', 'history')
+    const att = join(fakeHome, '.ai-page-dive', 'attachments', 'old.txt')
+    await mkdir(dirname(att), { recursive: true })
+    await writeFile(att, '旧附件', 'utf8')
+    const day = join(histRoot, '2026', '01', '01')
+    await mkdir(day, { recursive: true })
+    // 11 条 > limit 10：路径序最旧 1 条被 prune，且其 frontmatter 带附件记录
+    for (let i = 0; i < 11; i++) {
+      const fm = i === 0 ? `attachments: ${JSON.stringify([att])}\n` : ''
+      await writeFile(join(day, `1000000${i}-pd.md`), `---\ntitle: t${i}\nagent: claude\nstatus: done\nts: 1\n${fm}---\n正文`, 'utf8')
+    }
+    expect(await pruneHistory(10, histRoot)).toBe(1)
+    expect(existsSync(join(day, '10000000-pd.md'))).toBe(false)
+    expect(existsSync(att), '附件应随被 prune 条目连带删除').toBe(false)
+  })
+
   it('#15：存量 0755 的 history/年/月 在保存时被逐级 chmod 收敛到 0700', async () => {
     const root = join(fakeHome, '.ai-page-dive')
     const file = buildHistoryPath(new Date(), '收敛页')

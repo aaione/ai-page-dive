@@ -235,7 +235,7 @@ export async function listHistory(query?: string, limit = 200): Promise<HistoryI
 }
 
 /** r42：历史保留策略——删除超出 limit 的最旧文件（保存新历史后调用）。按路径序
- * 排（年/月/日/时间戳零填充天然可排序），不读 frontmatter（快）；返回删除数。
+ * 排（年/月/日/时间戳零填充天然可排序），附件连带删（r58 #8）；返回删除数。
  * ponytail: 空出的 年/月/日 目录留着不删——无害且省一次递归；root 可注入供测试 */
 export async function pruneHistory(limit: number, root: string = historyRoot()): Promise<number> {
   if (!(limit >= 10)) return 0
@@ -251,7 +251,8 @@ export async function pruneHistory(limit: number, root: string = historyRoot()):
   paths.sort() // 升序 = 最旧在前
   let removed = 0
   for (const p of paths.slice(0, Math.max(0, paths.length - limit))) {
-    try { await unlink(p); removed++ } catch { /* 并发写入等：跳过，下次保存再清 */ }
+    // r58（#8）：附件连带删（deleteHistory 同款）——单删 md 留永久孤儿（pruned 每次 1 条量级，头读可忽略）
+    try { await deleteAttachmentsOf(p); await unlink(p); removed++ } catch { /* 并发写入等：跳过，下次保存再清 */ }
   }
   return removed
 }
@@ -300,11 +301,9 @@ export async function readHistory(path: string): Promise<string> {
   return readFile(path, 'utf8')
 }
 
-export async function deleteHistory(path: string): Promise<void> {
-  assertInRoot(path)
-  // r53（#7）：连带删本条历史的附件正文——「删除历史」的用户心智是内容一起删。路径仅在
-  // frontmatter 记录（r53 起新条目），旧条目无记录则维持只删 md；且仅认 attachments 根内
-  // 绝对路径，frontmatter 被篡改也不会越界删任意文件
+/** r58（#8）抽自 deleteHistory（pruneHistory 复用）：连带删本条历史 frontmatter 记录的附件。
+ * 仅认 attachments 根内绝对路径，frontmatter 被篡改也不会越界删任意文件；旧条目无记录维持只删 md */
+async function deleteAttachmentsOf(path: string): Promise<void> {
   try {
     const m = (await readFmHead(path))?.match(/^attachments: (\[.*\])$/m)
     const attRoot = resolve(join(homedir(), '.ai-page-dive', 'attachments'))
@@ -313,6 +312,11 @@ export async function deleteHistory(path: string): Promise<void> {
       if (rp !== attRoot && rp.startsWith(attRoot + sep)) await rm(rp, { force: true }).catch(() => {})
     }
   } catch { /* frontmatter 头读失败/解析失败：照删 md */ }
+}
+
+export async function deleteHistory(path: string): Promise<void> {
+  assertInRoot(path)
+  await deleteAttachmentsOf(path)
   await rm(path)
 }
 

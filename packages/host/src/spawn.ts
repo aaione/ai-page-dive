@@ -93,14 +93,12 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
       child.stderr!.on('data', opts.onStderr)
 
       const reap = () => {
-        // child 已退出后 pid 可能被 OS 复用——组杀会误杀复用者恰为组长的无关进程
-        if (child.exitCode !== null || child.signalCode !== null) return
+        // r58（#1）：组长先退守卫过宽——组长已退而孙进程持组（r33 孙持 stdout 写端）时整条
+        // 收割被 return，孙进程永久孤儿 + close 永不触发。改探整组存活：ESRCH=整组已亡（pid 复用者不继承组）
         const pgid = child.pid!
-        try {
-          process.kill(-pgid, 'SIGTERM')
-        } catch { /* already gone */ }
-        // r58（N2）：SIGKILL 兜底不得被「组长已退」短路——组长死于 TERM 而抗信号
-        // 孙进程尚存时孙进程永久逃逸。3s 窗内 pgid 复用需 pid 绕回，不可达；ESRCH 被吞
+        try { process.kill(-pgid, 0) } catch { return }
+        try { process.kill(-pgid, 'SIGTERM') } catch { /* gone */ }
+        // SIGKILL 兜底：组长死于 TERM 而抗信号孙进程尚存时收割之（3s 窗内 pgid 复用需 pid 绕回，不可达）
         setTimeout(() => {
           try { process.kill(-pgid, 'SIGKILL') } catch { /* gone */ }
         }, REAP_GRACE_MS)

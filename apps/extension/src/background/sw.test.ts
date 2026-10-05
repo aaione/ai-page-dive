@@ -41,7 +41,7 @@ const defer = (): Deferred => {
 const PAGE = { url: 'https://x/art', title: 'Art', extractor: 'test', approxTokens: 7 }
 const CLAUDE_SESS = { agentId: 'claude', sessionId: 's-111' }
 
-async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<string, any>; slowGets?: number; hostVersion?: string } = {}) {
+async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<string, any>; slowGets?: number; hostVersion?: string; receiverOnline?: boolean } = {}) {
   const calls = {
     /** runtime.sendMessage 全部广播（含任务帧转发） */
     sent: [] as any[],
@@ -86,7 +86,9 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
       sendMessage: (m: any) => {
         calls.sent.push(m)
         calls.order.push({ k: 'send', v: m?.t })
-        return Promise.resolve()
+        // r58 #5：默认无接收端（面板收起常态——真机 sendMessage reject），emitTerminal
+        // 的入箱判据靠它；receiverOnline 模拟 panel listener 在听（有接收端不入箱）
+        return opts.receiverOnline ? Promise.resolve() : Promise.reject(new Error('Receiving end does not exist'))
       },
     },
     storage: {
@@ -420,6 +422,51 @@ describe('sw.ts 回归网', () => {
     await wait(20)
     expect(h.calls.sent.find((m) => m.t === 'task-error' && m.code === 'content-mismatch')).toMatchObject({ taskId: r3.taskId, tabId: 5 })
     expect((await h.fireMessage({ t: 'panel-ready' })).missedTerminal).toMatchObject({ taskId: r3.taskId, code: 'content-mismatch', tabId: 5 })
+  })
+
+  // r58（#5）：入箱判据 = 广播无接收端。面板在听（receiverOnline）时取消终局不入箱
+  // ——修复前无条件入箱，收起再重开复读陈旧「已取消」；无接收端路径由上测（r57 #4）锚定
+  it('r58 #5：广播有接收端 → 不入收件箱——重开不复读面板已看过的取消', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 }, receiverOnline: true })
+    await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    const r2 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'y' }) // 连坐取消上一轮
+    expect(r2.ok).toBe(true)
+    expect((await h.fireMessage({ t: 'panel-ready' })).missedTerminal).toBeUndefined()
+  })
+
+  it('r58 #5：task-done 清同页签收件箱陈条——新终局后重开不再补发旧「已取消」', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' }) // r1 在跑
+    const r2 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'y' }) // r1 连坐取消 → 收件箱留 cancelled
+    h.fireNm({ t: 'task-done', taskId: r2.taskId, agentId: 'claude', historyPath: '/tmp/h.md' })
+    expect((await h.fireMessage({ t: 'panel-ready' })).missedTerminal).toBeUndefined()
+  })
+
+  it('r58 #6：丢片取消登记 cancelledTaskIds——host 迟到的 cancelled 不覆写收件箱 content-mismatch', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    ;(h.chrome.scripting.executeScript as any).mockResolvedValue([{ result: { ...PAGE, contentMarkdown: 'body' } }])
+    await h.fireMessage({ t: 'panel-ready' }) // 锚 target 到面板页签 5（收件箱按页签键存，同 r57 #4 的 r3 流程）
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    h.fireNm({ t: 'content-received', taskId: r.taskId, chars: 3 }) // 丢片 → 取消 + content-mismatch 入箱
+    await wait(20)
+    h.fireNm({ t: 'task-error', taskId: r.taskId, code: 'cancelled', message: 'task cancelled' }) // host 迟到同义终局
+    await wait(20)
+    expect((await h.fireMessage({ t: 'panel-ready' })).missedTerminal).toMatchObject({ code: 'content-mismatch' })
+  })
+
+  // r58（#7）：终局清理绑死「currentTask 匹配」——迟到/重复终局清不掉指针，已交付
+  // 终局的任务被下次冷启动折算成 ext-restarted 幻影。本地注入残留指针忠实复现竞态
+  //（remove IPC 落盘前 SW 被回收），迟到重复 done 应走同 id 兜底清理
+  it('r58 #7：迟到重复终局清同 id 残留指针——不被冷启动折算成 ext-restarted 幻影', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    h.fireNm({ t: 'task-done', taskId: r.taskId, agentId: 'claude' })
+    expect(h.local.pdRunningTask).toBeUndefined() // 正常路径已清
+    h.local.pdRunningTask = { taskId: r.taskId, tabId: 5 } // 模拟清理竞态残留
+    h.fireNm({ t: 'task-done', taskId: r.taskId, agentId: 'claude' }) // 迟到重复终局（r11）
+    await wait(20)
+    expect(h.local.pdRunningTask, '迟到终局应清同 id 残留指针').toBeUndefined()
+    expect((await h.fireMessage({ t: 'panel-ready' })).missedTerminal, '残留指针不再折算 ext-restarted').toBeUndefined()
   })
 
   it('迟到终局帧盖原 tab 邮戳（r53 #5 / r54 #3）：currentTask 清空后 tabOf 台账仍供邮戳，panel foreignAdopt 可核拒', async () => {
