@@ -141,7 +141,7 @@ function route(msg: any): unknown {
       addListener: (l: (m: unknown) => void) => void listeners.add(l),
       removeListener: (l: (m: unknown) => void) => void listeners.delete(l),
     },
-    getManifest: () => ({ version: '0.1.3' }),
+    getManifest: () => ({ version: '0.1.4' }),
   },
   tabs: { create: ({ url }: { url: string }) => void window.open(url, '_blank') },
   permissions: {

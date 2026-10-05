@@ -25,7 +25,7 @@
 
 **⓪ 前置**：终端已装并登录 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 或 [Codex](https://developers.openai.com/codex/cli)（跑一次 `claude` 或 `codex` 确认无鉴权提示）。
 
-**① 安装扩展**（CWS 审核中，上线前先手动加载）：`chrome://extensions` 开启「开发者模式」→「加载已解压的扩展程序」→ 选本仓库 `apps/extension/dist/`（git clone 后先跑一次 `pnpm install && pnpm build` 生成）。
+**① 安装扩展**（准备提交 CWS，上架前先手动加载）：`chrome://extensions` 开启「开发者模式」→「加载已解压的扩展程序」→ 选本仓库 `apps/extension/dist/`（git clone 后先跑一次 `pnpm install && pnpm build` 生成）。
 
 **② 安装本机组件**（一次性）：扩展面板会显示带扩展 ID 的完整命令（ID 即 Chrome 分配的扩展唯一标识，面板自动拼好），复制到终端执行；无 Node 时若装有 Homebrew 会自动经其安装（首次需先装 Xcode 命令行工具，可能较慢），否则给出手动安装指引。
 
@@ -33,7 +33,7 @@
 curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh | sh -s -- <扩展ID>
 ```
 
-> 🔒 不想盲跑？脚本[源码同仓库、执行前可先读](./install.sh)（MIT）：钉版本安装（`@0.1.3`，不追 latest）、不下载任何二进制、无 sudo、只装 npm 包并注册 Chrome 本机组件。
+> 🔒 不想盲跑？脚本[源码同仓库、执行前可先读](./install.sh)（MIT）：钉版本安装（`@0.1.4`，不追 latest）、不下载任何二进制、无 sudo、只装 npm 包并注册 Chrome 本机组件。
 
 **③ 即用**：任意网页点工具栏图标（或按快捷键 `Ctrl+Shift+D`，macOS 为 `⌘⇧D`）→ 侧边栏选模式 → 总结。快捷键若无效或想改键，去 `chrome://extensions/shortcuts` 查看/修改。
 
@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh
 
 ```bash
 # Node >= 18；勿用 sudo npm——会写坏本机组件注册属主；钉版本与 install.sh 一致
-npm i -g @aaione/ai-page-dive@0.1.3 && ai-page-dive install --ext-id <扩展ID>
+npm i -g @aaione/ai-page-dive@0.1.4 && ai-page-dive install --ext-id <扩展ID>
 ```
 </details>
 
@@ -69,7 +69,7 @@ npm i -g @aaione/ai-page-dive@0.1.3 && ai-page-dive install --ext-id <扩展ID>
 <details>
 <summary>这条 <code>curl | sh</code> 安全吗？</summary>
 
-三层防护：**① 钉版本**——脚本内部执行 <code>npm i -g @aaione/ai-page-dive@0.1.3</code>，不追 latest（npm tarball 自带 registry integrity 校验）；**② 不下载二进制**——只装 npm 包 + 注册 Chrome 本机组件，无 sudo、不写系统目录；**③ 全程可审**——脚本托管在本仓库（[install.sh](./install.sh)，MIT），执行前可先读源码。不额外发布 SHA256：哈希与脚本同仓库同信道，恶意 release 会同步改哈希，密码学上零增益。
+三层防护：**① 钉版本**——脚本内部执行 <code>npm i -g @aaione/ai-page-dive@0.1.4</code>，不追 latest（npm tarball 自带 registry integrity 校验）；**② 不下载二进制**——只装 npm 包 + 注册 Chrome 本机组件，无 sudo、不写系统目录；**③ 全程可审**——脚本托管在本仓库（[install.sh](./install.sh)，MIT），执行前可先读源码。不额外发布 SHA256：哈希与脚本同仓库同信道，恶意 release 会同步改哈希，密码学上零增益。
 </details>
 
 <details>
@@ -109,10 +109,11 @@ Chrome 移除扩展后，终端**先执行 `ai-page-dive uninstall`** 清理本�
 
 - pnpm monorepo：`apps/extension`（Vite + React + TS + Tailwind v4）/ `packages/host`（纯 Node ≥18，运行时零依赖）/ `packages/shared`（类型与 NM 协议）
 - 必读：[DECISIONS.md](DECISIONS.md)（已拍板决策）· [research/product-architecture-report.md](research/product-architecture-report.md)（架构报告）· [AGENTS.md](AGENTS.md)（贡献规范）
-- 测试：vitest 177 用例——host 流解析器 / buildArgs / 真实流 fixture 重放 / pgid 收割链 / 历史轮切分 / SW 回归网（chrome shim 锚冷唤醒竞态、断连清理、丢片对账、分片上限、孤儿任务指针）/ jsdom 内容提取（与 [AGENTS.md](AGENTS.md) 同口径）
+- 测试：vitest 210 用例——host 流解析器 / buildArgs / 真实流 fixture 重放 / pgid 收割链 / 历史轮切分 / SW 回归网（chrome shim 锚冷唤醒竞态、断连清理、丢片对账、分片上限、孤儿任务指针）/ jsdom 内容提取（与 [AGENTS.md](AGENTS.md) 同口径）
 
 ```bash
-pnpm install && pnpm build   # 构建后在 chrome://extensions 加载 apps/extension/dist/
+pnpm install && pnpm test    # 全量测试（24 文件 / 210 用例）
+pnpm build                   # 构建后在 chrome://extensions 加载 apps/extension/dist/
 ```
 </details>
 
