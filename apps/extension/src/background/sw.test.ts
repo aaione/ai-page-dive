@@ -41,7 +41,7 @@ const defer = (): Deferred => {
 const PAGE = { url: 'https://x/art', title: 'Art', extractor: 'test', approxTokens: 7 }
 const CLAUDE_SESS = { agentId: 'claude', sessionId: 's-111' }
 
-async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<string, any>; slowGets?: number; hostVersion?: string; receiverOnline?: boolean } = {}) {
+async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<string, any>; slowGets?: number; hostVersion?: string; receiverOnline?: boolean; activeUrl?: string } = {}) {
   const calls = {
     /** runtime.sendMessage 全部广播（含任务帧转发） */
     sent: [] as any[],
@@ -81,7 +81,7 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
     runtime: {
       id: 'test-ext-id',
       // r53（#1）横幅钉版用：与仓库版本同步的假 manifest
-      getManifest: () => ({ version: '0.1.3' }),
+      getManifest: () => ({ version: '0.1.4' }),
       onMessage: listeners(onMessageL),
       sendMessage: (m: any) => {
         calls.sent.push(m)
@@ -147,7 +147,7 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
       onUpdated: listeners(onUpdated),
       onRemoved: listeners(onRemoved),
       get: async (id: number) => tabsDb.get(id) ?? null,
-      query: async () => [{ id: 11, windowId: 2, url: 'https://x/active', title: 'Active' }],
+      query: async () => [{ id: 11, windowId: 2, url: opts.activeUrl ?? 'https://x/active', title: 'Active' }],
     },
     scripting: {
       // 第 1 次 = content.js files 注入；之后 = func 提取（默认正文可被各用例覆写）
@@ -484,16 +484,16 @@ describe('sw.ts 回归网', () => {
   it('版本横幅：host 过旧 → 命令钉 manifest 版本 + 两段到底（r53 #1——裸 npm i -g 可被镜像/缓存喂旧版）', async () => {
     const h = await boot({ hostVersion: '0.0.9' })
     const st = await h.fireMessage({ t: 'panel-ready' })
-    expect(st.outdated).toContain('@aaione/ai-page-dive@0.1.3')
+    expect(st.outdated).toContain('@aaione/ai-page-dive@0.1.4')
     expect(st.outdated).toContain('install --ext-id test-ext-id')
   })
 
   // r57（#8）：升级触达——host ≥ 下限但落后于扩展钉版时给非阻断软提示；此前升级
   // 无任何触达（已装机用户永远收不到 host 修复），与 Onboarding「仅此一次」矛盾
   it('r57 #8：host 落后钉版（≥下限）→ upgrade 软提示；过旧阻断优先；同版不打扰', async () => {
-    const h = await boot({ hostVersion: '0.1.2' })
+    const h = await boot({ hostVersion: '0.1.3' })
     const st = await h.fireMessage({ t: 'panel-ready' })
-    expect(st.upgrade).toContain('0.1.2 → 0.1.3')
+    expect(st.upgrade).toContain('0.1.3 → 0.1.4')
     expect(st.upgrade).toContain('install --ext-id test-ext-id')
     expect(st.outdated).toBeUndefined() // 非阻断：不下限横幅
     // 过旧仍走阻断横幅，upgrade 与之互斥
@@ -502,7 +502,7 @@ describe('sw.ts 回归网', () => {
     expect(st2.outdated).toBeTruthy()
     expect(st2.upgrade).toBeUndefined()
     // 同版零提示
-    const h3 = await boot({ hostVersion: '0.1.3' })
+    const h3 = await boot({ hostVersion: '0.1.4' })
     const st3 = await h3.fireMessage({ t: 'panel-ready' })
     expect(st3.upgrade).toBeUndefined()
     expect(st3.outdated).toBeUndefined()
@@ -637,5 +637,53 @@ describe('sw.ts 回归网', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // r59（审计 T1）：看门狗竞态象限——cancel 带 taskId 而 SW 侧 currentTask 已清
+  //（终局先到一步）。修复前守卫不命中 → 退化为无 taskId cancel → host 收割
+  //「最近任务」，跨窗口时恰是别面板的新任务
+  it('r59 审计T1：带 taskId + currentTask 已清 → 拒收，不发无 taskId cancel', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    h.fireNm({ t: 'task-done', taskId: r.taskId, agentId: 'claude' }) // 终局清指针（竞态窗口）
+    h.calls.nmSent.length = 0
+    expect(await h.fireMessage({ t: 'cancel', taskId: r.taskId })).toEqual({ ok: false })
+    expect(h.calls.nmSent).toEqual([]) // 绝不发无 taskId task-cancel——host 会收割最近任务
+  })
+
+  // r59（审计 T4）：host 原生 task-error 对齐 emitTerminal「有接收端不入箱」——
+  // 修复前无条件入箱，面板看着错误气泡、收起重开还复读一遍
+  it('r59 审计T4：host 原生 task-error 广播有接收端 → 不入收件箱', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 }, receiverOnline: true })
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    h.fireNm({ t: 'task-error', taskId: r.taskId, code: 'timeout', message: '超时' })
+    await wait(20)
+    expect((await h.fireMessage({ t: 'panel-ready' })).missedTerminal).toBeUndefined()
+  })
+
+  // r59（审计 T5）：迟到 meta/done 的会话归档兜底从 panelTabId 改为 tabOf 台账——
+  // 归档到任务源页签；台账无记录（SW 重启丢账/幽灵帧）则丢弃，绝不写当前锚页签
+  it('r59 审计T5：迟到 done 归档查 tabOf 源页签；未知任务丢弃不捡会话', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    h.fireNm({ t: 'task-error', taskId: r.taskId, code: 'timeout' }) // 终局清 currentTask → done 成迟到帧
+    await wait(20)
+    h.fireNm({ t: 'task-done', taskId: r.taskId, agentId: 'claude', sessionId: 's-222', historyPath: '/tmp/h2.md' })
+    await wait(20)
+    const wrote = h.calls.storageSet.filter((s: any) => s.sessions).at(-1)?.sessions
+    expect(wrote).toContainEqual([5, expect.objectContaining({ sessionId: 's-222', historyPath: '/tmp/h2.md' })])
+    const before = h.calls.storageSet.length
+    h.fireNm({ t: 'task-done', taskId: 'ghost-1', agentId: 'claude', sessionId: 's-999', historyPath: '/tmp/g.md' })
+    await wait(20)
+    expect(JSON.stringify(h.calls.storageSet.slice(before))).not.toContain('s-999') // 未知任务不归档
+  })
+
+  // r59（审计 T9）：PDF 页面专项分型——修复前走 empty-content，得到「滚动到底触发
+  // 懒加载」这一对 PDF 必然无效的指引
+  it('r59 审计T9：PDF 页面 → pdf-page 分型，不再落 empty-content 懒加载指引', async () => {
+    const h = await boot({ activeUrl: 'https://x/paper.pdf' })
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect(r).toMatchObject({ error: 'pdf-page' })
+    expect(h.calls.nmSent.filter((m) => m.t === 'task-start')).toEqual([]) // 不起任务
   })
 })
