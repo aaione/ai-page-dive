@@ -64,6 +64,14 @@ process.exit(1)`,
     'ok-exit1': `console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'完整回答'}]}}))
 console.log(JSON.stringify({type:'result',is_error:false,result:'完整回答',usage:{input_tokens:1,output_tokens:2}}))
 process.exit(1)`,
+    // r58（#35）：codex 形状端到端（codex-cli 0.151 实测事件流，见 codex.ts 头注释）。
+    // 与 claude 的关键差异：item.completed 是各条独立完整消息（上层拼接），非累积
+    // assistant 流（claude parser 侧差分）——形状写实，不借 claude 等价模拟
+    'codex-ok': `console.log(JSON.stringify({type:'thread.started', thread_id:'th-cx-1001'}))
+console.log(JSON.stringify({type:'turn.started'}))
+console.log(JSON.stringify({type:'item.completed', item:{type:'agent_message', text:'第一段'}}))
+console.log(JSON.stringify({type:'item.completed', item:{type:'agent_message', text:'第二段'}}))
+console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:3, output_tokens:4}}))`,
     noagent: '',
   }[mode]
   await writeFile(script, code ?? '', 'utf8')
@@ -136,6 +144,46 @@ describe('Task 状态机', () => {
     AGENTS[0].buildArgs = orig
     await rm(cbs.done.historyPath, { force: true }).catch(() => {})  // 单测不污染真实历史
     await rm(join(script, '..'), { recursive: true, force: true })
+  }, 30_000)
+
+  // r58（#35）：硬约束⑥双引擎的一等公民此前零端到端——全靠 claude 等价模拟。
+  // codex 形状经 Task 全链：thread.started→meta(thread_id)/item.completed 流累积/
+  // turn.completed usage 终局（无 is_error）/resume 轮 buildArgs 真实产物
+  it('r58 #35：codex 形状端到端——meta/文本累积/usage 终局/exec resume wiring', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const script = await FAKE_CLI('codex-ok')
+    AGENTS[1].bin = 'node' // AGENTS = [claudeDef, codexDef]
+    const orig = AGENTS[1].buildArgs
+    let lastArgs: string[] = []
+    // wrap 真实 buildArgs：记录产物喂断言（script 前置，node 忽略后续 argv）
+    AGENTS[1].buildArgs = (opts: any) => {
+      lastArgs = orig.call(AGENTS[1], opts)
+      return [script, ...lastArgs]
+    }
+    try {
+      const { task: mk, cbs } = makeCbs(); const task = mk('cx1')
+      task.start({ taskId: 'cx1', agentId: 'codex', workflow: 'quick', page: PAGE as any })
+      task.appendContent(BODY, true)
+      await task.run()
+      expect(cbs.meta?.sessionId).toBe('th-cx-1001') // thread.started → 追问入口解锁
+      expect(cbs.chunks.map((c) => c[0])).toEqual(['第一段第二段']) // 50ms 攒批合并两条 item.completed
+      expect(cbs.done?.isError).toBe(false) // codex 无 is_error：turn.completed 即成功
+      expect(cbs.done?.usage).toMatchObject({ inputTokens: 3, outputTokens: 4 })
+      const raw = await readFile(cbs.done.historyPath, 'utf8') // 最终文本取流累积（result text 空）
+      expect(raw).toContain('第一段第二段')
+      // resume wiring：第二轮带 resumeSessionId → 真实 buildArgs 产 exec resume <thread_id>
+      const { task: mk2, cbs: cbs2 } = makeCbs(); const t2 = mk2('cx2')
+      t2.start({ taskId: 'cx2', agentId: 'codex', workflow: 'quick', resumeSessionId: 'th-cx-1001', page: PAGE as any })
+      t2.appendContent(BODY, true)
+      await t2.run()
+      expect(lastArgs.slice(0, 3)).toEqual(['exec', 'resume', 'th-cx-1001'])
+      expect(cbs2.done?.isError).toBe(false)
+      await rm(cbs2.done.historyPath, { force: true }).catch(() => {})
+      await rm(cbs.done.historyPath, { force: true }).catch(() => {})
+    } finally {
+      AGENTS[1].buildArgs = orig
+      await rm(join(script, '..'), { recursive: true, force: true })
+    }
   }, 30_000)
 
   // r55（#8/#9）：#8 终局即删正文临时文件（11min unref timer 短命 host 跑不到，

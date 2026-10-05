@@ -122,6 +122,15 @@ export const StreamMarkdown = memo(function StreamMarkdown({
   // 判定）双轨冲突：拖滚动条不产生意图事件，内层停不下来，每个节流帧把 scrollTop
   // 拽回底部。跟随滚动完全由外层负责（HistoryView 恒 done，本就无跟随）
 
+  // 分块：按双换行切，每块以 \n\n 结尾（保留块间空行语义）。rendered snap 到
+  // 完整行后，前缀块集合随文本增长只增不改——memo 命中率随长度趋于 100%
+  // r58（#36）：必须在 HEAVY early return 之前无条件调用——rendered 跨过阈值时
+  // 降级分支提前 return 会让 hooks 数量变化（Rendered fewer hooks → 真机白屏）
+  const blocks = useMemo(() => {
+    const parts = rendered.split(/(?<=\n\n)/)
+    return parts.filter((p) => p !== '')
+  }, [rendered])
+
   // 大文本降级：流式期间与 done 后同标准（done 全量 parse 数百 KB 会冻结面板数秒）
   if (rendered.length > HEAVY) {
     return (
@@ -140,13 +149,6 @@ export const StreamMarkdown = memo(function StreamMarkdown({
       </div>
     )
   }
-
-  // 分块：按双换行切，每块以 \n\n 结尾（保留块间空行语义）。rendered snap 到
-  // 完整行后，前缀块集合随文本增长只增不改——memo 命中率随长度趋于 100%
-  const blocks = useMemo(() => {
-    const parts = rendered.split(/(?<=\n\n)/)
-    return parts.filter((p) => p !== '')
-  }, [rendered])
 
   return (
     <div data-done={done ? 'true' : 'false'} className="pd-md">
