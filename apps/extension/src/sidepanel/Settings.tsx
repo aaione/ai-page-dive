@@ -604,7 +604,7 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
                 <p className="pd-set-empty">尚未探测到本机 CLI</p>
               )}
               <div className="pd-set-lang-row">
-                <span className="pd-set-label" style={{ margin: 0 }}>总结语言</span>
+                <span className="pd-set-label" style={{ margin: 0 }}>总结语言<span style={{ opacity: 0.55 }}>（自动 = 跟随页面语言）</span></span>
                 <div className="pd-set-lang-opts" role="radiogroup" aria-label="总结输出语言" ref={langRef}>
                   {([['', '自动'], ['zh', '中文'], ['en', 'English']] as const).map(([v, label]) => (
                     <button

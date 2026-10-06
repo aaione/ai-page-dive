@@ -437,7 +437,7 @@ export function App() {
             ...s,
             // 存活信号：重置看门狗（F4——重页提取+首心跳延迟叠加窗口）
             aliveAt: Date.now(),
-            // sessionId 到达 = 该 CLI 支持追问（claude 有、codex 无）
+            // sessionId 到达 = 可 CLI 级续接（claude 回带；codex 走 thread 续接不经此字段，r60 审计口径）
             resumable: s.resumable || !!m.sessionId,
             messages: s.messages.map((msg) =>
               msg.id === s.activeId || (msg.streaming && msg.id !== s.activeId)
@@ -463,9 +463,12 @@ export function App() {
             // r6-ux seq 跳变检测：host 每 chunk 递增 seq，SW 重放/断连窗口丢片时跳变
             // ——静默缺头比失败更误导，标记气泡，终局后提示重试（host 零改动）。
             // r59（审计 T6）：重复帧（seq ≤ 已收——重试/重放路径）整帧丢弃，防正文拼二遍
-            if (typeof s.lastChunkSeq === 'number' && typeof m.seq === 'number' && m.seq <= s.lastChunkSeq) return s
+            // r60（代码审）：水位不跨任务——taskId 未绑定/切换时旧 lastChunkSeq 作废
+            //（四终局不清水位的残留，否则新流 seq 从 0 起被旧水位整流吞成静默缺头）
+            const prevSeq = s.taskId === m.taskId ? s.lastChunkSeq : undefined
+            if (typeof prevSeq === 'number' && typeof m.seq === 'number' && m.seq <= prevSeq) return s
             const gap =
-              typeof s.lastChunkSeq === 'number' && typeof m.seq === 'number' && m.seq > s.lastChunkSeq + 1
+              typeof prevSeq === 'number' && typeof m.seq === 'number' && m.seq > prevSeq + 1
             const activeId = s.activeId ?? `a${m.taskId}`
             const messages = [...s.messages]
             const idx = messages.findIndex((x) => x.id === activeId)
@@ -538,7 +541,7 @@ export function App() {
               // 终局即解绑 + 记入 finished：收割前的迟到帧不得重开气泡/劫持新一轮
               taskId: null,
               pending: false,
-              // done 帧带 sessionId = 可追问（claude）；codex 无 → resumable 保持 false
+              // done 帧带 sessionId = 可 CLI 级续接（claude）；codex 走 thread 续接不经此字段
               resumable: s.resumable || !!m.sessionId,
               finished: [...s.finished, m.taskId].slice(-8),
               done: true,
@@ -759,11 +762,11 @@ export function App() {
         : resp.error === 'no-tab' ? '没有可总结的页面（先在普通网页上点扩展图标）'
         : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
         : resp.error === 'pdf-page' ? 'PDF 页面暂不支持总结——转存为 HTML 页面，或复制正文粘贴为附件后直接追问'
-        : resp.error === 'inject-failed' ? `扩展文件加载失败（content.js 缺失——多为更新或加载不完整）${resp.detail ? `〔${String(resp.detail).slice(0, 120)}〕` : ''}——请在 chrome://extensions 刷新 PageDive 后重试`
+        : resp.error === 'inject-failed' ? `扩展文件加载失败（content.js 缺失——多为更新或加载不完整）${resp.detail ? `（原始信息：${String(resp.detail).slice(0, 120)}）` : ''}——请在 chrome://extensions 刷新 PageDive 后重试`
         : resp.error === 'tab-closed' ? '刚看的页面已关闭——在要总结的页面上重试'
         : resp.error === 'page-not-ready' ? '页面尚未就绪（或正在显示错误页）——刷新页面后重试'
-        : resp.error === 'extract-crash' ? `页面脚本冲突导致提取失败${resp.detail ? `〔${String(resp.detail).slice(0, 80)}〕` : ''}——可重试，或粘贴正文作为附件直接追问`
-        : resp.error === 'no-permission' ? `本页尚未授权提取（换页后授权失效）——点工具栏上的 PageDive 图标后重试，或开启「始终允许」一劳永逸${resp.detail ? `〔${String(resp.detail).slice(0, 120)}〕` : ''}`
+        : resp.error === 'extract-crash' ? `页面脚本冲突导致提取失败${resp.detail ? `（原始信息：${String(resp.detail).slice(0, 80)}）` : ''}——可重试，或粘贴正文作为附件直接追问`
+        : resp.error === 'no-permission' ? `本页尚未授权提取（换页后授权失效）——点工具栏上的 PageDive 图标后重试，或开启「始终允许」一劳永逸${resp.detail ? `（原始信息：${String(resp.detail).slice(0, 120)}）` : ''}`
         : resp.error === 'empty-content' ? '页面没有可提取的正文——等页面加载完成（或滚动到底部触发懒加载）后重试；也可粘贴正文作为附件直接追问'
         : resp.error === 'cancelled' ? '已取消'
         : resp.error === 'empty-instruction' ? '请输入要追问的内容（或直接点「新对话」重新总结本页）'
@@ -1065,10 +1068,15 @@ function missedErrBubble(mt: { taskId: string; code?: string; message?: string }
 
 /** CLI 鉴权/额度类错误归一化（r7-ux）：install 探测不含登录态（--version 无需登录），
  * 未登录用户首次总结才见 CLI 原始英文鉴权报错——前置中文指引；非鉴权文本原样返回。
- * r59（审计 T8）：额度耗尽同置顶——「复用已有订阅」卖点下的高频真实失败 */
+ * r59（审计 T8）：额度耗尽同置顶——「复用已有订阅」卖点下的高频真实失败。
+ * r60（产品审）：限流/过载与网络档——重度用户连发追问的高频第二失败面 */
 function authHint(text: string): string {
   if (/usage ?limit|limit reached|quota|insufficient credits|额度/i.test(text))
     return `订阅额度已用尽——等待额度重置、升级套餐或切换账号后重试。原始信息：${text}`
+  if (/rate ?limit|too many requests|429|529|overloaded|capacity/i.test(text))
+    return `请求过于频繁或服务暂时过载——稍等片刻后重试；若持续出现，检查 CLI 服务状态。原始信息：${text}`
+  if (/network|fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|connection reset/i.test(text))
+    return `网络连接失败——检查本机网络（含代理）后重试。原始信息：${text}`
   return /log ?in|sign ?in|authenticat|unauthorized|api[ _-]?key|credential|401/i.test(text)
     ? `该 CLI 尚未登录或凭证已失效——请在终端运行一次该 CLI 完成登录后重试。原始信息：${text}`
     : text

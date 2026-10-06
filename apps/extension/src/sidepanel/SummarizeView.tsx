@@ -515,11 +515,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             label: a.id,
             version: a.version,
             model: a.model,
-            // r51 A6：codex 无 sessionId（不可追问）前置到引擎选择处——此前只在
-            // 定稿后提示，用户选完引擎才发现追问预期落空。
+            // r51 A6 的 codex「不支持追问」标注已删（r60 审计）——codex 早已经
+            // thread_id 续接追问（README 同口径），旧标注与实现三方矛盾。
             // r51 A2①：版本低于解析器实测基线同位提示（CLI 自动升级漂移的可见信号）
             note: [
-              a.id === 'codex' ? '不支持追问' : '',
               a.version && MIN_VERSIONS[a.id] && verLt(a.version, MIN_VERSIONS[a.id])
                 ? `版本低于实测基线 ${MIN_VERSIONS[a.id]}`
                 : '',
@@ -1042,8 +1041,6 @@ function ActionBar({
   pruneNotice?: { removed: number; limit: number } | null
   onDismissPruneNotice?: () => void
   onOpenSettings?: () => void
-  /** true = 当前 CLI 定稿后不可追问（codex 无 sessionId），输入框旁提示新提问独立成轮 */
-  noFollowUpHint?: boolean
   onInputChange: (v: string) => void
   inputRef: React.RefObject<HTMLTextAreaElement | null>
   running: boolean
@@ -1078,11 +1075,6 @@ function ActionBar({
       {enterHint && (
         <p role="note" className="pd-bar-note">
           {enterHint}
-        </p>
-      )}
-      {noFollowUpHint && (
-        <p role="note" className="pd-bar-note">
-          此 CLI 暂不支持追问：新提问将开始全新总结（不含以上对话）
         </p>
       )}
       {/* r57（#24）：prune 首次触顶单次提示——最早历史已被永久清理，指路可调 */}

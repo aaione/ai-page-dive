@@ -191,6 +191,15 @@ let agentsCache: AgentStatus[] | null = null
 let agentsCacheAt = 0
 const AGENTS_CACHE_TTL_MS = 60_000
 
+// r60（代码审，两轮遗留的纵深项）：panel → host 的 nm 通用转发只放行 ExtToHost
+// 已知帧类型（shared/protocol.ts 17 种）——panel 一旦被 XSS 攻陷，无白名单即成
+// 任意 host 命令通道（history-delete / workflow-delete 等写删原语在册）
+const NM_FRAME_TYPES = new Set([
+  'ping', 'list-agents', 'list-workflows', 'task-start', 'task-content', 'task-cancel',
+  'history-list', 'history-read', 'history-delete', 'history-reveal', 'history-reveal-root',
+  'workflow-read', 'workflow-save', 'workflow-delete', 'workflow-reveal', 'list-skills', 'skill-reveal',
+])
+
 // 钉住（默认关）：openPanelOnActionClick 模式下 action.onClicked 不触发，
 // activeTab 授权链断裂（点总结 → executeScript 被拒 → no-permission，playwright 实证）。
 // 默认走 onClicked → sidePanel.open() 路径：点图标即开面板且手势刷新授权。
@@ -573,6 +582,9 @@ async function handleMessage(msg: any): Promise<unknown> {
       // 失步自杀（连带收割全部在跑任务）；任务起跑帧同款 frameTooLarge 早已设防，
       // 此处是同一红线在转发面的缺口
       if (frameTooLarge(msg.msg)) return { error: 'frame-too-large' }
+      // r60（代码审）：帧类型白名单——未知/畸形帧拒转发（见 NM_FRAME_TYPES 注释）
+      if (typeof msg.msg !== 'object' || msg.msg === null || !NM_FRAME_TYPES.has((msg.msg as { t?: string }).t ?? ''))
+        return { ok: false }
       return { ok: nmPort.send(msg.msg as ExtToHost) }
   }
   return undefined
@@ -773,7 +785,11 @@ nmPort.onMessage((m) => {
   const tid = (msg as { taskId?: string })?.taskId
   const stamp =
     currentTask && tid === currentTask.taskId ? currentTask.tabId : tabOf.get(tid ?? '')
-  const delivered = sendToPanel(stamp !== undefined ? { ...(msg as object), tabId: stamp } : m)
+  // r60（审计 T5 后半）：孤儿任务帧（有 taskId 但台账无源页签——cap 淘汰/SW 失忆后
+  // 的迟到残留）不再裸发——无邮戳帧 panel 无从核验，会穿透新面板的 pending 态；
+  // delivered=false 与「无接收端」同语义，下方收件箱/归档各自按 tabOf 守卫不受影响
+  const orphan = tid !== undefined && stamp === undefined
+  const delivered = orphan ? Promise.resolve(false) : sendToPanel(stamp !== undefined ? { ...(msg as object), tabId: stamp } : m)
   // r16（3-agent P1）：任务完成打 ✓ 角标——面板被收起期间 done 广播无接收端，
   // 「deep 跑 2 分钟切走干别的」回不回看全靠记忆。SW 由任务期心跳保活必活着，
   // setBadgeText 免权限；面板重新唤起（panel-ready）或下一轮起跑时清除。
@@ -932,8 +948,9 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   }
   // r59（审计 T9）：PDF 专项分型——Chrome 的 PDF 查看器页提取不到正文，会落进
   // empty-content 的「滚动触发懒加载」指引（对 PDF 必然无效）；URL 特征识别即可
-  //（content-type 需 webRequest 权限，为一个分型扩权不值）
-  if (/\.pdf(\?|#|$)/i.test(tab.url ?? '')) {
+  //（content-type 需 webRequest 权限，为一个分型扩权不值）。r60 复核：正则锚 path
+  // 段（?# 之前）以 .pdf 结尾——旧写法会把 ?url=x.pdf 的 HTML 查看页误报成 PDF
+  if (/^[^?#]*\.pdf([?#]|$)/i.test(tab.url ?? '')) {
     return { error: 'pdf-page', url: tab.url }
   }
 

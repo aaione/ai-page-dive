@@ -307,7 +307,7 @@ export function HistoryView({
           // r7-ux：搜索语境区分——「暂无历史」会把有历史但无匹配的用户引向重装排查
           replied ? (
             <p className="pd-history-empty">
-              {query.trim() ? `无匹配「${query.trim()}」的历史——换个关键词试试` : '暂无历史'}
+              {query.trim() ? `无匹配「${query.trim()}」的历史——换个关键词试试` : '暂无历史——总结第一页后就会出现在这里'}
             </p>
           )
           : slowed ? <p className="pd-history-empty">本机组件未连接，历史暂不可读</p>
