@@ -66,7 +66,7 @@ export async function revealSkill(name?: string): Promise<void> {
   // 先建根目录：DIR 不存在时 `open` 静默失败；同时从内置拷一份格式说明（wx 幂等，
   // 用户改过即不覆盖）——空目录首次打开不再是「没有任何文件」
   await mkdir(DIR, { recursive: true, mode: 0o700 })
-  await chmod(DIR, 0o700).catch(() => {}) // r58（#9）：存量 0755 收敛（同 workflows）
+  await chmod(DIR, 0o700).catch((e) => e?.code !== 'ENOENT' && console.error('[ai-page-dive] chmod 收敛失败:', e?.message ?? e)) // r58（#9）：存量 0755 收敛（同 workflows）
   await copyFile(join(BUILTIN_SKILL_DIRS[0], 'README.md'), join(DIR, 'README.md'), constants.COPYFILE_EXCL).catch(() => {})
   let target = DIR
   if (name) {

@@ -24,7 +24,7 @@ async function getStableAgentCwd(): Promise<string> {
   // r55（#9）：0700 与 workflows/skills/attachments 同谱（历史 slug 可枚举面）；
   // chmod 收敛存量装机的历史 0755（recursive mkdir 对已存在目录是 no-op）
   await mkdir(dir, { recursive: true, mode: 0o700 }).catch(() => {})
-  await chmod(dir, 0o700).catch(() => {})
+  await chmod(dir, 0o700).catch((e) => e?.code !== 'ENOENT' && console.error('[ai-page-dive] chmod 收敛失败:', e?.message ?? e))
   return (stableCwd = dir)
 }
 
@@ -135,7 +135,7 @@ export class Task {
       try {
         const dir = join(homedir(), '.ai-page-dive', 'attachments', new Date().toISOString().slice(0, 7).replace('-', ''))
         // r59（审计 T2）：mkdir mode 不罩已存在目录——附件根与 YYYYMM 双双 chmod 收敛存量 0755
-        if (!madeDir) { await mkdir(dir, { recursive: true, mode: 0o700 }); await chmod(join(dir, '..'), 0o700).catch(() => {}); await chmod(dir, 0o700).catch(() => {}); madeDir = true }
+        if (!madeDir) { await mkdir(dir, { recursive: true, mode: 0o700 }); await chmod(join(dir, '..'), 0o700).catch((e) => e?.code !== 'ENOENT' && console.error('[ai-page-dive] chmod 收敛失败:', e?.message ?? e)); await chmod(dir, 0o700).catch((e) => e?.code !== 'ENOENT' && console.error('[ai-page-dive] chmod 收敛失败:', e?.message ?? e)); madeDir = true }
         // taskId 内联消毒：resume 轮可绕过上层校验，此处兜底防路径穿越（净零行）
         const p = join(dir, `${this.taskId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 't'}-${i + 1}-${safe}`)
         await writeFile(p, kind === 'image' ? Buffer.from(a.b64!, 'base64') : a.text ?? '', { mode: 0o600 })

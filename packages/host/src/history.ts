@@ -98,11 +98,11 @@ export async function saveHistory(
   //（mkdir mode 对已存在目录 no-op）；historyRoot() 推导层级，不赌 '..' 层数
   const root = dirname(historyRoot())
   await mkdir(root, { recursive: true, mode: 0o700 }).catch(() => {})
-  await chmod(root, 0o700).catch(() => {})
+  await chmod(root, 0o700).catch((e) => e?.code !== 'ENOENT' && console.error('[ai-page-dive] chmod 收敛失败:', e?.message ?? e))
   await mkdir(join(path, '..'), { recursive: true, mode: 0o700 }) // r10：目录含标题 slug，0700 防枚举
   // r56（#15）：mkdir mode 对已存在目录 no-op——存量装机的 history/年/月 仍 755；树内路径逐级 chmod 收敛
   const rel = relative(root, dirname(path))
-  if (!rel.startsWith('..')) { let cur = root; for (const s of rel.split(sep)) await chmod((cur = join(cur, s)), 0o700).catch(() => {}) }
+  if (!rel.startsWith('..')) { let cur = root; for (const s of rel.split(sep)) await chmod((cur = join(cur, s)), 0o700).catch((e) => e?.code !== 'ENOENT' && console.error('[ai-page-dive] chmod 收敛失败:', e?.message ?? e)) }
   for (let n = 1; n < 100; n++) { // 同秒同 slug 并发任务互不覆盖：wx 排他创建，EEXIST 时追加序号重试
     const p = n === 1 ? path : path.replace(/\.md$/, `-${n}.md`)
     try {
@@ -192,7 +192,7 @@ export async function listHistory(query?: string, limit = 200): Promise<HistoryI
     (typeof b === 'string' ? b : b.name).localeCompare(typeof a === 'string' ? a : a.name)
   const paths: string[] = []
   const walk = async (dir: string, depth: number): Promise<void> => {
-    await chmod(dir, 0o700).catch(() => {}) // r59（审计 T2）：list 顺带收敛存量 0755 的旧年/月/日目录（含根）
+    await chmod(dir, 0o700).catch((e) => e?.code !== 'ENOENT' && console.error('[ai-page-dive] chmod 收敛失败:', e?.message ?? e)) // r59（审计 T2）：list 顺带收敛存量 0755 的旧年/月/日目录（含根）
     const entries = (await readdir(dir, { withFileTypes: true }).catch(() => [] as any[])).sort(desc)
     for (const e of entries) {
       if (depth === 3) { if (e.isFile() && e.name.endsWith('.md')) paths.push(join(dir, e.name)) }
@@ -241,6 +241,7 @@ export async function pruneHistory(limit: number, root: string = historyRoot()):
   if (!(limit >= 10)) return 0
   const paths: string[] = []
   const walk = async (dir: string, depth: number): Promise<void> => {
+    await chmod(dir, 0o700).catch((e) => e?.code !== 'ENOENT' && console.error('[ai-page-dive] chmod 收敛失败:', e?.message ?? e)) // r60（代码审）：prune 顺带收敛——从不打开历史页的装机（list 不触发）也有收敛机会
     const entries = (await readdir(dir, { withFileTypes: true }).catch(() => [] as any[]))
     for (const e of entries) {
       if (depth === 3) { if (e.isFile() && e.name.endsWith('.md')) paths.push(join(dir, e.name)) }
