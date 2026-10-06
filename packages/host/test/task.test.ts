@@ -123,27 +123,33 @@ describe('Task 状态机', () => {
     // monkeypatch getAgent 的 bin 指向假 CLI
     const { AGENTS } = await import('../src/agents/registry.js')
     const script = await FAKE_CLI('ok')
-    AGENTS[0].bin = `node` // 借 claude def，但 bin 改 node
+    const origBin = AGENTS[0].bin
     const orig = AGENTS[0].buildArgs
-    AGENTS[0].buildArgs = () => [script]
+    const { task: mk, cbs } = makeCbs()
+    try {
+      AGENTS[0].bin = `node` // 借 claude def，但 bin 改 node
+      AGENTS[0].buildArgs = () => [script]
+      const task = mk()
+      task.start({ taskId: 't1', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+      task.appendContent(BODY, true)
+      await task.run()
 
-    const { task: mk, cbs } = makeCbs(); const task = mk()
-    task.start({ taskId: 't1', agentId: 'claude', workflow: 'quick', page: PAGE as any })
-    task.appendContent(BODY, true)
-    await task.run()
-
-    // r8-perf 攒批：50ms 窗口内 delta 合并成一片（seq 从 0 连续；多片切分语义由 CJK 大 delta 测试覆盖）
-    expect(cbs.chunks.map(c => c[0])).toEqual(['第一段第二段'])
-    expect(cbs.chunks.map(c => c[1])).toEqual([0])
-    expect(cbs.done?.isError).toBe(false)
-    expect(cbs.done?.historyPath).toMatch(/\.ai-page-dive\/history\/\d{4}\/\d{2}\/\d{2}\/.*\.md$/)
-    const raw = await readFile(cbs.done.historyPath, 'utf8')
-    expect(raw).toContain('status: done')
-    expect(raw).toContain('第一段第二段')
-
-    AGENTS[0].buildArgs = orig
-    await rm(cbs.done.historyPath, { force: true }).catch(() => {})  // 单测不污染真实历史
-    await rm(join(script, '..'), { recursive: true, force: true })
+      // r8-perf 攒批：50ms 窗口内 delta 合并成一片（seq 从 0 连续；多片切分语义由 CJK 大 delta 测试覆盖）
+      expect(cbs.chunks.map(c => c[0])).toEqual(['第一段第二段'])
+      expect(cbs.chunks.map(c => c[1])).toEqual([0])
+      expect(cbs.done?.isError).toBe(false)
+      expect(cbs.done?.historyPath).toMatch(/\.ai-page-dive\/history\/\d{4}\/\d{2}\/\d{2}\/.*\.md$/)
+      const raw = await readFile(cbs.done.historyPath, 'utf8')
+      expect(raw).toContain('status: done')
+      expect(raw).toContain('第一段第二段')
+    } finally {
+      // r60（审计测试债）：全局 AGENTS 的 monkeypatch 与清理必须 finally——原写法
+      // bin 不还原且断言失败即泄漏，污染同文件后续用例
+      AGENTS[0].bin = origBin
+      AGENTS[0].buildArgs = orig
+      await rm(cbs.done?.historyPath ?? '', { force: true }).catch(() => {}) // 单测不污染真实历史
+      await rm(join(script, '..'), { recursive: true, force: true })
+    }
   }, 30_000)
 
   // r58（#35）：硬约束⑥双引擎的一等公民此前零端到端——全靠 claude 等价模拟。

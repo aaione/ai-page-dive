@@ -602,6 +602,27 @@ describe('sw.ts 回归网', () => {
     expect(h.calls.nmSent).toEqual([])
   })
 
+  // r60（代码审）：帧类型白名单——未知/畸形帧拒转发，panel 被攻陷也不成任意 host 命令通道
+  it('r60：nm 转发白名单——未知帧类型/非对象拒发 ok:false，合法帧照发', async () => {
+    const h = await boot()
+    expect(await h.fireMessage({ t: 'nm', msg: { t: 'rm -rf' } })).toEqual({ ok: false })
+    expect(await h.fireMessage({ t: 'nm', msg: 'not-an-object' })).toEqual({ ok: false })
+    expect(await h.fireMessage({ t: 'nm', msg: {} })).toEqual({ ok: false })
+    expect(h.calls.nmSent).toEqual([])
+    expect(await h.fireMessage({ t: 'nm', msg: { t: 'list-skills' } })).toEqual({ ok: true })
+    expect(h.calls.nmSent).toEqual([{ t: 'list-skills' }])
+  })
+
+  // r60（审计 T5 后半）：孤儿任务帧（有 taskId、台账无源页签）不裸发——无邮戳帧会
+  // 穿透新面板 pending 态；终局兜底（收件箱/归档）按各自 tabOf 守卫独立成立
+  it('r60：孤儿任务帧不转发——ghost taskId 无 tabOf 记录，task-chunk/task-done 均不进 sent', async () => {
+    const h = await boot()
+    h.fireNm({ t: 'task-chunk', taskId: 'ghost', seq: 1, text: 'x' })
+    h.fireNm({ t: 'task-done', taskId: 'ghost' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(h.calls.sent.filter((m) => m?.t === 'task-chunk' || m?.t === 'task-done')).toEqual([])
+  })
+
   // r58（#30）：SW 指针空 ≠ host 侧空——扩展 reload 折叠指针后 host 可能还在跑。
   // idle 的 cancel 发无 taskId 的 task-cancel 让 host 取本连接最近任务；任务在跑
   // 时仍带 taskId（精确收割不误杀）
@@ -678,6 +699,21 @@ describe('sw.ts 回归网', () => {
     expect(JSON.stringify(h.calls.storageSet.slice(before))).not.toContain('s-999') // 未知任务不归档
   })
 
+  // r60（审计测试债）：上例锚=源分不开「归档绕过 tabOf 退化为 panelTabId」——本例
+  // 锚在 6、任务源在 11（harness tabs.query 恒回 11）：退化实现会把会话写进 6，
+  // 正确实现按 tabOf 归 11
+  it('r60：T5 正向区分——锚 6 / 任务源 11，迟到归档进 11 不进 6', async () => {
+    const h = await boot({ seed: { panelTabId: 6, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    h.fireNm({ t: 'task-error', taskId: r.taskId, code: 'timeout' })
+    await wait(20)
+    h.fireNm({ t: 'task-done', taskId: r.taskId, agentId: 'claude', sessionId: 's-333', historyPath: '/tmp/h3.md' })
+    await wait(20)
+    const wrote = h.calls.storageSet.filter((s: any) => s.sessions).at(-1)?.sessions
+    expect(wrote).toContainEqual([11, expect.objectContaining({ sessionId: 's-333' })])
+    expect(wrote).not.toContainEqual([6, expect.objectContaining({ sessionId: 's-333' })])
+  })
+
   // r59（审计 T9）：PDF 页面专项分型——修复前走 empty-content，得到「滚动到底触发
   // 懒加载」这一对 PDF 必然无效的指引
   it('r59 审计T9：PDF 页面 → pdf-page 分型，不再落 empty-content 懒加载指引', async () => {
@@ -685,5 +721,9 @@ describe('sw.ts 回归网', () => {
     const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
     expect(r).toMatchObject({ error: 'pdf-page' })
     expect(h.calls.nmSent.filter((m) => m.t === 'task-start')).toEqual([]) // 不起任务
+    // r60（审计 T9 复核）：query 带 .pdf 的 HTML 查看页不得误报——正则锚 path 段
+    const h2 = await boot({ activeUrl: 'https://view.x/doc?url=https://a/paper.pdf' })
+    const r2 = await h2.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect((r2 as { error?: string }).error).not.toBe('pdf-page')
   })
 })

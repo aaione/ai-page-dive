@@ -17,6 +17,9 @@ const spots = [
   // npm 命令），发版不跟即漂——8d78e0e 已实证此点位会漂，并入门禁。
   // 正则锚定 getManifest 行：mock 的 AGENTS 列表里还有 CLI 版本串，泛匹配会撞错
   ['apps/extension/src/dev/chrome-mock.ts', (s) => s.match(/getManifest[^\n]*version: '([\d.]+)'/)?.[1] ?? '(未找到版本号)'],
+  // r60（代码审唯一 medium）：sw.test 的 harness mock 与 chrome-mock 同款漂移面——
+  // 版本横幅用例的断言串全靠它，发版不跟即静默漂移，并入门禁（同款正则锚定）
+  ['apps/extension/src/background/sw.test.ts', (s) => s.match(/getManifest[^\n]*version: '([\d.]+)'/)?.[1] ?? '(未找到版本号)'],
 ]
 
 let bad = 0

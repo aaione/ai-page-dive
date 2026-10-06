@@ -175,12 +175,15 @@ describe('r59 审计T2：USER_DIR 根存量 0755 收敛（真实 USER_DIR 唯一
     const name = `convroot${process.pid}`
     const userDir = join(homedir(), '.ai-page-dive', 'workflows')
     await mkdir(userDir, { recursive: true })
+    // r60（审计测试债）：存原 mode 测后还原——真实用户目录的权限不因测试永久变更
+    const origMode = (await stat(userDir)).mode & 0o777
     await chmod(userDir, 0o755)
     try {
       await saveWorkflow({ name, description: 'd', body: 'x' })
       expect((await stat(userDir)).mode & 0o777, userDir).toBe(0o700)
     } finally {
       await rm(join(userDir, name), { recursive: true, force: true })
+      await chmod(userDir, origMode).catch(() => {})
     }
   })
 })
