@@ -86,7 +86,7 @@
   - 叠加项：依赖 herdr ≠ 替换 host（Chrome 只认 NM，host 必须在）而是加层（SW→NM→host→herdr CLI→server→pane 五层链路）；安装链翻倍违反零配置；herdr 解决的会话持久化/多机/羊群管理是 PageDive 不存在的瓶颈。
 - 未来选项（不排期）：① 获客——herdr 用户 = 多 CLI 重度开发者 = 最精准画像，可在其社区做 use case 传播；② 反向集成——PageDive 若要出现在 herd 面板，正确姿势是作为 custom integration 用 `pane.report_agent` 上报任务状态，而非经 herdr 派任务。
 
-### 多引擎（多 CLI 组合）定案（2026-09-09 grilling）
+### 多引擎（多 CLI 组合）定案（2026-09-09 grilling）——⚠️ 未实施（截至 v0.1.4 本节为实现级设计预留，非已交付功能，r60 审计标记）
 
 - **价值定位**：把用户已付费的多个 AI 订阅从「备选项」变成「可组合的阅读引擎池」（本地免费版多模型聚合，正文不经 PageDive 中转）。默认单引擎，多引擎一律显式 opt-in + 成本前置（≈2× tokens 微标）；deep+双引擎不加二次确认（opt-in 已显式，微标已透明，过度防御）。
 - **交付节奏**：v1.x 只交付**审校模式**（second opinion，1.5-2 天）；**并列对比推 v2 等定性反馈**（审校上线后看用户反馈 / GitHub issue 等定性信号——零遥测承诺下无量化数据源，2026-09-26 r51-audit 措辞对齐：风格差异诉求由重跑按钮 0.5 天覆盖，真有并列 arena 诉求再做 1-2 周双流 UI 改造）。
