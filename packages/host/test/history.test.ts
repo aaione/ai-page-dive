@@ -334,4 +334,16 @@ describe('r56：肥 frontmatter 头 + 存量 0755 收敛', () => {
       expect((await stat(d)).mode & 0o777, d).toBe(0o700)
     }
   })
+
+  it('r61（代码审）：prune 顺带收敛存量 0755——从不打开历史页的装机也有收敛机会', async () => {
+    const histRoot = join(fakeHome, '.ai-page-dive', 'history')
+    const old = join(histRoot, '2025', '12', '01')
+    await mkdir(old, { recursive: true })
+    await writeFile(join(old, '00000001-pd.md'), '---\ntitle: 旧\nagent: claude\nstatus: done\nts: 1\n---\n正文', 'utf8')
+    for (const d of [histRoot, join(histRoot, '2025'), join(histRoot, '2025', '12'), old]) await chmod(d, 0o755)
+    expect(await pruneHistory(50, histRoot)).toBe(0) // 无删除，纯走 walk——收敛仍须发生
+    for (const d of [histRoot, join(histRoot, '2025'), join(histRoot, '2025', '12'), old]) {
+      expect((await stat(d)).mode & 0o777, d).toBe(0o700)
+    }
+  })
 })

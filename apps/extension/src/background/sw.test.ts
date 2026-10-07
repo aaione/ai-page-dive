@@ -156,6 +156,9 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
   }
   ;(globalThis as any).chrome = chrome
   nmState.port = {
+    // r61（代码审）：mock 对齐 NmPort 真实接口——sw 的 bare-cancel 守卫读 connected；
+    // 用例内可覆写为 false 模拟断连（host 已死不拉空）
+    connected: true,
     send: (m: any) => {
       calls.nmSent.push(m)
       return true
@@ -621,12 +624,15 @@ describe('sw.ts 回归网', () => {
     h.fireNm({ t: 'task-done', taskId: 'ghost' })
     await new Promise((r) => setTimeout(r, 0))
     expect(h.calls.sent.filter((m) => m?.t === 'task-chunk' || m?.t === 'task-done')).toEqual([])
+    // r61（代码审）：孤儿 done 也不打角标——帧已弃发而角标照打是「有通知无内容」半开态
+    expect(h.calls.badge.filter((b) => b?.text === '✓' || b?.text === '!')).toEqual([])
   })
 
   // r58（#30）：SW 指针空 ≠ host 侧空——扩展 reload 折叠指针后 host 可能还在跑。
   // idle 的 cancel 发无 taskId 的 task-cancel 让 host 取本连接最近任务；任务在跑
-  // 时仍带 taskId（精确收割不误杀）
-  it('r58 #30：cancel 空闲发无 taskId task-cancel；在跑带 taskId', async () => {
+  // 时仍带 taskId（精确收割不误杀）。r61（代码审）：断连时不发——NM 一连接一 host，
+  // port 断即 host 进程已死无任务可收割，发只会冷启动空 host
+  it('r58 #30：cancel 空闲发无 taskId task-cancel；在跑带 taskId；断连不发', async () => {
     const h = await boot()
     expect(await h.fireMessage({ t: 'cancel' })).toEqual({ ok: true })
     expect(h.calls.nmSent).toContainEqual({ t: 'task-cancel' }) // 无 taskId——host 取最近任务
@@ -634,6 +640,10 @@ describe('sw.ts 回归网', () => {
     expect(r.ok).toBe(true)
     await h.fireMessage({ t: 'cancel' })
     expect(h.calls.nmSent).toContainEqual({ t: 'task-cancel', taskId: r.taskId })
+    // r61：断连后空闲 cancel 不再发——全程恰好 1 条无 taskId 的 task-cancel
+    ;(nmState.port as any).connected = false
+    expect(await h.fireMessage({ t: 'cancel' })).toEqual({ ok: true })
+    expect(h.calls.nmSent.filter((m) => m.t === 'task-cancel' && m.taskId === undefined)).toHaveLength(1)
   })
 
   // r58（#28）：正文对账超时兜底——回执被吞（done 片或 content-received 丢失）时
@@ -725,5 +735,14 @@ describe('sw.ts 回归网', () => {
     const h2 = await boot({ activeUrl: 'https://view.x/doc?url=https://a/paper.pdf' })
     const r2 = await h2.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
     expect((r2 as { error?: string }).error).not.toBe('pdf-page')
+    // r61（产品审）：尾斜杠与 format=pdf 两形态命中；format=pdfx 子串不误报
+    for (const u of ['https://x/paper.pdf/', 'https://docs.x/export?format=pdf']) {
+      const hx = await boot({ activeUrl: u })
+      const rx = await hx.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+      expect((rx as { error?: string }).error, u).toBe('pdf-page')
+    }
+    const h3 = await boot({ activeUrl: 'https://docs.x/export?format=pdfx' })
+    const r3 = await h3.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect((r3 as { error?: string }).error).not.toBe('pdf-page')
   })
 })
