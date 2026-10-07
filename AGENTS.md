@@ -66,6 +66,10 @@ feat(ext): sidePanel 渲染 markdown 流式输出
 fix(host): pgid 收割遗漏子进程
 ```
 
+### 回执措辞
+
+- commit message 与审计回执中的能力描述**必须可从 diff 逐字导出**——只做 `t` 字段查表就写「白名单」，不得自称「形状校验」（r59/r60 两轮连犯的措辞水分，r61 审计制度化）。
+
 ### Author
 
 - **Author** — every commit must be authored as `tj <tiejia0319@gmail.com>`. Use `git commit --author="tj <tiejia0319@gmail.com>"` (or set the author identity accordingly) so the recorded author is always `tj <tiejia0319@gmail.com>`, regardless of who runs the commit.

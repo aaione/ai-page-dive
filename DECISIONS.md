@@ -94,6 +94,11 @@
 - **交互入口**：CLI 下拉底部「+ 添加第二引擎」→ 双 chip（`claude ✕ codex`）+ 模式微切换（审校⟷并列，v1.x 只有审校生效）+ ≈2× tokens 微标。默认态零变化，渐进披露，不加第三个下拉。
 - **架构**：编排放 SW（A 的 task-done 同一 tick 内发 B 的 task-start，A 的 accumulated 输出作为 B 的上下文重发）——host 零改动（tasks Map 本就支持并发/串行多任务；审校串行 = panel 单流状态机直接复用，B 的 chunk 天然是新气泡）。审校 prompt 由内置 workflow `review-critique` 承载（可被用户目录 shadow 定制）。历史：两任务两文件现状机制零改，frontmatter 加 `reviewOf` 关联 A 的 historyPath。
 
+### SW→host 转发帧白名单（2026-10-07 r61 入账）
+
+- r60 起，panel→host 的 nm 通用转发只放行协议已知帧：`sw.ts` 的 `NM_FRAME_TYPES`（r61 起钉 `Set<ExtToHost['t']>`，与 shared/protocol.ts 17 帧绑定，拼写错编译红）。动机：panel 一旦被 XSS 攻陷，无白名单即成任意 host 命令通道（history-delete / workflow-delete 写删原语在册）；host 侧 assertInRoot 等校验是纵深第二层，不替代入口收窄。
+- **边界变更需过决策**：新增协议帧必须同步白名单 + sw.test 用例（漏帧即功能回归——帧被入口拒发，面板功能静默失效）。r61 审计 #13 入账要求。
+
 ## v2 路线图（已明确延后）
 
 `--daemon` 常驻（关面板不中断）/ 导入导出 / Windows / Edge/Brave / marketplace / OpenCode 等更多适配器 / dsh 深度支持
