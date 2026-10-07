@@ -44,7 +44,7 @@ if ! npm i -g @aaione/ai-page-dive@0.1.4; then
   printf '\033[1;33m%s\033[0m\n' "npm 全局安装失败。常见原因：
   • EACCES 权限错误 → 改用 nvm/Homebrew 的 Node（推荐，免 sudo；勿用 sudo npm——会写坏 NM 注册属主）
   • nvm 切过版本 → 全局包按版本隔离，重装一次即可
-  • E404 版本不存在 → 该版本可能尚未发布到 npm（刚发版有窗口期），稍等几分钟后重试
+  • E404 版本不存在 → 该版本可能尚未发布到 npm（刚发版有窗口期），稍等几分钟后重试；仍 404 到 github.com/aaione/ai-page-dive/releases 确认该版本已发布
   • 网络问题 → 检查代理或换 registry" >&2
   exit 1
 fi
