@@ -208,7 +208,7 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
           // host 错误帧（read-fail/bad-name/delete-fail/reveal-fail）：码→中文标签，
           // 未知码兜底（r59 审计 T10——全产品最后一处错误码裸露面）
           const LABEL: Record<string, string> = { 'read-fail': '读取失败', 'bad-name': '名称不合法', 'delete-fail': '删除失败', 'reveal-fail': '打开目录失败' }
-          setHostError(`${LABEL[m.code] ?? `未知错误（码 ${m.code}）`}${m.message ? `：${m.message}` : ''}`)
+          setHostError(`${LABEL[m.code] ?? `未知错误（码 ${m.code}）`}${m.message ? `（原始信息：${m.message}）` : ''}`)
           window.setTimeout(() => setHostError(null), 10_000)
           break
         }

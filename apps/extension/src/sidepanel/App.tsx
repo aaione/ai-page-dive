@@ -225,7 +225,7 @@ export function App() {
             // 中性文案：不预设死因（可能是 SW 死，也可能是极端慢），普通用户可懂（R2-m4）。
             // r52（review #9）：wf 轮（一键总结）回填为空串——「已放回输入框」是假承诺，
             // 改指真实重试路径（与 retryNote 的 Enter 重发同机制）
-            { id: `w${Date.now()}`, role: 'assistant', text: '', error: rf?.wf ? '一键总结超时未完成——直接按 Enter 以原档位重试' : '响应超时——你的问题已放回输入框，可直接重发', isError: true },
+            { id: `w${Date.now()}`, role: 'assistant', text: '', error: rf?.wf ? '一键总结超时未完成——直接按 Enter 以原模式重试' : '响应超时——你的问题已放回输入框，可直接重发', isError: true },
           ],
         }
       })
@@ -623,7 +623,7 @@ export function App() {
                         // 「已放回输入框」假承诺（review #9）
                         : m.code === 'timeout'
                           ? rf?.wf
-                            ? '一键总结超时未完成——直接按 Enter 以原档位重试'
+                            ? '一键总结超时未完成——直接按 Enter 以原模式重试'
                             : ERROR_LABEL.timeout
                         // r46（activetab-analysis P3）：content-mismatch 是 NM 传输
                         // 丢片非 CLI 故障——SW 下发的 message 已是完整文案，再拼
@@ -675,7 +675,7 @@ export function App() {
             // r47-audit M1：refill 构造收敛 refillFor（wf 轮 text 置空 + 携带档位）
             const rf = refillFor(s, lastUser)
             const TEXT = rf?.wf
-              ? '一键总结未完成——直接按 Enter 以原档位重试'
+              ? '一键总结未完成——直接按 Enter 以原模式重试'
               // r53（#10）：回填对已有草稿是静默跳过（SummarizeView 守卫）——文案如实
               : '本机组件连接中断——你的问题已放回输入框（未覆盖已有草稿），可直接重发'
             const messages = s.messages.map((msg) =>
@@ -1069,13 +1069,15 @@ function missedErrBubble(mt: { taskId: string; code?: string; message?: string }
 /** CLI 鉴权/额度类错误归一化（r7-ux）：install 探测不含登录态（--version 无需登录），
  * 未登录用户首次总结才见 CLI 原始英文鉴权报错——前置中文指引；非鉴权文本原样返回。
  * r59（审计 T8）：额度耗尽同置顶——「复用已有订阅」卖点下的高频真实失败。
- * r60（产品审）：限流/过载与网络档——重度用户连发追问的高频第二失败面 */
+ * r60（产品审）：限流/过载与网络档——重度用户连发追问的高频第二失败面。
+ * r61（产品审）：限流档前置——「Rate limit reached」此前被额度档 limit reached 先截胡，
+ * 误导「升级套餐」；429/529 加词边界防 ETIMEDOUT after 4290ms 误判；网络档补全形态 */
 function authHint(text: string): string {
+  if (/rate[ _-]?limit|too many requests|\b429\b|\b529\b|overloaded|capacity/i.test(text))
+    return `请求过于频繁或服务暂时过载——稍等片刻后重试；若持续出现，检查 CLI 服务状态。原始信息：${text}`
   if (/usage ?limit|limit reached|quota|insufficient credits|额度/i.test(text))
     return `订阅额度已用尽——等待额度重置、升级套餐或切换账号后重试。原始信息：${text}`
-  if (/rate ?limit|too many requests|429|529|overloaded|capacity/i.test(text))
-    return `请求过于频繁或服务暂时过载——稍等片刻后重试；若持续出现，检查 CLI 服务状态。原始信息：${text}`
-  if (/network|fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|connection reset/i.test(text))
+  if (/network|fetch failed|connection (error|reset|closed)|ECONNRESET|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|timeout|timed out/i.test(text))
     return `网络连接失败——检查本机网络（含代理）后重试。原始信息：${text}`
   return /log ?in|sign ?in|authenticat|unauthorized|api[ _-]?key|credential|401/i.test(text)
     ? `该 CLI 尚未登录或凭证已失效——请在终端运行一次该 CLI 完成登录后重试。原始信息：${text}`

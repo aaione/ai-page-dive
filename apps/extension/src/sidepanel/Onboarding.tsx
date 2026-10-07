@@ -192,6 +192,9 @@ export function Onboarding() {
             <code>{npmCmd}</code>。
           </p>
           <p>
+            <code>E404</code> / 版本不存在 → 该版本可能尚未发布到 npm（刚发版有窗口期）——稍等几分钟重试，或到 GitHub releases 确认。
+          </p>
+          <p>
             <code>EACCES</code> / 权限错误 → 改用 nvm/Homebrew 的 Node 重装（免 sudo；
             <strong>勿用 sudo npm</strong>——root 属主会写坏本机组件注册，后续重装会反复失败）。
           </p>

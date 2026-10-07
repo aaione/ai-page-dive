@@ -180,7 +180,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // 用户显式选的持久偏好（选 paper→点 CTA→失败→pd-workflow 被改 deep，跨会话丢失）
     setWorkflowState(wf)
     ctaRetryWf.current = wf
-    setRetryNote(`「${WF_LABEL[wf] ?? wf}」未完成——直接按 Enter 以原档位重试`)
+    setRetryNote(`「${WF_LABEL[wf] ?? wf}」未完成——直接按 Enter 以原模式重试`)
   }
   useEffect(() => {
     if (stream.refill && stream.refill.n !== lastRefill.current) {
@@ -686,11 +686,6 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
               ? `自定义问题将替代「${WF_LABEL[workflow] ?? workflow}」模式指令`
               : undefined
           }
-          noFollowUpHint={
-            // r9-backlog：codex 等无 sessionId 的 CLI 定稿后，输入框仍暗示可续问——
-            // 不提示则追问预期落空。!resumable && 有完成答案精确区分 claude 首轮
-            !running && !resumable && messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text)
-          }
           onInputChange={setInput}
           inputRef={inputRef}
           running={running}
@@ -1029,7 +1024,7 @@ export function ModelDropdown({
 }
 
 function ActionBar({
-  input, workflowNotice, noFollowUpHint, onInputChange, inputRef,
+  input, workflowNotice, onInputChange, inputRef,
   running, usableCount, hasSession, pageUnsupported,
   onStart, onCancel, onAttach, attachCount, attachRef, onPickFiles,
   pruneNotice, onDismissPruneNotice, onOpenSettings,
@@ -1244,7 +1239,7 @@ function PageTips({ meta, idle, dimmed }: { meta: PageMeta; idle?: boolean; dimm
         <span
           className="pd-page-tips-notice"
           style={dimmed ? { opacity: 0.45 } : undefined}
-          title={`${dimmed === 'resume' ? '追问轮不注入技能（新对话后生效）' : dimmed === 'quick' ? '快速档不注入技能（追求十几秒出要点，切其他档生效）' : '已启用技能（总结时注入增强指令）'}：${skills.join('、')}——在 设置·技能 管理`}
+          title={`${dimmed === 'resume' ? '追问轮不注入技能（新对话后生效）' : dimmed === 'quick' ? '快速模式不注入技能（追求十几秒出要点，切其他模式生效）' : '已启用技能（总结时注入增强指令）'}：${skills.join('、')}——在 设置·技能 管理`}
         >
           ⚡ {skills.length > 1 ? `技能 ×${skills.length}` : skills[0]}
         </span>

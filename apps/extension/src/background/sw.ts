@@ -194,7 +194,8 @@ const AGENTS_CACHE_TTL_MS = 60_000
 // r60（代码审，两轮遗留的纵深项）：panel → host 的 nm 通用转发只放行 ExtToHost
 // 已知帧类型（shared/protocol.ts 17 种）——panel 一旦被 XSS 攻陷，无白名单即成
 // 任意 host 命令通道（history-delete / workflow-delete 等写删原语在册）
-const NM_FRAME_TYPES = new Set([
+// r61（代码审）：元素类型钉 ExtToHost['t']——新增协议帧忘更新此表时拼错即编译红
+const NM_FRAME_TYPES = new Set<ExtToHost['t']>([
   'ping', 'list-agents', 'list-workflows', 'task-start', 'task-content', 'task-cancel',
   'history-list', 'history-read', 'history-delete', 'history-reveal', 'history-reveal-root',
   'workflow-read', 'workflow-save', 'workflow-delete', 'workflow-reveal', 'list-skills', 'skill-reveal',
@@ -458,7 +459,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       // 须两段（装 + 登记 ext-id），版本与 ext 由 check-version.mjs 门禁同步
       const outdated =
         r.ok && r.hostVersion && versionLt(r.hostVersion, MIN_HOST_VERSION)
-          ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），请在终端执行：npm i -g @aaione/ai-page-dive@${chrome.runtime.getManifest().version} && ai-page-dive install --ext-id ${chrome.runtime.id}`
+          ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），请在终端执行：npm i -g @aaione/ai-page-dive@${chrome.runtime.getManifest().version} && ai-page-dive install --ext-id ${chrome.runtime.id}（若报 E404——该版本尚未发布到 npm，稍后几分钟重试）`
           : undefined
       // r57（#8）：升级触达——host ≥ 下限但落后于扩展钉版时给非阻断软提示（过旧
       // 阻断横幅优先）。此前升级无任何触达：已装机用户的 host 永远收不到修复，
@@ -466,7 +467,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       const extV = chrome.runtime.getManifest().version
       const upgrade =
         !outdated && r.ok && r.hostVersion && versionLt(r.hostVersion, extV)
-          ? `本机组件有新版本（${r.hostVersion} → ${extV}），建议升级：npm i -g @aaione/ai-page-dive@${extV} && ai-page-dive install --ext-id ${chrome.runtime.id}`
+          ? `本机组件有新版本（${r.hostVersion} → ${extV}），建议升级：npm i -g @aaione/ai-page-dive@${extV} && ai-page-dive install --ext-id ${chrome.runtime.id}（若报 E404——该版本尚未发布到 npm，稍后几分钟重试）`
           : undefined
       // 面板收起期间错过的任务终局一次性补发（r53 #5）：面板无接收端时广播静默丢，
       // 重开面板永远停在 loading。消费即清——防重复补发
@@ -578,13 +579,14 @@ async function handleMessage(msg: any): Promise<unknown> {
         chrome.runtime.sendMessage({ t: 'agents', agents: agentsCache }).catch(() => {})
         return { ok: true }
       }
+      // r60（代码审）：帧类型白名单——未知/畸形帧拒转发（见 NM_FRAME_TYPES 注释）；
+      // r61（代码审）：前置到 frameTooLarge 之前——全量 JSON 序列化的重活只对过白名单的帧做
+      if (typeof msg.msg !== 'object' || msg.msg === null || !NM_FRAME_TYPES.has(((msg.msg as { t?: string }).t ?? '') as ExtToHost['t']))
+        return { ok: false }
       // r55（#11）：通用转发补帧限门禁——workflow-save 等大帧超限会被 host 当协议
       // 失步自杀（连带收割全部在跑任务）；任务起跑帧同款 frameTooLarge 早已设防，
       // 此处是同一红线在转发面的缺口
       if (frameTooLarge(msg.msg)) return { error: 'frame-too-large' }
-      // r60（代码审）：帧类型白名单——未知/畸形帧拒转发（见 NM_FRAME_TYPES 注释）
-      if (typeof msg.msg !== 'object' || msg.msg === null || !NM_FRAME_TYPES.has((msg.msg as { t?: string }).t ?? ''))
-        return { ok: false }
       return { ok: nmPort.send(msg.msg as ExtToHost) }
   }
   return undefined
@@ -647,8 +649,10 @@ function cancelCurrent() {
   }
   // r58（#30）：SW 指针空 ≠ host 侧空——扩展 reload 折叠指针后 host 可能还在跑
   //（迟到终局/ext-restarted 幻影对账依赖 pdRunningTask，但那只在 SW 存活期内可靠）。
-  // 无 taskId 的 cancel 让 host 取本连接最近任务，白烧订阅额度的空跑就此闭合
-  nmPort.send({ t: 'task-cancel' })
+  // 无 taskId 的 cancel 让 host 取本连接最近任务，白烧订阅额度的空跑就此闭合。
+  // r61（代码审）：断连时不发——send 内部 connect() 会冷启动一个空 host 只为收
+  // 一条无任务的 cancel；host 真有任务在跑则 port 必然活着，不误伤
+  if (nmPort.connected) nmPort.send({ t: 'task-cancel' })
   return { ok: true }
 }
 
@@ -794,7 +798,8 @@ nmPort.onMessage((m) => {
   // 「deep 跑 2 分钟切走干别的」回不回看全靠记忆。SW 由任务期心跳保活必活着，
   // setBadgeText 免权限；面板重新唤起（panel-ready）或下一轮起跑时清除。
   // r53（#1/#2）：isError 的 done 打 !——CLI 运行内失败也打 ✓ 是误报「成功」
-  if (msg?.t === 'task-done') {
+  // r61（代码审）：孤儿 done 不打角标——帧已弃发，角标照打是「有通知无内容」半开态
+  if (msg?.t === 'task-done' && !orphan) {
     chrome.action.setBadgeText({ text: msg.isError ? '!' : '✓' }).catch(() => {})
     // r58（#5）：成功终局清同页签收件箱陈条——旧任务的 cancelled/失败补发不得在重开
     // 时盖过新终局（「取消入箱→新任务 done→重开复读陈旧已取消」的复读链）
@@ -949,8 +954,11 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // r59（审计 T9）：PDF 专项分型——Chrome 的 PDF 查看器页提取不到正文，会落进
   // empty-content 的「滚动触发懒加载」指引（对 PDF 必然无效）；URL 特征识别即可
   //（content-type 需 webRequest 权限，为一个分型扩权不值）。r60 复核：正则锚 path
-  // 段（?# 之前）以 .pdf 结尾——旧写法会把 ?url=x.pdf 的 HTML 查看页误报成 PDF
-  if (/^[^?#]*\.pdf([?#]|$)/i.test(tab.url ?? '')) {
+  // 段（?# 之前）以 .pdf 结尾——旧写法会把 ?url=x.pdf 的 HTML 查看页误报成 PDF。
+  // r61：补尾斜杠（x.pdf/）与 ?format=pdf 两形态；arxiv /pdf/<id> 类无后缀路径
+  // 刻意不收——/pdf/ 子路径与 /pdf-guide/ 类 HTML 路径无法安全区分，误报（好页
+  // 被拒）比漏报（落 empty-content 有指引）代价高
+  if (/^[^?#]*\.pdf\/?([?#]|$)/i.test(tab.url ?? '') || /[?&]format=pdf([&#]|$)/i.test(tab.url ?? '')) {
     return { error: 'pdf-page', url: tab.url }
   }
 
