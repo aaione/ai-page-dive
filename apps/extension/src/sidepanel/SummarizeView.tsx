@@ -858,21 +858,27 @@ const AssistantMessage = memo(function AssistantMessage({
  *  出错现场情境化，点击即手势满足 permissions.request 约束） */
 function GrantHostRow() {
   const [granted, setGranted] = useState(false)
+  const [denied, setDenied] = useState(false)
   if (granted) return <p className="pd-grant-ok">已开启——直接重发即可，无需点图标</p>
   return (
     <div className="pd-grant-row">
       <button
         className="pd-grant-btn"
         onClick={() => {
+          setDenied(false)
           chrome.permissions
             ?.request({ origins: ['<all_urls>'] })
-            .then((g) => { if (g) setGranted(true) })
-            .catch(() => {})
+            // r62（产品#5）：拒绝/失败不再静默——对齐同文件 copyFail 的显式失败态
+            //（r50 制度：静默吞 = 用户以为按钮坏了）
+            .then((g) => { if (g) setGranted(true); else setDenied(true) })
+            .catch(() => setDenied(true))
         }}
       >
         始终允许读取网页
       </button>
-      <span className="pd-grant-scope">范围：所有网站（含敏感站点），仅本机 CLI 处理</span>
+      <span className="pd-grant-scope">
+        {denied ? '未开启——可再点一次重试，或关闭此行改点工具栏图标逐页授权' : '范围：所有网站（含敏感站点），仅本机 CLI 处理'}
+      </span>
     </div>
   )
 }
