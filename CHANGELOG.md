@@ -7,7 +7,7 @@
 
 ## [Unreleased]
 
-r60–r63 审计修复批（双终审报告见 `reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`）。
+r60–r63 审计修复批 + r64 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`）。
 
 ### Added
 
