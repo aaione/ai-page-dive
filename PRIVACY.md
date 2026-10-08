@@ -39,7 +39,7 @@ claude CLI 会把它经手的会话转录（含被总结的网页正文）写入
 
 | 权限 | 用途 |
 |---|---|
-| activeTab / scripting | 你点击时提取当前页正文（仅该页，不申请 `<all_urls>`） |
+| activeTab / scripting | 你点击时提取当前页正文（仅该页；无常驻 `<all_urls>` 访问——可选读取权限默认关闭，见本表末行） |
 | sidePanel | 侧边栏界面 |
 | nativeMessaging | 与本机组件进程间通信 |
 | storage | 追问会话恢复（session 域，浏览器重启即清）+ 面板偏好与在跑任务指针的本地持久存储（localStorage / storage.local，仅 UI 偏好与任务指针，不含网页内容） |

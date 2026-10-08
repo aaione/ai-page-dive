@@ -7,7 +7,11 @@
 
 ## [Unreleased]
 
-r60–r62 审计修复批（双终审报告见 `reports/2026-10-07-*-audit.md`）。
+r60–r63 审计修复批（双终审报告见 `reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`）。
+
+### Added
+
+- `pnpm package:cws`：构建 + CWS zip 打包守门一条命令封死顺序；随 r62 入库的 `scripts/package-cws.mjs` 守门脚本与 DECISIONS 破线应急清单当轮漏入账，此处补账
 
 ### Fixed
 
@@ -18,6 +22,10 @@ r60–r62 审计修复批（双终审报告见 `reports/2026-10-07-*-audit.md`�
 - `install.sh` 安装失败（E404）时给出 GitHub releases 确认版本的人工排障出口
 - 限流类错误（rate limit / 429）不再误报为「额度耗尽」——限流档判定前置并覆盖 snake_case 变体，指引改为稍后重试
 - 授权弹窗被拒绝或失败时不再静默——按钮旁显式提示可重试或改用逐页授权
+- 双窗口防误杀：面板「停止」与历史降级路径的取消消息带 taskId 定向取消——此前 B 窗历史页降级路径的裸 cancel 会连坐砍掉 A 窗在跑任务（SW 侧裸帧语义保留，仍承担 SW 回收后的收割恢复路径）
+- task-timeout 测试去真实时钟依赖（超时裕量 1500→5000ms、终局链改事件驱动轮询替代固定睡眠）——产品/代码双终审同日各自独立观测到的负载敏感假红根因
+- claude 流畸形 `text_delta.text`（非字符串）不再污染增量累积；网页元数据消毒补 C1 控制符区间（U+0080–U+009F）
+- 安装 FAQ 补「npm 装成功但 command not found」排障条目（自定义 npm 前缀的 PATH 出口——`&&` 短路后登记不发生且面板无自愈提示）
 
 ### Changed
 
@@ -26,6 +34,7 @@ r60–r62 审计修复批（双终审报告见 `reports/2026-10-07-*-audit.md`�
 ### Docs
 
 - 测试 210 → 219 用例：CLI 真实流 fixture 重采（claude 2.1.162 / codex 0.156.1）+ 重放断言从「unrecognized 计数」单锚升级为「累积正文 === 采录终稿」双向锚
+- 宪法同步：DECISIONS D3 权限清单补记 `storage`、「始终允许读取网页」开关实装位对齐授权气泡；README 档位列举补第五档「产品审计」；PRIVACY activeTab 行表述理顺；测试 219 → 224（C1 消毒 / 畸形 text_delta 闸 / SummarizeView 授权开关冒烟 ×3——UI 组件测试设施第一锹，`@testing-library/react`）
 
 ## [0.1.4] - 2026-10-06
 
