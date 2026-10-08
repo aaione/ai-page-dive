@@ -35,7 +35,8 @@ export function createCodexParser() {
         out.push({ type: 'status', phase: 'thinking' })
         break
       case 'item.completed':
-        if (d.item?.type === 'agent_message' && d.item.text) {
+        // r62 审计（code #1）：typeof 闸——非字符串 text（版本漂移）会污染 accText/escape 链
+        if (d.item?.type === 'agent_message' && typeof d.item.text === 'string' && d.item.text) {
           out.push({ type: 'text-delta', text: d.item.text })
         }
         // r54（review #9）：item.error 此前被完全吞掉——codex「ignoring N unrecognized
@@ -53,10 +54,12 @@ export function createCodexParser() {
         out.push({ type: 'result', isError: false, text: '' })
         break
       }
-      case 'turn.failed':
+      case 'turn.failed': {
         done = true
-        out.push({ type: 'result', isError: true, text: d.error?.message ?? 'turn failed' })
+        const emsg = d.error?.message // r62 审计（code #1）：同款出口收敛，对象 message JSON 化外直接归兜底文案
+        out.push({ type: 'result', isError: true, text: typeof emsg === 'string' ? emsg : 'turn failed' })
         break
+      }
       default:
         // r51 A2③：未知 type 上报（版本漂移感知），task.ts 计数进 task-done
         if (typeof d.type === 'string' && !CODEX_IGNORED.has(d.type)) {

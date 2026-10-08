@@ -670,6 +670,29 @@ describe('sw.ts 回归网', () => {
     }
   })
 
+  // r62 审计（code #2）：追问轮同款对账兜底——r58#28 只盖了 summarize 路径；followUp
+  // 的唯一 done 片被吞时 host 心跳永生续命 panel 看门狗，无自动收敛。15s 未回执即取消
+  it('r62 code#2：追问轮 done 片回执被吞 → 15s 对账超时 cancel + content-mismatch；回执到达撤表', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+      const r1 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '继续' })
+      expect(r1.ok).toBe(true)
+      vi.advanceTimersByTime(15_000) // done 片的回执（content-received）被吞
+      expect(h.calls.nmSent).toContainEqual({ t: 'task-cancel', taskId: r1.taskId })
+      expect(h.calls.sent.find((m) => m.t === 'task-error' && m.code === 'content-mismatch')).toMatchObject({ taskId: r1.taskId })
+      // 对照组：回执按期到达（追问正文空 → chars 0）→ 撤表，快进后不误杀
+      const r2 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '再问' })
+      expect(r2.ok).toBe(true)
+      h.fireNm({ t: 'content-received', taskId: r2.taskId, chars: 0 })
+      vi.advanceTimersByTime(15_000)
+      expect(h.calls.nmSent.filter((m) => m.t === 'task-cancel' && m.taskId === r2.taskId)).toEqual([])
+      expect(h.calls.sent.filter((m) => m.t === 'task-error' && m.taskId === r2.taskId)).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   // r59（审计 T1）：看门狗竞态象限——cancel 带 taskId 而 SW 侧 currentTask 已清
   //（终局先到一步）。修复前守卫不命中 → 退化为无 taskId cancel → host 收割
   //「最近任务」，跨窗口时恰是别面板的新任务

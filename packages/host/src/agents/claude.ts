@@ -66,7 +66,11 @@ export function createClaudeParser() {
           outputTokens: u.output_tokens,
         })
       }
-      out.push({ type: 'result', isError: isError(d), text: d.result ?? '' })
+      // r62 审计（code #1）：版本漂移/hook 污染可使 result 为对象——?? 只拦 null/undefined，
+      // 对象透传后 task.ts 的 ev.text.slice 抛 TypeError → uncaughtException 收割全 host 在跑
+      // 任务。出口收敛成 string：对象 JSON 化、空值归空串（畸形流降级为单任务失败）
+      const rtext = typeof d.result === 'string' ? d.result : d.result != null ? JSON.stringify(d.result) : ''
+      out.push({ type: 'result', isError: isError(d), text: rtext })
     } else if (typeof d.type === 'string' && !CLAUDE_IGNORED.has(d.type)) {
       // r51 A2③：未知 type 上报（版本漂移感知），task.ts 计数进 task-done
       out.push({ type: 'unrecognized', kind: d.type })

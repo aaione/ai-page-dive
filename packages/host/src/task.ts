@@ -283,16 +283,7 @@ export class Task {
         }
         void (async () => {
           await this.persist('done') // 落盘完成再发终局（对齐 isError 路径的持久化语义）
-          this.cb.onDone({
-            historyPath: this.effectiveHistoryPath,
-            isError: false,
-            usage: this.usage,
-            durationMs: Date.now() - this.startedAt,
-            model: this.meta?.model,
-            sessionId: this.meta?.sessionId,
-            // r51 深审：三处 onDone 口径对齐——此路径（超时但 result 已交付）此前漏带
-            unrecognized: this.unrecognized || undefined,
-          })
+          this.cb.onDone(this.doneInfo(false, Date.now() - this.startedAt))
         })()
         // r53（#4）：先收割再删 cwd——对齐 M5 不变量（error 分支注释自述），
         // 防删仍在运行进程的工作目录
@@ -385,19 +376,9 @@ export class Task {
           // 落盘完成再发终局：host 若在 persist 期间断连退出，错误轮历史不再丢失
           await this.persist('error')
           this.flushDelta() // isError 不经 finish()：终局前发完缓冲尾巴
-          this.cb.onDone({
-            historyPath: this.effectiveHistoryPath,
-            isError: true,
-            // r46（review C9）：无上限直接进帧——>1MB 时 encodeFrame throw、终局帧
-            // 被静默丢弃、面板永久 running。截断保终局帧恒可达（历史读取路径已有
-            // 同款截断，此处补齐不对称）；诊断用途下 4000 字符绰绰有余
-            errorText: ev.text.slice(0, 4000),
-            usage: this.usage,
-            durationMs: Date.now() - this.startedAt,
-            model: this.meta?.model,
-            sessionId: this.meta?.sessionId,
-            unrecognized: this.unrecognized || undefined,
-          })
+          // errorText 截 4000：r46（review C9）——无上限直接进帧会在 >1MB 时 encodeFrame
+          // throw、终局帧被静默丢弃、面板永久 running；诊断用途下 4000 字符绰绰有余
+          this.cb.onDone(this.doneInfo(true, Date.now() - this.startedAt, ev.text.slice(0, 4000)))
         } else if (ev.text && !this.accText) {
           // codex 无增量时 result 兜底出全文
           this.accText = ev.text
@@ -484,15 +465,22 @@ export class Task {
       // 指引（重采样命令是维护者动作，已挪到扩展端 console.debug 排障信号里）
       this.cb.onError('parse', `no output${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}${this.unrecognized ? `（流含 ${this.unrecognized} 个未识别事件——CLI 版本可能高于适配器实测，请到项目仓库反馈）` : ''}`)
     } else {
-      this.cb.onDone({
-        historyPath: this.effectiveHistoryPath,
-        isError: false,
-        usage: this.usage,
-        durationMs,
-        model: this.meta?.model,
-        sessionId: this.meta?.sessionId,
-        unrecognized: this.unrecognized || undefined,
-      })
+      this.cb.onDone(this.doneInfo(false, durationMs))
+    }
+  }
+
+  /** r62 审计（code #6）：终局 payload 单源构造——此前三处手写曾是 r51 超时路径漏带
+   * unrecognized 的根因；可选字段零防线，新增终局字段只改这里 */
+  private doneInfo(isError: boolean, durationMs: number, errorText?: string): Parameters<TaskCallbacks['onDone']>[0] {
+    return {
+      historyPath: this.effectiveHistoryPath,
+      isError,
+      errorText,
+      usage: this.usage,
+      durationMs,
+      model: this.meta?.model,
+      sessionId: this.meta?.sessionId,
+      unrecognized: this.unrecognized || undefined,
     }
   }
 

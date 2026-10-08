@@ -886,6 +886,21 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
     emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '追问发送中断（本机组件连接失败）——请重试', tabId: panelTabId ?? -1 }, panelTabId ?? -1) // r58（#4）
     return { error: 'host-not-found', lastError: nmPort.lastError }
   }
+  // r62 审计（code #2）：r58#28 只修了 summarize 路径——追问轮 done 片被吞同样三重放大
+  //（host 心跳永生续命 panel 看门狗 + CLI 永不启动 + 无自动收敛）。同款 15s 对账兜底：
+  // content-received 到达即清（:709），expectedChars 未设不参与 chars 校验
+  reconcileTimer = setTimeout(() => {
+    if (!currentTask || currentTask.taskId !== taskId) return
+    cancelledTaskIds.add(taskId)
+    if (cancelledTaskIds.size > 16) for (const id of cancelledTaskIds) { cancelledTaskIds.delete(id); break }
+    nmPort.send({ t: 'task-cancel', taskId })
+    emitTerminal(
+      { t: 'task-error', taskId, code: 'content-mismatch', message: '追问发送确认超时（NM 通道异常），已取消——请重试', tabId: panelTabId ?? -1 },
+      panelTabId ?? -1,
+    )
+    currentTask = null
+    clearRunningTask()
+  }, RECONCILE_TIMEOUT_MS)
   return { ok: true, taskId }
 }
 

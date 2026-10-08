@@ -58,6 +58,14 @@ describe('codex jsonl parser', () => {
     expect(evs).toEqual([{ type: 'result', isError: true, text: 'boom' }])
   })
 
+  it('r62 code#1：形状收敛——item.text 非字符串不透传；error.message 为对象归兜底文案', () => {
+    const p = createCodexParser()
+    expect(p(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: { evil: 1 } } }))).toEqual([])
+    expect(p(JSON.stringify({ type: 'turn.failed', error: { message: { code: 1 } } }))).toEqual([
+      { type: 'result', isError: true, text: 'turn failed' },
+    ])
+  })
+
   it('终局后忽略后续行', () => {
     const p = createCodexParser()
     p(JSON.stringify({ type: 'turn.completed', usage: {} }))

@@ -79,6 +79,14 @@ describe('claude stream-json parser', () => {
     expect(evs.at(-1)).toEqual({ type: 'result', isError: false, text: '完成' })
   })
 
+  it('r62 code#1：result 为对象（版本漂移）→ JSON 化收敛成 string，不透传不抛', () => {
+    const p = createClaudeParser()
+    const evs = p(JSON.stringify({ type: 'result', is_error: true, result: { code: 'E31', msg: 'quota' } }))
+    expect(evs.at(-1)).toEqual({ type: 'result', isError: true, text: '{"code":"E31","msg":"quota"}' })
+    // null 归空串（原 ?? 语义保留）
+    expect(p(JSON.stringify({ type: 'result', is_error: false, result: null })).at(-1)).toEqual({ type: 'result', isError: false, text: '' })
+  })
+
   it('非 JSON 行丢弃不崩', () => {
     const p = createClaudeParser()
     expect(p('plain text noise')).toEqual([])
