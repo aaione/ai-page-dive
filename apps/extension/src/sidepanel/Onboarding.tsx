@@ -199,6 +199,15 @@ export function Onboarding() {
             <strong>勿用 sudo npm</strong>——root 属主会写坏本机组件注册，后续重装会反复失败）。
           </p>
           <p>
+            {/* r63（产品审 medium）：npm 装成功但命令不可执行（自定义前缀不在 PATH）——
+                && 短路后登记未发生、面板零自愈提示，r58#24 同场景第三次复发 */}
+            npm 装成功却 <code>ai-page-dive: command not found</code> → 自定义过 npm 全局
+            前缀，可执行文件不在 PATH：把 <code>$(npm prefix -g)/bin</code> 加入 PATH
+            （zsh 例：在 <code>~/.zshrc</code> 加一行
+            <code>export PATH="$(npm prefix -g)/bin:$PATH"</code> 后
+            <code>source ~/.zshrc</code>），再重跑上方登记命令。
+          </p>
+          <p>
             用 <code>pnpm</code>？全局安装默认不执行安装钩子——装完重跑面板中的完整 curl 命令即可（幂等）。
           </p>
         </details>

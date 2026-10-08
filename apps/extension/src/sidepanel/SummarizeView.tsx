@@ -101,7 +101,8 @@ export function useSetting(key: string): [string, (v: string) => void] {
 }
 
 /** r51 A2①：解析器实测版本基线（= test fixture 采样版本；scripts/record-fixtures.mjs
- * 重采样后同步更新此处）——低于即在下拉内联提示；只警告不硬拒跑（与零配置支柱一致） */
+ * 重采样后同步更新此处）——低于即在下拉内联提示；只警告不硬拒跑（「零配置」口径已
+ * 收回，见 DECISIONS D1 修订——旧版本不拦一键可用） */
 const MIN_VERSIONS: Record<string, string> = { claude: '2.1.162', codex: '0.156.1' }
 
 export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, sessionPage, pruneNotice, onDismissPruneNotice, onOpenSettings, resumable, sessionAgentId, pageUnsupported, agentsLoaded }: Props) {
@@ -445,7 +446,10 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   }
 
   function cancel() {
-    chrome.runtime.sendMessage({ t: 'cancel' })
+    // r63（审计 M1）：带 taskId 定向取消——裸 cancel 会被 SW 无条件收割全局
+    // currentTask，双窗口下连坐别窗在跑任务；pending 期（taskId 未绑定）退化
+    // 裸帧，收的是本面板自己起的任务，语义不变
+    chrome.runtime.sendMessage({ t: 'cancel', taskId: streamRef.current.taskId ?? undefined }).catch(() => {})
   }
 
   /** 新对话：清 UI + 通知 SW（SW 侧对进行中任务执行取消）。

@@ -635,6 +635,13 @@ process.exit(0)`,
     expect(buildPrompt({ ...PAGE, title: '中文 English Ελληνικά' }, '/tmp/f.md', 'quick')).toContain('中文 English Ελληνικά')
   })
 
+  it('buildPrompt：r63 补 C1 控制符区间（U+0080–U+009F）被清', () => {
+    // U+0080/U+009B 对用户不可见对 CLI 可读——r58 #31 补了 C0 漏了 C1；
+    // 刻意避开 U+0085（NEL 属 \s，消毒前后都会被 \s+ 折叠，钉不住修复）
+    const out = buildPrompt({ ...PAGE, title: 'a\u0080b\u009bc' }, '/tmp/f.md', 'quick')
+    expect(out).toContain('a b c')
+  })
+
   it('expandWorkflowPlaceholders：四占位符展开，未知/大小写变体原样保留', () => {
     const out = expandWorkflowPlaceholders(
       '看 {url} 和 {title}，正文在 {file}，元数据 {meta}；未知 {foo} 与 {URL} 不动',

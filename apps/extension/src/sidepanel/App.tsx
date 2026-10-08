@@ -877,9 +877,12 @@ export function App() {
     if (agentOk) setPageMeta(item.title || item.url ? { title: item.title ?? '', url: item.url ?? '' } : null)
     if (agentOk) {
       chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path }).catch(() => {})
-    } else {
-      // SW 侧 resume-history 原本顺带收割在跑任务——不装载会话时手动补 cancel
-      chrome.runtime.sendMessage({ t: 'cancel' }).catch(() => {})
+    } else if (streamRef.current.taskId) {
+      // 只收割本面板绑定的任务（不装载会话前清场，对齐 SW 侧 resume-history 的
+      // 顺带收割语义）——裸 cancel 无条件杀全局 currentTask，双窗口下连坐别窗在
+      // 跑任务（r63 审计 M1）；未绑定则无事可清不发帧，别窗尾随 chunk 由 r16
+      // foreignAdopt 锚页签拒收，不会污染本面板
+      chrome.runtime.sendMessage({ t: 'cancel', taskId: streamRef.current.taskId }).catch(() => {})
     }
   }, [agents, disabledClis])
 

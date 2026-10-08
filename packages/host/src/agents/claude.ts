@@ -32,7 +32,7 @@ export function createClaudeParser() {
       out.push({ type: 'status', phase: 'thinking' })
     } else if (d.type === 'stream_event') {
       const delta = d.event?.delta
-      if (delta?.type === 'text_delta' && delta.text) {
+      if (delta?.type === 'text_delta' && typeof delta.text === 'string' && delta.text) {
         out.push({ type: 'text-delta', text: delta.text })
         prevText += delta.text
       } else if (delta?.type === 'thinking_delta') {

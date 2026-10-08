@@ -96,4 +96,13 @@ describe('claude stream-json parser', () => {
     const p = createClaudeParser()
     expect(p(JSON.stringify({ type: 'system', subtype: 'hook_started' }))).toEqual([])
   })
+
+  it('r63（代码审 low）：畸形 text_delta.text 非字符串——不产 text-delta 也不污染 prevText', () => {
+    const p = createClaudeParser()
+    const bad = JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 123 } } })
+    expect(p(bad)).toEqual([])
+    // prevText 未被数字强转污染：后续正常增量照常推出
+    const ok = JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '好' } } })
+    expect(p(ok)).toEqual([{ type: 'text-delta', text: '好' }])
+  })
 })

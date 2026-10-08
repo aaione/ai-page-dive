@@ -3,8 +3,9 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    // r33：apps 源码内单测（extension 纯函数）与 packages 测试同场收集
-    include: ['packages/*/test/**/*.test.ts', 'apps/*/src/**/*.test.ts'],
+    // r33：apps 源码内单测（extension 纯函数）与 packages 测试同场收集；
+    // r63（审计 medium#2）：起收 *.test.tsx（UI 组件冒烟还债第一锹）
+    include: ['packages/*/test/**/*.test.{ts,tsx}', 'apps/*/src/**/*.test.{ts,tsx}'],
     passWithNoTests: true,
   },
   resolve: {
