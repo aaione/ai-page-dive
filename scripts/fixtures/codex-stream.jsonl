@@ -1,7 +1,7 @@
-{"type":"thread.started","thread_id":"01a0e05c-ded8-7412-82fc-f3b0bd7a85c8"}
+{"type":"thread.started","thread_id":"01a11900-17a5-75e2-9c87-6a034c26b822"}
 {"type":"item.completed","item":{"id":"item_0","type":"error","message":"Codex is ignoring 9 unrecognized configuration settings. Check for typos or deprecated settings.\n  user (~/…\n  user (~/…\n  user (~/…\n  ... and 6 more ignored settings."}}
 {"type":"item.completed","item":{"id":"item_1","type":"error","message":"Codex is ignoring 9 unrecognized configuration settings. Check for typos or deprecated settings.\n  user (~/…\n  user (~/…\n  user (~/…\n  ... and 6 more ignored settings."}}
 {"type":"item.completed","item":{"id":"item_2","type":"error","message":"failed to parse hooks config ~/…"}}
 {"type":"turn.started"}
 {"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"ok"}}
-{"type":"turn.completed","usage":{"input_tokens":21209,"cached_input_tokens":13056,"cache_write_input_tokens":0,"output_tokens":5,"reasoning_output_tokens":0}}
+{"type":"turn.completed","usage":{"input_tokens":21668,"cached_input_tokens":4224,"cache_write_input_tokens":0,"output_tokens":5,"reasoning_output_tokens":0}}
