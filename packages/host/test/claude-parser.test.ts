@@ -105,4 +105,14 @@ describe('claude stream-json parser', () => {
     const ok = JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '好' } } })
     expect(p(ok)).toEqual([{ type: 'text-delta', text: '好' }])
   })
+
+  it('r65（r64 code#3）：assistant content 形状闸——非数组/null 元素/缺 text 不抛不污染', () => {
+    const p = createClaudeParser()
+    // content 非数组（数字）：旧代码 for..of 抛 TypeError → uncaughtException 连坐全 host
+    expect(p(JSON.stringify({ type: 'assistant', message: { content: 5 } }))).toEqual([])
+    // null 元素 / 缺 text 字段的块：不得把 "undefined" 拼进正文毒化 prevText
+    expect(p(JSON.stringify({ type: 'assistant', message: { content: [null, { type: 'text' }] } }))).toEqual([])
+    // prevText 未被污染：后续正常镜像照常 diff
+    expect(p(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: '终答' }] } }))).toEqual([{ type: 'text-delta', text: '终答' }])
+  })
 })

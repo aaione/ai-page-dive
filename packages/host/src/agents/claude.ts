@@ -39,9 +39,11 @@ export function createClaudeParser() {
         out.push({ type: 'status', phase: 'thinking' })
       }
     } else if (d.type === 'assistant') {
-      const blocks: any[] = d.message?.content ?? []
+      // r65（r64 code#3）：同族形状闸（对齐 text_delta/result 闸）——content 非数组
+      // 或元素畸形不得抛 TypeError 连坐全 host / 拼出 "undefined" 毒化 prevText
+      const blocks = d.message?.content
       let text = ''
-      for (const b of blocks) if (b.type === 'text') text += b.text
+      if (Array.isArray(blocks)) for (const b of blocks) { if (b && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string') text += b.text }
       // partial 增量已发过时这里是镜像（diff 出空增量，自然跳过）；旧版 CLI 无 partial 时这里是累积全量，
       // diff 正好取增量——统一走 startsWith diff。工具流多消息（r5-impl）：prevText 跨消息累积含前序消息前缀，
       // 本条消息的全文是它的后缀——startsWith 必然失配曾把终答整段重推。endsWith = 本条已全部经增量推出（镜像），跳过
