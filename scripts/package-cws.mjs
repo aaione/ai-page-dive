@@ -30,6 +30,10 @@ if (missing.length) {
 }
 console.log(`✓ dist 完整：${required.length} 个 manifest 声明产物全在盘`)
 
+// r65（r64 产品#6）：--check-only 到此为止——只跑完整性断言不打 zip（CI 挂钩用；
+// zip 只在上架打包时需要，且依赖系统 zip）
+if (process.argv.includes('--check-only')) process.exit(0)
+
 // CWS 要求 manifest 在 zip 根：cwd 进 dist 平铺打包
 const out = join(REPO, 'apps/extension', `pagedive-cws-v${manifest.version}.zip`)
 execFileSync('zip', ['-q', '-X', '-r', out, '.'], { cwd: DIST, stdio: 'inherit' })
