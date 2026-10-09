@@ -59,4 +59,12 @@ describe('parseHistoryTurns', () => {
     expect(msgs.map((m) => m.role)).toEqual(['assistant', 'user'])
     expect(msgs[0].text).toContain('[File #1] <!-- pd:assistant -->x.md')
   })
+
+  it('r65（r64 产品#5）：frontmatter 头（host 落盘必带）入口剥离——SW 还原路径不渲染元数据', () => {
+    const body = '---\ntitle: 示例总结\nurl: https://x\nagent: claude\nts: 2026-10-09\n---\n\n# 首轮总结\n\n<!-- pd:user -->\n追问'
+    const msgs = parseHistoryTurns(body)
+    expect(msgs.map((m) => m.role)).toEqual(['assistant', 'user'])
+    expect(msgs[0].text).toBe('# 首轮总结')
+    expect(msgs[1].text).toBe('追问')
+  })
 })

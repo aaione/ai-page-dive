@@ -8,7 +8,10 @@ import type { ChatMessage } from './App'
  * 此处不再误切轮边界，并在还原显示时转回字面冒号。
  */
 export function parseHistoryTurns(body: string): ChatMessage[] {
-  const raw = body.trim()
+  // r65（r64 产品#5）：host 落盘必带 frontmatter 头（history.ts 写侧）——入口统一
+  // 剥离，SW 回收自动还原（App history-file 路径）不再把元数据渲染成对话标题。
+  // HistoryView 详情读取的手剥正则与此同款，两路共用同一语义
+  const raw = body.replace(/^---\n[\s\S]*?\n---\n/, '').trim()
   if (!raw) return []
   const msgs: ChatMessage[] = []
   // 首段（到第一个 pd:user 标记前）= 首轮 assistant 回答
