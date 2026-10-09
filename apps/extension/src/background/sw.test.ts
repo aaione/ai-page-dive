@@ -646,6 +646,25 @@ describe('sw.ts 回归网', () => {
     expect(h.calls.nmSent.filter((m) => m.t === 'task-cancel' && m.taskId === undefined)).toHaveLength(1)
   })
 
+  // r65（r64 code#1）：resume-history/new-session 的 SW 侧收割定向化——r63 M1 只修了
+  // 面板侧半边，SW 侧无条件 cancelCurrent 会连坐别窗在跑任务（白烧订阅额度）。
+  // 别窗任务的尾随 chunk 由 panel 侧 foreignAdopt 按锚页签拒收，砍任务无依据
+  it('r65：resume-history/new-session 只收割本锚页签任务——别窗在跑不连坐', async () => {
+    const h = await boot({ seed: { panelTabId: 6, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect(r.ok).toBe(true)
+    // 任务源 tab = 11（query mock 恒返 11）≠ 锚 6：历史降级/新对话不得杀它
+    await h.fireMessage({ t: 'resume-history', agentId: 'claude', sessionId: 's-h', historyPath: '/tmp/h.md' })
+    await h.fireMessage({ t: 'new-session' })
+    expect(h.calls.nmSent.filter((m) => m.t === 'task-cancel')).toEqual([])
+    // 对照组：任务源 = 锚页签本尊（11）→ 收割照旧
+    const h2 = await boot({ seed: { panelTabId: 11, panelWindowId: 1 } })
+    const r2 = await h2.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect(r2.ok).toBe(true)
+    await h2.fireMessage({ t: 'new-session' })
+    expect(h2.calls.nmSent).toContainEqual({ t: 'task-cancel', taskId: r2.taskId })
+  })
+
   // r58（#28）：正文对账超时兜底——回执被吞（done 片或 content-received 丢失）时
   // host 侧无超时（等正文齐才开跑），无 SW 侧兜底则三重放大：host 心跳永生保活
   // SW + panel 无限 loading + CLI 永不启动。15s 未到即取消终局；回执按期到达撤表

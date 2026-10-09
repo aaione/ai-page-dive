@@ -348,10 +348,12 @@ export interface PanelToggleMsg {
   t: 'panel-toggle'
   tabId?: number
 }
-/** SW 合成：换锚广播（panel 收养任务帧的核验基准跟锚走） */
+/** SW 合成：换锚广播（panel 收养任务帧的核验基准跟锚走）。
+ * r65（r64 code#2）：windowId 界定双窗各面板只认自己窗的换锚；缺省=全收（兼容） */
 export interface PanelAnchorMsg {
   t: 'panel-anchor'
   tabId: number
+  windowId?: number
 }
 /** SW → panel 全消息面：host 原帧（+SW 盖 tabId 邮戳）∪ SW 合成帧 */
 export type PanelMsg = HostToExt | PageMetaMsg | PanelToggleMsg | PanelAnchorMsg

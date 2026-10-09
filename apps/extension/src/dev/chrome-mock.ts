@@ -144,6 +144,9 @@ function route(msg: any): unknown {
     getManifest: () => ({ version: '0.1.4' }),
   },
   tabs: { create: ({ url }: { url: string }) => void window.open(url, '_blank') },
+  // r65（r64 code#2）：panel-anchor 窗口界定用（App myWindowIdRef 查己窗）——
+  // 单窗 mock 恒 id 1，与 mock 页签的 windowId 语义一致
+  windows: { getCurrent: (cb: (w: { id: number }) => void) => cb({ id: 1 }) },
   permissions: {
     contains: async () => false,
     request: async () => true,

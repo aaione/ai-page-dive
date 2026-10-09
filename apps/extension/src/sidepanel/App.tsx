@@ -167,6 +167,18 @@ export function App() {
   const foreignAdopt = (m: any, s: typeof stream) =>
     s.taskId === null && s.activeId === null && typeof m.tabId === 'number' && m.tabId !== anchorTabIdRef.current
 
+  // r65（r64 code#2）：本面板所在窗口——panel-anchor 帧的窗口界定（双窗双面板
+  // 各只认自己窗的换锚，防全局广播共享锚架空 foreignAdopt）。dev mock/老 Chrome
+  // 无 windows 时保持 null：界定退化为全收（旧行为）
+  const myWindowIdRef = useRef<number | null>(null)
+  useEffect(() => {
+    try {
+      chrome.windows?.getCurrent?.((w: chrome.windows.Window | undefined) => {
+        if (typeof w?.id === 'number') myWindowIdRef.current = w.id
+      })
+    } catch { /* 无窗口语义环境：锚广播退化为全收 */ }
+  }, [])
+
   useEffect(() => {
     // Esc 关 overlay（输入框/下拉自身的 Esc 处理在前，事件冒泡到此处才关面板）
     const onKey = (e: KeyboardEvent) => {
@@ -375,8 +387,13 @@ export function App() {
           }
           break
         case 'panel-anchor':
-          // r16：换锚不重载面板——收养邮戳的核验基准跟着锚走
-          if (typeof m.tabId === 'number') anchorTabIdRef.current = m.tabId
+          // r16：换锚不重载面板——收养邮戳的核验基准跟着锚走。
+          // r65（r64 code#2）：帧带 windowId 时只认自己窗口的换锚（双窗双面板
+          // 防串台）；帧无 windowId 或本面板未知己窗 → 全收（旧行为）
+          if (
+            typeof m.tabId === 'number' &&
+            (m.windowId == null || myWindowIdRef.current == null || m.windowId === myWindowIdRef.current)
+          ) anchorTabIdRef.current = m.tabId
           break
         case 'page-meta':
           setPageMeta(m.page)

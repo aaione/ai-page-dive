@@ -235,7 +235,7 @@ const disabledTabs = new Set<number>()
  * 锚定同时压全局默认 enabled:false（r15）：已开面板的收起/恢复只在全局 false
  * 下生效（Chrome 147 真机实证）。幂等——重复 setOptions 同值无副作用。
  * setOptions 被拒是真异常（tab 已关/老 Chrome），静默会让面板收起行为失效无痕 */
-function anchorPanel(tabId: number) {
+function anchorPanel(tabId: number, windowId?: number) {
   disabledTabs.delete(tabId)
   chrome.sidePanel.setOptions({ enabled: false }).catch((e: unknown) => {
     console.warn('[pd] anchorPanel global setOptions failed:', e)
@@ -244,8 +244,10 @@ function anchorPanel(tabId: number) {
     console.warn('[pd] anchorPanel setOptions failed:', e)
   })
   // r16：锚变更广播——存活面板（换锚不重载 React）据此刷新收养邮戳的核验基准；
-  // 新开面板靠 panel-ready/get-state 兜底（listener 未就绪时本帧丢失无害）
-  sendToPanel({ t: 'panel-anchor', tabId })
+  // 新开面板靠 panel-ready/get-state 兜底（listener 未就绪时本帧丢失无害）。
+  // r65（r64 code#2）：帧带 windowId——双窗双面板下各面板只认自己窗的换锚，
+  // 否则全局广播把两面板锚同刷成同一 tab，foreignAdopt 被共享锚架空
+  sendToPanel({ t: 'panel-anchor', tabId, windowId })
 }
 function unanchorPanel(tabId: number) {
   disabledTabs.add(tabId)
@@ -300,7 +302,7 @@ chrome.action.onClicked.addListener((tab) => {
   // 同步段（open 只认同步 user gesture；setOptions 先于 open 是 r15 铁律），
   // 状态提交挪到恢复完成后
   target = tab
-  if (tab.id != null) anchorPanel(tab.id)
+  if (tab.id != null) anchorPanel(tab.id, tab.windowId)
   // 直接 open：不夹 setOptions / 不吞错
   chrome.sidePanel.open({ tabId: tab.id! }).catch((e: unknown) => {
     console.warn('[pd] sidePanel.open failed:', e)
@@ -443,7 +445,7 @@ async function handleMessage(msg: any): Promise<unknown> {
           panelTabId = active.id
           panelWindowId = active.windowId ?? null
           target = active
-          anchorPanel(active.id)
+          anchorPanel(active.id, active.windowId)
           persistSession()
           // r14：非图标点击路径开的面板（侧边栏下拉 / SW 冷启动后重开）此前只锚定
           // 不预 disable——切 tab 时 Chrome 读的是切换瞬间的 per-tab options，事后
@@ -537,10 +539,12 @@ async function handleMessage(msg: any): Promise<unknown> {
     }
     case 'resume-history': {
       // 历史详情「继续对话」：装载历史会话到当前页签（SW 记 sessions），后续 followUp 走 --resume。
-      // 在途任务先取消——否则旧任务的尾随 chunk 污染恢复的对话（panel taskId 已重置 null 放行一切）
+      // 在途任务先取消——否则旧任务的尾随 chunk 污染恢复的对话（panel taskId 已重置 null 放行一切）。
+      // r65（r64 code#1）：只收割本锚页签的任务——别窗在跑的任务连坐砍掉纯属误杀
+      // （其尾随 chunk 由 panel 侧 r16 foreignAdopt 按锚页签拒收，跨锚污染不成立）
       const { agentId, sessionId, historyPath } = msg
       if (!agentId || !sessionId) return { error: 'bad-request' }
-      if (currentTask) cancelCurrent()
+      if (currentTask && currentTask.tabId === panelTabId) cancelCurrent()
       sessionTouched = true // 显式设置会话：restoreSession 微任务不得用旧态覆盖
       if (panelTabId !== null) sessions.set(panelTabId, { agentId, sessionId, historyPath })
       currentAgentId = agentId
@@ -557,8 +561,9 @@ async function handleMessage(msg: any): Promise<unknown> {
       return cancelCurrent()
     case 'new-session':
       // 面板「新对话」：在跑的任务走既有取消路径，本页签会话清空——
-      // 下一轮总结全新开始（不再 resume 上一条 CLI 会话）
-      if (currentTask) cancelCurrent()
+      // 下一轮总结全新开始（不再 resume 上一条 CLI 会话）。
+      // r65（r64 code#1）：同 resume-history——只收割本锚页签任务，别窗任务不连坐
+      if (currentTask && currentTask.tabId === panelTabId) cancelCurrent()
       sessionTouched = true // 显式清空：restoreSession 微任务不得让旧会话「复活」
       if (panelTabId !== null) sessions.delete(panelTabId)
       persistSession()
