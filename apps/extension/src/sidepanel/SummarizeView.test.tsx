@@ -76,3 +76,35 @@ describe('SummarizeView 授权开关冒烟（GrantHostRow）', () => {
     await waitFor(() => expect(screen.getByText(/未开启——可再点一次重试/)).toBeTruthy())
   })
 })
+
+describe('SummarizeView 停止按钮 cancel 帧契约（r63 M1 修复钉住，r64 code#6）', () => {
+  // 契约：已绑定任务 → 带 taskId 定向取消（双窗防误杀，r63 M1）；pending 未绑定 →
+  // 裸帧——SW 语义=收割最近任务，即本面板自己起的那单（设计如此，见 r58#30）
+  const mountStop = (over: Partial<TaskStreamState>) =>
+    render(
+      <SummarizeView
+        agents={[{ id: 'claude', available: true, version: '2.1.162' }]}
+        workflows={[]}
+        stream={{ ...stream, ...over }}
+        agentId="claude"
+        onAgentChange={() => {}}
+        onStartResult={() => {}}
+        beginTurn={() => {}}
+        beginSession={() => {}}
+        pageMeta={null}
+        resumable={false}
+      />,
+    )
+
+  it('已绑定任务 → cancel 带 taskId 定向', () => {
+    mountStop({ taskId: 't-9', activeId: 't-9', pending: false, done: false })
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+    expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith({ t: 'cancel', taskId: 't-9' })
+  })
+
+  it('pending 未绑定 → 裸帧（taskId 缺省不入帧）', () => {
+    mountStop({ taskId: null, activeId: null, pending: true, done: false })
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+    expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith({ t: 'cancel' })
+  })
+})
