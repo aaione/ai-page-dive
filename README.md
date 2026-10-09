@@ -19,7 +19,7 @@
 - **零账号 · 零 API key**——直接复用已登录的 CLI 订阅，无任何注册与配置
 - **只信本机**——正文经 Chrome Native Messaging 直交本机 CLI，无服务器、零遥测、不碰凭证（[PRIVACY.md](PRIVACY.md)）
 - **点到哪读到哪**——安装时仅 5 项权限 + 1 项默认关闭的可选读取权限（用户主动开启），不申请 `<all_urls>`：默认 activeTab 点哪读哪，其余页面零访问面
-- **持续可玩**——快速摘要 / 深度总结 / 论文阅读 / 去 AI 味 / 产品审计五档模式（`~/.ai-page-dive/workflows/` 可自定义新增）、历史本地可恢复
+- **持续可玩**——快速摘要 / 深度总结 / 论文模式 / 去 AI 味改写 / 产品审计五档模式（`~/.ai-page-dive/workflows/` 可自定义新增）、历史本地可恢复
 
 ## 快速开始（macOS + Chrome）
 
@@ -109,10 +109,10 @@ Chrome 移除扩展后，终端**先执行 `ai-page-dive uninstall`** 清理本�
 
 - pnpm monorepo：`apps/extension`（Vite + React + TS + Tailwind v4）/ `packages/host`（纯 Node ≥18，运行时零依赖）/ `packages/shared`（类型与 NM 协议）
 - 必读：[DECISIONS.md](DECISIONS.md)（已拍板决策）· [research/product-architecture-report.md](research/product-architecture-report.md)（架构报告）· [AGENTS.md](AGENTS.md)（贡献规范）
-- 测试：vitest 219 用例——host 流解析器 / buildArgs / 真实流 fixture 重放 / pgid 收割链 / 历史轮切分 / SW 回归网（chrome shim 锚冷唤醒竞态、断连清理、丢片对账、分片上限、孤儿任务指针）/ jsdom 内容提取（与 [AGENTS.md](AGENTS.md) 同口径）
+- 测试：vitest 229 用例——host 流解析器 / buildArgs / 真实流 fixture 重放 / pgid 收割链 / 历史轮切分 / SW 回归网（chrome shim 锚冷唤醒竞态、断连清理、丢片对账、分片上限、孤儿任务指针）/ jsdom 内容提取（与 [AGENTS.md](AGENTS.md) 同口径）
 
 ```bash
-pnpm install && pnpm test    # 全量测试（24 文件 / 219 用例）
+pnpm install && pnpm test    # 全量测试（25 文件 / 229 用例）
 pnpm build                   # 构建后在 chrome://extensions 加载 apps/extension/dist/
 ```
 </details>
