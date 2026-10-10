@@ -22,6 +22,11 @@ const manifest = JSON.parse(await readFile(join(DIST, 'manifest.json'), 'utf8'))
 const required = ['manifest.json', 'sidepanel.html', 'background.js']
 for (const cs of manifest.content_scripts ?? []) required.push(...(cs.js ?? []))
 for (const v of Object.values(manifest.icons ?? {})) required.push(v)
+// r71（r70 产品 C8）：action.default_icon（string 或尺寸映射两种形状）同收——
+// manifest 声明却缺文件时上架空图标，与 content_scripts 同罪
+const di = manifest.action?.default_icon
+if (typeof di === 'string') required.push(di)
+else if (di) required.push(...Object.values(di))
 
 const missing = required.filter((f) => !existsSync(join(DIST, f)))
 if (missing.length) {
@@ -32,10 +37,13 @@ console.log(`✓ dist 完整：${required.length} 个 manifest 声明产物全�
 
 // r69（r68 产品#7）：内容一致性——dist manifest 落后 public（改了 description/version
 // 未重建 dist）时，已删措辞（如「免费」）会原样带上 CWS。version+description 逐字
-// 比对，不一致即拒打包——完整两段 pnpm build 后 dist 才是新鲜的
+// 比对，不一致即拒打包——完整两段 pnpm build 后 dist 才是新鲜的。
+// r71（r70 产品 C8）扩面：name/permissions/optional_host_permissions/icons 同断——
+// 改权限面后未重建 dist 时旧权限静默上架，恰是 CWS 审核最敏感打回点；对象/数组
+// 用 JSON.stringify 深比较
 const srcManifest = JSON.parse(readFileSync(join(REPO, 'apps/extension/public/manifest.json'), 'utf8'))
-for (const k of ['version', 'description']) {
-  if (manifest[k] !== srcManifest[k]) {
+for (const k of ['version', 'description', 'name', 'permissions', 'optional_host_permissions', 'icons']) {
+  if (JSON.stringify(manifest[k]) !== JSON.stringify(srcManifest[k])) {
     console.error(
       `⛔ dist/manifest.json 的 ${k} 与 public/manifest.json 不一致` +
         `（dist: ${JSON.stringify(manifest[k])} ≠ public: ${JSON.stringify(srcManifest[k])}）` +
@@ -44,7 +52,7 @@ for (const k of ['version', 'description']) {
     process.exit(1)
   }
 }
-console.log('✓ dist manifest 内容一致（version/description 对齐 public）')
+console.log('✓ dist manifest 内容一致（version/description/name/permissions/optional_host_permissions/icons 对齐 public）')
 
 // r65（r64 产品#6）：--check-only 到此为止——只跑完整性断言不打 zip（CI 挂钩用；
 // zip 只在上架打包时需要，且依赖系统 zip）
