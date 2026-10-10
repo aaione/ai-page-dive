@@ -7,7 +7,7 @@
 
 ## [Unreleased]
 
-r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收割定向化经 r66 复审为半边残留；发布链三连/CWS 材料/守门 CI 首跑 3 项属运营待办未动）+ r60–r63 审计修复批 + r64/r66 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`、`reports/2026-10-09-r66-*-audit.md`）。
+r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收割定向化经 r66 复审为半边残留；发布链三连/CWS 材料/守门 CI 首跑 3 项属运营待办未动）+ r60–r63 审计修复批 + r64/r66 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`、`reports/2026-10-09-r66-*-audit.md`）+ r67 修复批（r66 code 全部 4 项可修 medium + low 批，见 Fixed 尾部 r67 条目）。
 
 ### Added
 
@@ -30,6 +30,10 @@ r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收
 - 双窗生命周期收口（r64 code#1/#2）：面板「继续对话 / 新对话」在 SW 侧只收割本锚页签的在跑任务——此前无条件收割连坐别窗在跑任务白烧订阅额度；换锚广播带 windowId，双窗双面板各只认自己窗的换锚，共享锚架空收养守卫（foreignAdopt）的窗口关闭
 - CLI 输出 assistant 消息 content 非数组或元素畸形（版本漂移 / hook 污染）不再引发本机组件退出殃及其他在跑任务，也不再把 "undefined" 拼进正文（对齐 text_delta / result 同族形状闸）
 - SW 回收后重开面板的自动还原剥离历史文件 frontmatter 头——此前 title / url / ts 元数据被渲染成对话首条标题（HistoryView 详情路径已有同款剥离，自动还原路径漏）
+- r67（r66 code#1）：面板「总结 / 继续对话 / 新对话 / 历史还原」帧携带 anchorTabId——SW 收割、sessions 记账、任务戳全路径用发起面板的锚页签，单例被别窗面板覆盖后误杀/漏杀双向闭合（帧无锚时回退 panelTabId 单例，r65 用例语义不变）
+- r67（r66 code#2）：历史「继续对话」传原文——frontmatter 剥离唯一收口 parseHistoryTurns 入口，此前已剥 body 被二剥、正文首行恰为 --- 水平线时丢首段；负对照用例钉单剥语义
+- r67（r66 code#3）：双窗不拆台契约钉入测试——他窗 onActivated/onCreated 不 disable 不扰动、同窗照收且预 disable 只扫锚窗口、panelWindowId 缺失宁可收起，此前该分支零测试
+- r67（r66 low 批）：sr-only 终局性质分流（取消/错误不再播「已完成」）、tips 三态（取消后/codex 还原不再显示进行时「正在分享」）、Settings CLI 开关 a11y 反转修正（name 改陈述状态）、manifest 删「免费」（与订阅额度事实矛盾）、README/install.sh 拆 `&&` 拼接命令、DECISIONS 行数口径对齐实测 2196/余量 4
 
 ### Changed
 
