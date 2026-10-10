@@ -10,7 +10,9 @@ import type { ChatMessage } from './App'
 export function parseHistoryTurns(body: string): ChatMessage[] {
   // r65（r64 产品#5）：host 落盘必带 frontmatter 头（history.ts 写侧）——入口统一
   // 剥离，SW 回收自动还原（App history-file 路径）不再把元数据渲染成对话标题。
-  // HistoryView 详情读取的手剥正则与此同款，两路共用同一语义
+  // r67（r66 code#2）：剥离唯一收口在此——调用方一律传原文（HistoryView 继续对话
+  // 曾传已剥 body 被二剥，正文 --- 水平线开头即丢首段）；非贪婪只剥第一个闭合，
+  // frontmatter 后正文自身的 --- 水平线不受影响
   const raw = body.replace(/^---\n[\s\S]*?\n---\n/, '').trim()
   if (!raw) return []
   const msgs: ChatMessage[] = []

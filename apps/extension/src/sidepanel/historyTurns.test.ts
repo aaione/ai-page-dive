@@ -67,4 +67,13 @@ describe('parseHistoryTurns', () => {
     expect(msgs[0].text).toBe('# 首轮总结')
     expect(msgs[1].text).toBe('追问')
   })
+
+  it('r67（r66 code#2）：frontmatter 后正文以 --- 水平线开头——单剥只吃 frontmatter，首段保留', () => {
+    // 双剥洞的触发形状：HistoryView「继续对话」曾传已剥 body，再入此处二剥
+    // 把正文首段连水平线一起吃掉；修复后调用方一律传原文，此用例钉单剥语义
+    const body = '---\ntitle: x\n---\n---\n首段（分隔线上方）\n---\n尾段'
+    const msgs = parseHistoryTurns(body)
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0].text).toBe('---\n首段（分隔线上方）\n---\n尾段')
+  })
 })

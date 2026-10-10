@@ -166,7 +166,8 @@ export function HistoryView({
   }
 
   if (detail.shown) {
-    const body = detail.shown.content.replace(/^---\n[\s\S]*?\n---\n/, '')
+    const raw = detail.shown.content
+    const body = raw.replace(/^---\n[\s\S]*?\n---\n/, '')
     return (
       <div className={`pd-history-detail${detail.exiting ? ' pd-exiting' : ''}`}>
         <button onClick={() => { setViewing(null); pendingPathRef.current = null }} className="pd-history-back">
@@ -196,7 +197,10 @@ export function HistoryView({
         </div>
         {viewingItem?.sessionId && (
           <button
-            onClick={() => onResume(viewingItem, body)}
+            // r67（r66 code#2）：传原文——frontmatter 剥离收口 parseHistoryTurns 入口
+            // 单剥。此前传已剥 body 再被 parseHistoryTurns 二剥：正文首行恰为 ---
+            // 水平线且首段内再现 --- 时丢首段（:169 的剥离只服务上方显示路径）
+            onClick={() => onResume(viewingItem, raw)}
             className="pd-history-resume"
           >
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
