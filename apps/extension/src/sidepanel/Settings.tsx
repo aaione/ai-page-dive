@@ -546,6 +546,11 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
                     <button className="pd-set-btn danger" onClick={deleteWorkflow} disabled={!editor.name}>
                       {editor.builtin ? '恢复默认' : confirmDelWf ? '确认删除（不可恢复）' : '删除'}
                     </button>
+                    {/* r71（r70 产品 L5）：两步确认 sr-only 播报——按钮文字变化读屏器
+                        不自动播报，对齐 SummarizeView confirmNew 同谱（r46 C6） */}
+                    {confirmDelWf && !editor.builtin && (
+                      <span className="pd-sr-only" role="status">再次点击以确认删除该 workflow</span>
+                    )}
                     <span className="spacer" />
                     <button className="pd-set-btn" onClick={() => revealWorkflow(editor.name)} disabled={!editor.name}>
                       打开目录

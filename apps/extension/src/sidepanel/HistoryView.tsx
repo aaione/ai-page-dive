@@ -305,6 +305,11 @@ export function HistoryView({
                 </svg>
               )}
             </button>
+            {/* r71（r70 产品 L5）：两步确认 sr-only 播报——title/aria-label 变化
+                读屏器不自动播报（同 SummarizeView confirmNew 谱，r46 C6） */}
+            {confirmDel === it.path && (
+              <span className="pd-sr-only" role="status">再次点击以确认删除该记录</span>
+            )}
           </li>
         ))}
         {!items.length && (

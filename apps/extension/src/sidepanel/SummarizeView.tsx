@@ -538,10 +538,12 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           disabled={hasSession}
           disabledTitle="追问沿用首轮 CLI"
         />
-        {usable.length === 0 && (
+        {usable.length === 0 && agentsLoaded && (
           // r6-ux 空态自愈入口：SW 对零可用结果永不缓存命中（穿透重探测），
           // 用户装好 CLI 后点此按钮即见——无需重装本机组件/重开面板。
-          // r7-ux：点击即 loading（host 探测最长 8s，零反馈会被当成没反应连点）
+          // r7-ux：点击即 loading（host 探测最长 8s，零反馈会被当成没反应连点）。
+          // r71（r70 产品 L6）：agentsLoaded 门禁——探测在途期 placeholder 已示
+          // 「正在检测本机 CLI…」，重试按钮并存会诱导连点打断在途探测
           <button
             onClick={() => {
               setProbing(true)
