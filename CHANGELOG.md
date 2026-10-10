@@ -7,7 +7,7 @@
 
 ## [Unreleased]
 
-r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收割定向化经 r66 复审为半边残留；发布链三连/CWS 材料/守门 CI 首跑 3 项属运营待办未动）+ r60–r63 审计修复批 + r64/r66 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`、`reports/2026-10-09-r66-*-audit.md`）+ r67 修复批（r66 code 全部 4 项可修 medium + low 批，见 Fixed 尾部 r67 条目）。
+r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收割定向化经 r66 复审为半边残留；发布链三连/CWS 材料/守门 CI 首跑 3 项属运营待办未动）+ r60–r63 审计修复批 + r64/r66 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`、`reports/2026-10-09-r66-*-audit.md`）+ r67 修复批（r66 code 可修 medium 3 项（#1/#2/#3）+ low 批，见 Fixed 尾部 r67 条目）+ r69 修复批（r68 code 帧锚半边口收口 + 产品 medium/low 批，见 Fixed 尾部 r69 条目）。
 
 ### Added
 
@@ -34,6 +34,10 @@ r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收
 - r67（r66 code#2）：历史「继续对话」传原文——frontmatter 剥离唯一收口 parseHistoryTurns 入口，此前已剥 body 被二剥、正文首行恰为 --- 水平线时丢首段；负对照用例钉单剥语义
 - r67（r66 code#3）：双窗不拆台契约钉入测试——他窗 onActivated/onCreated 不 disable 不扰动、同窗照收且预 disable 只扫锚窗口、panelWindowId 缺失宁可收起，此前该分支零测试
 - r67（r66 low 批）：sr-only 终局性质分流（取消/错误不再播「已完成」）、tips 三态（取消后/codex 还原不再显示进行时「正在分享」）、Settings CLI 开关 a11y 反转修正（name 改陈述状态）、manifest 删「免费」（与订阅额度事实矛盾）、README/install.sh 拆 `&&` 拼接命令、DECISIONS 行数口径对齐实测 2196/余量 4
+- r69（r68 code#1/#2，帧锚半边口）：panel-ready 帧带 myWindowId，SW 面板锚播种按发起窗解析真锚（异窗面板的活跃页签，回包 panelTabId 同锚）——双窗下拉重开不再击穿单例；「总结 / 继续对话 / 新对话」内容源同帧锚（anchorTabId 优先，缺锚回退单例 → target → 活跃页）——错页 + 会话错乱双向闭合
+- r69（r68 code#3）：SW 回归网 chrome.tabs.query mock 参数化（windowId 过滤 tabsDb / queryTab 注入任务源）——帧锚用例补误杀向鉴别力（此前 mock 恒返 11，seed 22 + 帧 22 零 cancel 对回退路径无鉴别力）
+- r69（r68 code#5）：面板 → SW 帧协议收敛 `PanelToSw`（`AnchorCarrying` 可选锚 + 五帧联合类型）——anchorTabId 拼错从「零编译错即静默回退单例」变为编译错，协议 any 第三例封口
+- r69（r68 low 批 + 产品 medium#5/#7）：安装命令 npmCmd 拆两行（`npm i -g …@version` / `install --ext-id …`，`white-space: pre-line`）；复制按钮 aria-label 随 copied/copyFail 变化；tips 补失败第四态（终局 isError 且未取消显示「分享未成功」）；过期 task-error 帧补 cancelled 标记；技能开关 aria-label 改状态名谱；AGENTS.md 概述「零配置」对齐 D1 r59 修订；`package-cws --check-only` 加 dist↔public manifest version/description 一致性断言（陈旧 dist 带旧文案上架的守门缺口）
 
 ### Changed
 
@@ -46,6 +50,7 @@ r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收
 - 宪法同步：DECISIONS D3 权限清单补记 `storage`、「始终允许读取网页」开关实装位对齐授权气泡；README 档位列举补第五档「产品审计」；PRIVACY activeTab 行表述理顺；测试 219 → 224（C1 消毒 / 畸形 text_delta 闸 / SummarizeView 授权开关冒烟 ×3——UI 组件测试设施第一锹，`@testing-library/react`）
 - r66 双终审报告入库：代码 7.8（0 critical / 0 high / 7 medium——收割定向化半边残留、frontmatter 双剥丢首段新洞、测试债在涨）；产品 6.0 否（发布链第 7 轮 critical 维持、实驱 9 场景全绿）；本行上方 Unreleased 头措辞同步如实化（Top5 必修 2/5 → 如实分列，r66 产品#5）
 - r68 双终审报告入库（`reports/2026-10-10-r68-*-audit.md`）：代码 7.6 否（0 critical / 0 high / 7 medium——r67 帧锚修复「只收半边口」：面板锚播种与内容源 target 仍读单例）；产品 6.0 否（发布链第 9 轮 critical 维持、断口 74→81、远端 install.sh 钉 0.1.3 双版本 E404 补强；r66 low 批四项 + 两条 code medium 产品面实驱全部关账；新账 3 medium：面板 npmCmd 裸 && / dist 滞后守门不查一致性 / CHANGELOG 计数措辞）
+- 测试 229 → 235 用例（r69）：帧锚三用例（panel-ready 异窗回包锚 / summarize 内容源帧锚优先 / 帧锚误杀向鉴别 + 对照）；README ×2 + AGENTS.md 测试数字同步
 
 ## [0.1.4] - 2026-10-06
 
