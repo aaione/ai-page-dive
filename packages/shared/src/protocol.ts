@@ -355,8 +355,9 @@ export interface PanelAnchorMsg {
   tabId: number
   windowId?: number
 }
-/** SW → panel 全消息面：host 原帧（+SW 盖 tabId 邮戳）∪ SW 合成帧 */
-export type PanelMsg = HostToExt | PageMetaMsg | PanelToggleMsg | PanelAnchorMsg
+/** SW → panel 全消息面：host 原帧（+SW 盖 tabId 邮戳——r69 帧锚的收养守卫核验
+ *  基准；r71（r70 code L15）类型补声明，panel 读 m.tabId 不再依赖运行时附加）∪ SW 合成帧 */
+export type PanelMsg = (HostToExt & { tabId?: number }) | PageMetaMsg | PanelToggleMsg | PanelAnchorMsg
 
 /** panel-ready 响应（SW 对 {t:'panel-ready'} 的 sendResponse shape） */
 export interface PanelReadyResp {

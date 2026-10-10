@@ -167,8 +167,9 @@ export function App() {
   // 收养」瞬间的邮戳核验基准：别的页签任务的流不得在本面板凭空开场（串台根修）
   const anchorTabIdRef = useRef<number | null>(null)
   /** r16 收养守卫：未绑定（含 pending 等首帧窗口）时只收养本锚页签的任务帧；
-   * 已绑定照收——折叠续流/双窗口恒广播语义不变。无邮戳的旧帧放行（向后兼容） */
-  const foreignAdopt = (m: any, s: typeof stream) =>
+   * 已绑定照收——折叠续流/双窗口恒广播语义不变。无邮戳的旧帧放行（向后兼容）。
+   * r71（r70 code L15）：m 收窄到消费面（仅 tabId 邮戳）——as any 残留清零 */
+  const foreignAdopt = (m: { tabId?: number }, s: typeof stream) =>
     s.taskId === null && s.activeId === null && typeof m.tabId === 'number' && m.tabId !== anchorTabIdRef.current
 
   // r65（r64 code#2）：本面板所在窗口——panel-anchor 帧的窗口界定（双窗双面板
