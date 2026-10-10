@@ -25,6 +25,7 @@ r71 修复批（r70 双终审 code 4 medium + product 去重后 3 medium 全数�
 - CHANGELOG 版本账归位（r70 product C7）：r59 之后至 r70 的修复从 Unreleased 并入 0.1.4 段（三处钉版 0.1.4 未发布，这些修复本就属于 0.1.4 实物）；r67 批测试计数补账（229→232 三例此前从未入账，r69 行曾误吞为 229→235）
 - AGENTS.md v1 Priority「零配置」→「零账号·零 API key」（D1 r59 修订第二轮漏网，r69 只改了概述行）；PRIVACY CLI 配置读取表述对齐实现（claude 默认模型取 `settings.json` 的 `model` 或其中 `env.ANTHROPIC_MODEL` 两路径，codex 取 `config.toml` 的 `model`）
 - 测试 235 → 239 用例：tips 终局五态分流 ×3（未送达 → 「分享未成功」 / 已送达失败 → 仍「已分享」 / 取消 → 「已停止」）+ 异窗锚 query 空结果/异常 → 回退单例 ×1；sw.test shim `tabs.query` 语义保真（queryReject 注入 / active 过滤 / 空结果如实返回 [] 不再谎报默认活跃页——r70 code#2「shim 无法表达 query 失败/空结果」解除）
+- r71 low 批（B 批剩余四条）：workflow-read 截断点回退代理对边界（对齐 history-read，task.ts 分片谱保持并注明刻意不同）；Settings/HistoryView 两步确认补 sr-only 播报（对齐 SummarizeView confirmNew 谱）；重试检测按钮补 agentsLoaded 门禁（探测在途不再与「正在检测」并存）；foreignAdopt 收窄暴露并补齐 PanelMsg 的 SW 盖戳声明（tabId 邮戳进类型面）
 
 ## [0.1.4] - 2026-10-11
 
