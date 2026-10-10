@@ -5,7 +5,7 @@
  *   SW → panel: 转发 host 的 HostToExt 帧 + SW 自合成终局（连坐取消/断连/丢片）+ panel-ready 回包（missedTerminal 补发错过的终局）
  */
 import { nmPort } from '../lib/nmport.js'
-import type { AgentStatus, ExtToHost, HostToExt, PageContent } from '@ai-page-dive/shared'
+import type { AgentStatus, ExtToHost, HostToExt, PageContent, PanelToSw } from '@ai-page-dive/shared'
 // r52（review #12）：NM 分片上限单源——此前与 shared/protocol.ts 各写一份 512*1024，
 // 漂移 = SW 发送侧与 host 切片侧按不同上限工作（契约测试只锚了常量没锚消费）
 import { MAX_CHUNK } from '@ai-page-dive/shared'
@@ -416,7 +416,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true
 })
 
-async function handleMessage(msg: any): Promise<unknown> {
+/** r69（r68 code#5）：帧锚读取单点收敛——三处手写 typeof 判定 + 两处默认参数的
+ *  家族收口；字段拼错在 PanelToSw 类型面即编译红（此前静默回退单例零告警） */
+function readAnchor(msg: PanelToSw): number | null {
+  return typeof msg.anchorTabId === 'number' ? msg.anchorTabId : panelTabId
+}
+
+async function handleMessage(msg: PanelToSw): Promise<unknown> {
   // r52（review P1）：本消息冷唤醒 SW 时顶层恢复微任务可能尚未跑完——各分支的
   // persistSession（panel-ready 重建/resume-history/new-session/summarize）会用
   // 空内存态覆写持久化。storage.session 读取 <1ms，统一先恢复再处理
@@ -426,6 +432,23 @@ async function handleMessage(msg: any): Promise<unknown> {
     case 'panel-ready': {
       // r16：面板（重）唤起即清完成角标——用户已看到结果，✓ 完成使命
       chrome.action.setBadgeText({ text: '' }).catch(() => {})
+      // r69（r68 code#1）：回包锚按发起窗界定——panelTabId 是 SW 单例，双窗下后开
+      // 面板覆盖单例后，A 窗重开面板（侧边栏下拉，无本窗 action 点击）会把锚播种
+      // 成 B 的 tab（App 锚播种错 → 后续帧全带伪锚：串会话/误杀复发）。发起面板
+      // 自报 myWindowId，异窗时该窗活跃 tab 即其真锚（面板可见 = 锚 tab 活跃，
+      // 锚定语义保证）；missed/sess/activeTask 同锚对号。同窗/缺省（旧面板）沿用
+      // 单例，含下方冷启动重建链
+      let respAnchor: number | null = panelTabId
+      let foreignTab: chrome.tabs.Tab | null = null
+      if (typeof msg.myWindowId === 'number' && msg.myWindowId !== panelWindowId) {
+        const [wt] = await chrome.tabs
+          .query({ active: true, windowId: msg.myWindowId })
+          .catch(() => [] as chrome.tabs.Tab[])
+        if (wt?.id != null) {
+          respAnchor = wt.id
+          foreignTab = wt
+        }
+      }
       // 面板打开时对齐：面板 dock 在 panelTabId 上（= 打开面板时 action 手势
       // 授权过的那个 tab）。SW 重启丢 panelTabId 态时 fallback 当前活跃普通页。
       if (!panelTabId || !target) {
@@ -473,9 +496,9 @@ async function handleMessage(msg: any): Promise<unknown> {
           : undefined
       // 面板收起期间错过的任务终局一次性补发（r53 #5）：面板无接收端时广播静默丢，
       // 重开面板永远停在 loading。消费即清——防重复补发
-      const missed = panelTabId !== null ? lastTerminals.get(panelTabId) : undefined
-      if (missed && panelTabId !== null) {
-        lastTerminals.delete(panelTabId)
+      const missed = respAnchor !== null ? lastTerminals.get(respAnchor) : undefined
+      if (missed && respAnchor !== null) {
+        lastTerminals.delete(respAnchor)
         persistSession()
       }
       // tips 条元数据无论 probe 成败都带回（panel 已开就有目标页）。
@@ -483,7 +506,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       // SW 侧活会话透出给 panel 恢复 resumable（追问不再静默降级为全量重总结），
       // 在跑任务透出 taskId 供 panel 重建绑定（迟到 chunk 不再呈现为孤儿流）。
       // r12：都按当前锚定页签过滤——别的页签的会话/任务不属于本面板
-      const sess = panelTabId !== null ? sessions.get(panelTabId) : undefined
+      const sess = respAnchor !== null ? sessions.get(respAnchor) : undefined
       return {
         ...r,
         ...(r.ok ? {} : { nmError: nmPort.lastError }),
@@ -492,12 +515,20 @@ async function handleMessage(msg: any): Promise<unknown> {
         ...(upgrade ? { upgrade } : {}),
         // r53 #5：面板收起期间错过的任务终局——panel 据此补一次错误呈现，不再零痕迹
         ...(missed ? { missedTerminal: missed } : {}),
-        page: pageMeta(),
+        // r69（r68 code#1）：异窗面板的 tips/占位元数据用它自己的锚 tab——单例
+        // target 是别窗的页（同窗面板 foreignTab 为 null，走原 pageMeta 不变）
+        page: foreignTab
+          ? foreignTab.url && isNormalPage(foreignTab.url)
+            ? { title: foreignTab.title ?? '', url: foreignTab.url, favIconUrl: foreignTab.favIconUrl }
+            : null
+          : pageMeta(),
         // r16：锚定页签透出——panel 未绑定收养任务帧时核邮戳用（防跨页签串台）
-        panelTabId,
+        // r69：按发起窗界定（见上 respAnchor）
+        panelTabId: respAnchor,
         // r8-ux：不可提取页（chrome:// 等）前置告知——placeholder 直接说明而非
         // 等用户输入发送后才报「浏览器内置页面无法提取」（预期管理前移）
-        pageUnsupported: !!(target && !isNormalPage(target.url)),
+        // r69：异窗面板按其锚 tab 判定（同上 foreignTab）
+        pageUnsupported: !!(foreignTab ?? target) && !isNormalPage((foreignTab ?? target)!.url),
         ...(sess
           ? {
               hasSession: true,
@@ -515,7 +546,7 @@ async function handleMessage(msg: any): Promise<unknown> {
               ...(sess.page ? { sessionPage: sess.page } : {}),
             }
           : {}),
-        ...(currentTask && currentTask.tabId === panelTabId ? { activeTask: { taskId: currentTask.taskId, startedAt: currentTask.startedAt } } : {}),
+        ...(currentTask && currentTask.tabId === respAnchor ? { activeTask: { taskId: currentTask.taskId, startedAt: currentTask.startedAt } } : {}),
       }
     }
     case 'summarize': {
@@ -525,7 +556,8 @@ async function handleMessage(msg: any): Promise<unknown> {
       const attachments = msg.attachments as AttachMsg[] | undefined
       // r67（r66 code#1）：收割/会话键用帧内发起面板锚 anchorTabId——panelTabId 是
       // SW 单例，双窗后开面板即被覆盖；缺省字段退回全局锚（同版本 panel 必带）
-      const anchor = typeof msg.anchorTabId === 'number' ? msg.anchorTabId : panelTabId
+      // r69：读取收敛 readAnchor（r68 code#5）
+      const anchor = readAnchor(msg)
       // 追问轮：复用本页签上一轮 CLI 会话（claude --resume），不重新提取页面。
       // 会话丢失时明确报错——静默降级为新总结会让用户误以为在追问
       if (msg.followUp === true) {
@@ -549,7 +581,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       // panelTabId 单例在双窗后开面板时被覆盖，误杀/漏杀双向错位（半边残留补全）
       const { agentId, sessionId, historyPath } = msg
       if (!agentId || !sessionId) return { error: 'bad-request' }
-      const anchor = typeof msg.anchorTabId === 'number' ? msg.anchorTabId : panelTabId
+      const anchor = readAnchor(msg)
       if (currentTask && anchor !== null && currentTask.tabId === anchor) cancelCurrent()
       sessionTouched = true // 显式设置会话：restoreSession 微任务不得用旧态覆盖
       if (anchor !== null) sessions.set(anchor, { agentId, sessionId, historyPath })
@@ -571,7 +603,7 @@ async function handleMessage(msg: any): Promise<unknown> {
       // r65（r64 code#1）：同 resume-history——只收割本锚页签任务，别窗任务不连坐
       // r67（r66 code#1）：收割判定与 sessions 键改用帧内发起面板锚（同 resume-history）
       {
-        const anchor = typeof msg.anchorTabId === 'number' ? msg.anchorTabId : panelTabId
+        const anchor = readAnchor(msg)
         if (currentTask && anchor !== null && currentTask.tabId === anchor) cancelCurrent()
         sessionTouched = true // 显式清空：restoreSession 微任务不得让旧会话「复活」
         if (anchor !== null) sessions.delete(anchor)
@@ -874,7 +906,7 @@ nmPort.onDisconnect(() => {
 /** 追问轮：上下文在 CLI 会话里，host 直接 resume，无提取/无正文。
  *  r67（r66 code#1）：anchor = 发起面板锚（帧内 anchorTabId，缺省全局锚）——
  *  任务邮戳/终局入箱页签跟随发起面板，不再被后开面板的单例 panelTabId 错位 */
-function startFollowUp(agentId: string, sessionId: string, instruction: string, historyPath?: string, attachments?: AttachMsg[], anchor: number | null = panelTabId) {
+function startFollowUp(agentId: string, sessionId: string, instruction: string, historyPath?: string, attachments?: AttachMsg[], anchor: number | null = null) {
   if (!instruction.trim() && !attachments?.length) return { error: 'empty-instruction' }
   if (currentTask) cancelCurrent() // 收割在跑任务（同 startSummarize：句柄丢失 = 进程泄漏）
   const taskId = newTaskId()
@@ -958,7 +990,7 @@ function pageMeta(): { title: string; url: string; favIconUrl?: string; approxTo
   return null
 }
 
-async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string, attachments?: AttachMsg[], historyLimit?: number, anchor: number | null = panelTabId) {
+async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string, attachments?: AttachMsg[], historyLimit?: number, anchor: number | null = null) {
   // 入口先收割在跑任务（提取/注入可能 await 数秒，期间旧任务继续烧额度）——
   // 对称于 resume-history/new-session 的既有守卫
   if (currentTask) cancelCurrent()
@@ -972,7 +1004,12 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // 页），目标页经提取成功的 page-meta 帧回显给 panel 供用户即时纠偏。
   // fallback 只认普通网页：panel 自己常是 lastFocusedWindow 的 active「页」，
   // chrome-extension:// 的它绝不该被选为总结目标
-  let tab = target?.id ? await chrome.tabs.get(target.id).catch(() => null) : null
+  // r69（r68 code#2）：内容源与帧锚同源——target 单例被后开面板的 action 点击
+  // 覆盖后，A 窗锚的总结会提取 B 窗页面（错页总结 + currentTask.tabId 与帧锚
+  // 错位的双向会话错乱）。优先帧锚 tab；锚取不到（tab 已关/无锚）退 target
+  // 单例再退活跃页（链尾 ponytail：锚 tab 刚关的窄窗无窗级信息，从权沿用旧链）
+  let tab = anchor !== null ? await chrome.tabs.get(anchor).catch(() => null) : null
+  if (!tab) tab = target?.id ? await chrome.tabs.get(target.id).catch(() => null) : null
   if (!tab) {
     const [active] = (await chrome.tabs.query({ active: true, lastFocusedWindow: true })) ?? []
     tab = active && isNormalPage(active.url) ? active : null

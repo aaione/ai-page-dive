@@ -368,6 +368,8 @@ export interface PanelReadyResp {
    *  此前只有 <MIN 的阻断握手：已装机用户的 host 修复永远无人触达 */
   upgrade?: string
   page: PageMetaMsg['page']
+  /** r69（r68 code#1）：按发起窗界定的锚——异窗面板拿到自己窗的锚（其活跃 tab），
+   *  不再被 SW 单例（后开面板的锚）串台；同窗/旧面板（帧无 myWindowId）= 单例 */
   panelTabId: number | null
   pageUnsupported?: boolean
   hasSession?: boolean
@@ -386,3 +388,36 @@ export interface PanelReadyResp {
    *  还原在途时暂存面板侧，落地后并入消息尾；消费即清（重开不重复） */
   missedTerminal?: { t: 'task-error'; taskId: string; code?: string; message?: string; tabId?: number }
 }
+
+// ── panel → SW 帧（r69：handleMessage(msg:any) 收敛——anchorTabId 字段拼错零编译
+// 错即静默回退 SW 单例，r68 code#5 协议治理第三例）──
+
+/** 各帧共用的锚字段：r67（r66 code#1）起 SW 收割/会话键按发起面板锚对号 */
+export interface AnchorCarrying {
+  anchorTabId?: number
+}
+
+export type PanelToSw = AnchorCarrying & (
+  | {
+      t: 'panel-ready'
+      /** r69（r68 code#1）：发起面板自报所在窗口——SW 据此界定回包锚，双窗重开
+       *  不把 A 面板的锚播种成 B（单例）的 tab；缺省 = 沿用单例（旧面板兼容） */
+      myWindowId?: number
+    }
+  | {
+      t: 'summarize'
+      agentId?: string
+      workflow?: string
+      instruction?: string
+      skills?: string[]
+      lang?: string
+      attachments?: TaskInput['attachments']
+      historyLimit?: number
+      /** true = 追问轮（复用本锚会话），缺省/ false = 全新总结 */
+      followUp?: boolean
+    }
+  | { t: 'resume-history'; agentId?: string; sessionId?: string; historyPath?: string }
+  | { t: 'cancel'; taskId?: string }
+  | { t: 'new-session' }
+  | { t: 'nm'; msg: ExtToHost }
+)

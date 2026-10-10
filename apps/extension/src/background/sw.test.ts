@@ -41,7 +41,7 @@ const defer = (): Deferred => {
 const PAGE = { url: 'https://x/art', title: 'Art', extractor: 'test', approxTokens: 7 }
 const CLAUDE_SESS = { agentId: 'claude', sessionId: 's-111' }
 
-async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<string, any>; slowGets?: number; hostVersion?: string; receiverOnline?: boolean; activeUrl?: string } = {}) {
+async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<string, any>; slowGets?: number; hostVersion?: string; receiverOnline?: boolean; activeUrl?: string; queryTab?: Record<string, any> } = {}) {
   const calls = {
     /** runtime.sendMessage 全部广播（含任务帧转发） */
     sent: [] as any[],
@@ -149,9 +149,16 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
       onUpdated: listeners(onUpdated),
       onRemoved: listeners(onRemoved),
       get: async (id: number) => tabsDb.get(id) ?? null,
+      // r69：带 windowId 的 query（panel-ready 异窗锚界定）从 tabsDb 取该窗页签，
+      // 无匹配退默认活跃页（老用例零改动）；queryTab 可覆写默认活跃页（r68 code#3
+      // 误杀向用例——mock 恒返 11 时 seed 22 的「零 cancel」断言无鉴别力）
       query: async (q?: any) => {
         calls.queries.push(q)
-        return [{ id: 11, windowId: 2, url: opts.activeUrl ?? 'https://x/active', title: 'Active' }]
+        if (q?.windowId != null) {
+          const inWin = [...tabsDb.values()].filter((t: any) => t.windowId === q.windowId)
+          if (inWin.length) return inWin
+        }
+        return [opts.queryTab ?? { id: 11, windowId: 2, url: opts.activeUrl ?? 'https://x/active', title: 'Active' }]
       },
     },
     scripting: {
@@ -191,6 +198,8 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
     chrome,
     calls,
     local: localStore,
+    /** r69：tabs.get/query(windowId) 的可写 tab 台账——异窗锚/内容源用例注入页签 */
+    tabs: tabsDb,
     flush,
     fireMessage,
     fireNm: (m: any) => calls.nmHandlers.forEach((h) => h(m)),
@@ -720,6 +729,56 @@ describe('sw.ts 回归网', () => {
     expect(starts[starts.length - 1].task.resumeSessionId).toBe('s-x')
     const fu2 = await h.fireMessage({ t: 'summarize', agentId: 'claude', instruction: '继续', followUp: true, anchorTabId: 22 })
     expect(fu2).toEqual({ error: 'session-lost' })
+  })
+
+  // r69（r68 code#1）：panel-ready 回包锚按发起窗界定——panelTabId 单例被 B 窗后开
+  // 面板覆盖后，A 窗面板（自报 myWindowId）重开时锚播种成自己窗的活跃 tab（面板
+  // 可见 = 锚 tab 活跃，锚定语义保证），missed/sess 同锚对号；帧无 myWindowId
+  // （旧面板）沿用单例（兼容路径不变）
+  it('r69：panel-ready 异窗回包锚 = 该窗活跃 tab（sess 对号）；无 myWindowId 沿用单例', async () => {
+    // tabsDb 默认含 tab 5（窗 1）；B 后开面板覆盖单例 = 22/窗 2。A 窗面板（窗 1）重开
+    const h = await boot({ seed: { panelTabId: 22, panelWindowId: 2, sessions: [[5, CLAUDE_SESS]] } })
+    const st = await h.fireMessage({ t: 'panel-ready', myWindowId: 1 })
+    expect(st.panelTabId).toBe(5) // A 窗锚 = 窗 1 活跃 tab，不再被单例 22 串台
+    expect(st.hasSession).toBe(true)
+    expect(st.sessionAgentId).toBe('claude')
+    // 兼容路径：帧无 myWindowId（旧面板）→ 单例口径不变
+    const st2 = await h.fireMessage({ t: 'panel-ready' })
+    expect(st2.panelTabId).toBe(11) // 单例已重建为活跃页 11，仍非 A 窗的 5——单例语义照旧
+    expect(st2.hasSession).toBeUndefined()
+  })
+
+  // r69（r68 code#2）：summarize 内容源与帧锚同源——target 单例被后开面板的 action
+  // 点击覆盖后，A 窗锚的总结不再提取 B 窗页面；task-status 邮戳 = 帧锚 tab
+  //（currentTask.tabId 归档路由同源对号，task-done 不再顶掉别窗会话）
+  it('r69：summarize 内容源帧锚优先——单例 target 是别窗页时提取/邮戳仍用锚 tab', async () => {
+    // 锚 31（窗 3，tabsDb 注入）；query 默认活跃页 11（回退读单例/活跃页则邮戳 11 即红）
+    const h = await boot({ seed: { panelTabId: 22, panelWindowId: 2 } })
+    h.tabs.set(31, { id: 31, windowId: 3, url: 'https://x/a31', title: 'A31' })
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick', anchorTabId: 31 })
+    expect(r.ok).toBe(true)
+    expect(h.calls.sent.find((m) => m?.t === 'task-status')).toMatchObject({ tabId: 31 })
+  })
+
+  // r69（r68 code#3）：误杀向鉴别力——query 默认活跃页恒返 11 时，seed 单例 22 的
+  // 「new-session(帧锚 22) 零 cancel」对「代码回退读单例」无鉴别力（11≠22 同样不杀）。
+  // 活跃页改返 22（= 单例锚，任务源落在 22）后：帧锚 11 的 new-session 零 cancel
+  // 才有牙齿——回退读单例的旧代码 22===22 即误杀红
+  it('r69：误杀向鉴别——任务源=单例 22 时，帧锚 11 的 new-session 不得 cancel', async () => {
+    const q22 = { id: 22, windowId: 2, url: 'https://x/b22', title: 'B22' }
+    const h = await boot({ seed: { panelTabId: 22, panelWindowId: 2 }, queryTab: q22 })
+    // 无 anchorTabId 的 summarize（单例路径）→ 任务源落在 22
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect(r.ok).toBe(true)
+    expect(h.calls.sent.find((m) => m?.t === 'task-status')).toMatchObject({ tabId: 22 })
+    // A 窗面板（帧锚 11）新对话：不误杀 B（单例 22）在跑任务
+    await h.fireMessage({ t: 'new-session', anchorTabId: 11 })
+    expect(h.calls.nmSent.filter((m) => m.t === 'task-cancel')).toEqual([])
+    // 对照：帧锚 22（B 自己）照杀
+    const h2 = await boot({ seed: { panelTabId: 22, panelWindowId: 2 }, queryTab: q22 })
+    const r2 = await h2.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    await h2.fireMessage({ t: 'new-session', anchorTabId: 22 })
+    expect(h2.calls.nmSent).toContainEqual({ t: 'task-cancel', taskId: r2.taskId })
   })
 
   // r58（#28）：正文对账超时兜底——回执被吞（done 片或 content-received 丢失）时

@@ -266,7 +266,10 @@ export function App() {
     let tries = 0
     let retry: ReturnType<typeof setTimeout> | undefined
     const ping = () => {
-      chrome.runtime.sendMessage({ t: 'panel-ready' }, (respRaw) => {
+      // r69（r68 code#1）：带己窗标识——SW 按窗界定回包锚（双窗重开不串台）。
+      // myWindowId 未落定时缺省发送 = SW 沿用单例口径（旧面板兼容行为）
+      const myW = myWindowIdRef.current
+      chrome.runtime.sendMessage({ t: 'panel-ready', ...(myW != null ? { myWindowId: myW } : {}) }, (respRaw) => {
         const resp = respRaw as PanelReadyResp | undefined
         if (chrome.runtime.lastError && !resp) {
           // 前 2 次 500ms/1s 退避，之后降频 5s 持续轮询（r4-ux F4：耗尽即停会让
@@ -367,7 +370,17 @@ export function App() {
         }
       })
     }
-    ping()
+    // r69（r68 code#1）：首 ping 前先落定己窗（getCurrent 异步回调）——panel-ready
+    // 的按窗锚界定依赖它，早发会把异窗重开面板的锚播种成 SW 单例（别窗的 tab）。
+    // dev mock/老 Chrome 无 windows 语义时立即发（缺省 = 单例口径，行为不变）
+    try {
+      if (chrome.windows?.getCurrent) {
+        chrome.windows.getCurrent((w: chrome.windows.Window | undefined) => {
+          if (typeof w?.id === 'number') myWindowIdRef.current = w.id
+          ping()
+        })
+      } else ping()
+    } catch { ping() }
     const listener = (mRaw: unknown) => {
       const m = mRaw as PanelMsg
       switch (m.t) {
