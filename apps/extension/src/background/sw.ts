@@ -422,6 +422,19 @@ function readAnchor(msg: PanelToSw): number | null {
   return typeof msg.anchorTabId === 'number' ? msg.anchorTabId : panelTabId
 }
 
+/** r71（r70 code#4）：panel-ready 异窗锚解析独立——发起窗活跃 tab 为真锚（面板可见
+ *  = 锚 tab 活跃，锚定语义保证）；query 空/异常静默回退单例。r70 robustness L6 记录
+ *  了该窄窗（r69 修复目标场景仍可无声退化），独立后 sw.test 可注入空结果钉住 */
+async function resolveRespAnchor(myWindowId: number | undefined): Promise<{ respAnchor: number | null; foreignTab: chrome.tabs.Tab | null }> {
+  if (typeof myWindowId === 'number' && myWindowId !== panelWindowId) {
+    const [wt] = await chrome.tabs
+      .query({ active: true, windowId: myWindowId })
+      .catch(() => [] as chrome.tabs.Tab[])
+    if (wt?.id != null) return { respAnchor: wt.id, foreignTab: wt }
+  }
+  return { respAnchor: panelTabId, foreignTab: null }
+}
+
 async function handleMessage(msg: PanelToSw): Promise<unknown> {
   // r52（review P1）：本消息冷唤醒 SW 时顶层恢复微任务可能尚未跑完——各分支的
   // persistSession（panel-ready 重建/resume-history/new-session/summarize）会用
@@ -437,18 +450,8 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
       // 成 B 的 tab（App 锚播种错 → 后续帧全带伪锚：串会话/误杀复发）。发起面板
       // 自报 myWindowId，异窗时该窗活跃 tab 即其真锚（面板可见 = 锚 tab 活跃，
       // 锚定语义保证）；missed/sess/activeTask 同锚对号。同窗/缺省（旧面板）沿用
-      // 单例，含下方冷启动重建链
-      let respAnchor: number | null = panelTabId
-      let foreignTab: chrome.tabs.Tab | null = null
-      if (typeof msg.myWindowId === 'number' && msg.myWindowId !== panelWindowId) {
-        const [wt] = await chrome.tabs
-          .query({ active: true, windowId: msg.myWindowId })
-          .catch(() => [] as chrome.tabs.Tab[])
-        if (wt?.id != null) {
-          respAnchor = wt.id
-          foreignTab = wt
-        }
-      }
+      // 单例，含下方冷启动重建链。r71：解析抽 resolveRespAnchor
+      const { respAnchor, foreignTab } = await resolveRespAnchor(msg.myWindowId)
       // 面板打开时对齐：面板 dock 在 panelTabId 上（= 打开面板时 action 手势
       // 授权过的那个 tab）。SW 重启丢 panelTabId 态时 fallback 当前活跃普通页。
       if (!panelTabId || !target) {
@@ -550,10 +553,11 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
       }
     }
     case 'summarize': {
-      const instruction = msg.instruction as string | undefined
-      const skills = msg.skills as string[] | undefined
-      const lang = msg.lang as string | undefined
-      const attachments = msg.attachments as AttachMsg[] | undefined
+      // r71（r70 quality L14）：非追问路的入口校验消 as string——协议字段全 optional，
+      // 旧写法「msg.agentId as string」是对编译器撒谎（畸形帧会把 undefined 传进
+      // spawn 链）；校验后 TS 自然收窄，对齐 resume-history 的 bad-request 先例。
+      // 追问帧不带 agentId/workflow（SW 按 sessions 归属取），校验须在 followUp 之后
+      const { instruction, skills, lang, attachments } = msg
       // r67（r66 code#1）：收割/会话键用帧内发起面板锚 anchorTabId——panelTabId 是
       // SW 单例，双窗后开面板即被覆盖；缺省字段退回全局锚（同版本 panel 必带）
       // r69：读取收敛 readAnchor（r68 code#5）
@@ -570,7 +574,10 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
         const r = startFollowUp(sess.agentId, sess.sessionId, instruction ?? '', sess.historyPath, attachments, anchor)
         return { ...r, agentId: sess.agentId }
       }
-      return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills, lang, attachments, msg.historyLimit as number | undefined, anchor)
+      if (!msg.agentId || !msg.workflow) return { error: 'bad-request' }
+      // r71（r70 code#4）：八位置参数收 options 对象——8 参中 4 个标量调用点错位
+      // 编译不报（r64 挂账第五轮的点名项）
+      return startSummarize({ agentId: msg.agentId, workflow: msg.workflow, instruction, skills, lang, attachments, historyLimit: msg.historyLimit, anchor })
     }
     case 'resume-history': {
       // 历史详情「继续对话」：装载历史会话到当前页签（SW 记 sessions），后续 followUp 走 --resume。
@@ -990,7 +997,37 @@ function pageMeta(): { title: string; url: string; favIconUrl?: string; approxTo
   return null
 }
 
-async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string, attachments?: AttachMsg[], historyLimit?: number, anchor: number | null = null) {
+/** r71（r70 code#1/#4）：内容源三级回退独立——优先帧锚 tab；锚取不到（tab 已关/
+ *  无锚）退 target 单例再退活跃页（链尾 ponytail：锚 tab 刚关的窄窗无窗级信息，
+ *  从权沿用旧链）。r70 code#1：链尾 query 原裸奔无 catch（同族 :268/:446/:462 均
+ *  设防）——rejection 冒泡成无分型裸错串且旧任务已被入口收割；对齐设防，异常归
+ *  no-tab 终态 */
+async function resolveContentTab(anchor: number | null): Promise<chrome.tabs.Tab | null> {
+  let tab = anchor !== null ? await chrome.tabs.get(anchor).catch(() => null) : null
+  if (!tab) tab = target?.id ? await chrome.tabs.get(target.id).catch(() => null) : null
+  if (!tab) {
+    const [active] = await chrome.tabs
+      .query({ active: true, lastFocusedWindow: true })
+      .catch(() => [] as chrome.tabs.Tab[])
+    tab = active && isNormalPage(active.url) ? active : null
+  }
+  return tab
+}
+
+/** r71（r70 code#4）：八位置参数收 options（调用点错位编译不报的挂账项） */
+interface StartSummarizeOpts {
+  agentId: string
+  workflow: string
+  instruction?: string
+  skills?: string[]
+  lang?: string
+  attachments?: AttachMsg[]
+  historyLimit?: number
+  anchor: number | null
+}
+
+async function startSummarize(o: StartSummarizeOpts) {
+  const { agentId, workflow, instruction, skills, lang, attachments, historyLimit, anchor } = o
   // 入口先收割在跑任务（提取/注入可能 await 数秒，期间旧任务继续烧额度）——
   // 对称于 resume-history/new-session 的既有守卫
   if (currentTask) cancelCurrent()
@@ -1006,14 +1043,8 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   // chrome-extension:// 的它绝不该被选为总结目标
   // r69（r68 code#2）：内容源与帧锚同源——target 单例被后开面板的 action 点击
   // 覆盖后，A 窗锚的总结会提取 B 窗页面（错页总结 + currentTask.tabId 与帧锚
-  // 错位的双向会话错乱）。优先帧锚 tab；锚取不到（tab 已关/无锚）退 target
-  // 单例再退活跃页（链尾 ponytail：锚 tab 刚关的窄窗无窗级信息，从权沿用旧链）
-  let tab = anchor !== null ? await chrome.tabs.get(anchor).catch(() => null) : null
-  if (!tab) tab = target?.id ? await chrome.tabs.get(target.id).catch(() => null) : null
-  if (!tab) {
-    const [active] = (await chrome.tabs.query({ active: true, lastFocusedWindow: true })) ?? []
-    tab = active && isNormalPage(active.url) ? active : null
-  }
+  // 错位的双向会话错乱）。r71：三级链抽 resolveContentTab
+  const tab = await resolveContentTab(anchor)
   if (!tab?.id) return { error: 'no-tab' }
   // chrome:// 等受限页面无法注入（file/view-source/data 同样不可注入，
   // 归入 unsupported 而非误导用户的 no-permission）
