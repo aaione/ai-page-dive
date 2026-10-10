@@ -41,7 +41,7 @@ const defer = (): Deferred => {
 const PAGE = { url: 'https://x/art', title: 'Art', extractor: 'test', approxTokens: 7 }
 const CLAUDE_SESS = { agentId: 'claude', sessionId: 's-111' }
 
-async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<string, any>; slowGets?: number; hostVersion?: string; receiverOnline?: boolean; activeUrl?: string; queryTab?: Record<string, any> } = {}) {
+async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<string, any>; slowGets?: number; hostVersion?: string; receiverOnline?: boolean; activeUrl?: string; queryTab?: Record<string, any>; queryReject?: Error } = {}) {
   const calls = {
     /** runtime.sendMessage 全部广播（含任务帧转发） */
     sent: [] as any[],
@@ -77,7 +77,7 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
   const onUpdated: any[] = []
   const onRemoved: any[] = []
   const onMessageL: any[] = []
-  const tabsDb = new Map<number, any>([[5, { id: 5, windowId: 1, url: 'https://a/5', title: 'A' }]])
+  const tabsDb = new Map<number, any>([[5, { id: 5, windowId: 1, active: true, url: 'https://a/5', title: 'A' }]])
 
   const chrome: any = {
     runtime: {
@@ -149,14 +149,18 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
       onUpdated: listeners(onUpdated),
       onRemoved: listeners(onRemoved),
       get: async (id: number) => tabsDb.get(id) ?? null,
-      // r69：带 windowId 的 query（panel-ready 异窗锚界定）从 tabsDb 取该窗页签，
-      // 无匹配退默认活跃页（老用例零改动）；queryTab 可覆写默认活跃页（r68 code#3
-      // 误杀向用例——mock 恒返 11 时 seed 22 的「零 cancel」断言无鉴别力）
+      // r71（r70 code C2）：语义保真——①queryReject 注入（resolveRespAnchor/回退链
+      // 的 catch 路径此前零覆盖）；②windowId 查询尊重 active 过滤（真实 chrome 只回
+      // 活跃 tab），seed 数据须标 active（默认 tab 5 即窗 1 活跃页）；③空结果如实
+      // 返回 []，不再谎报默认活跃页——r69「query 空 → 锚回退单例」窄窗靠真空态钉住。
+      // 无 windowId 的查询（resolveContentTab 回退）仍走 queryTab 覆写/默认活跃页 11
       query: async (q?: any) => {
         calls.queries.push(q)
+        if (opts.queryReject) throw opts.queryReject
         if (q?.windowId != null) {
-          const inWin = [...tabsDb.values()].filter((t: any) => t.windowId === q.windowId)
-          if (inWin.length) return inWin
+          let inWin = [...tabsDb.values()].filter((t: any) => t.windowId === q.windowId)
+          if (q.active) inWin = inWin.filter((t: any) => t.active)
+          return inWin
         }
         return [opts.queryTab ?? { id: 11, windowId: 2, url: opts.activeUrl ?? 'https://x/active', title: 'Active' }]
       },
@@ -746,6 +750,20 @@ describe('sw.ts 回归网', () => {
     const st2 = await h.fireMessage({ t: 'panel-ready' })
     expect(st2.panelTabId).toBe(11) // 单例已重建为活跃页 11，仍非 A 窗的 5——单例语义照旧
     expect(st2.hasSession).toBeUndefined()
+  })
+
+  // r71（r70 code C2/L9）：异窗锚解析的失败防御——query 空结果/异常时回退单例锚。
+  // 此前 shim 谎报（windowId 无匹配退默认活跃页、无 reject 注入），这两条路径零
+  // 覆盖：resolveRespAnchor 若丢 catch/空判，r69 修复目标场景会无声退化回单例
+  it('r71：异窗 query 空结果 / 异常 → 回包锚静默回退单例（不再谎报）', async () => {
+    // 窗 9 在 tabsDb 零页签 → query({active:true, windowId:9}) 如实空 → 回退单例 22
+    const h = await boot({ seed: { panelTabId: 22, panelWindowId: 2 } })
+    const st = await h.fireMessage({ t: 'panel-ready', myWindowId: 9 })
+    expect(st.panelTabId).toBe(22)
+    // query 整体异常（Chrome API 抖动）→ catch 吞掉同样回退单例
+    const h2 = await boot({ seed: { panelTabId: 22, panelWindowId: 2 }, queryReject: new Error('query boom') })
+    const st2 = await h2.fireMessage({ t: 'panel-ready', myWindowId: 1 })
+    expect(st2.panelTabId).toBe(22)
   })
 
   // r69（r68 code#2）：summarize 内容源与帧锚同源——target 单例被后开面板的 action
