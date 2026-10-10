@@ -30,6 +30,22 @@ if (missing.length) {
 }
 console.log(`✓ dist 完整：${required.length} 个 manifest 声明产物全在盘`)
 
+// r69（r68 产品#7）：内容一致性——dist manifest 落后 public（改了 description/version
+// 未重建 dist）时，已删措辞（如「免费」）会原样带上 CWS。version+description 逐字
+// 比对，不一致即拒打包——完整两段 pnpm build 后 dist 才是新鲜的
+const srcManifest = JSON.parse(readFileSync(join(REPO, 'apps/extension/public/manifest.json'), 'utf8'))
+for (const k of ['version', 'description']) {
+  if (manifest[k] !== srcManifest[k]) {
+    console.error(
+      `⛔ dist/manifest.json 的 ${k} 与 public/manifest.json 不一致` +
+        `（dist: ${JSON.stringify(manifest[k])} ≠ public: ${JSON.stringify(srcManifest[k])}）` +
+        `——重跑完整 pnpm build 再打包`,
+    )
+    process.exit(1)
+  }
+}
+console.log('✓ dist manifest 内容一致（version/description 对齐 public）')
+
 // r65（r64 产品#6）：--check-only 到此为止——只跑完整性断言不打 zip（CI 挂钩用；
 // zip 只在上架打包时需要，且依赖系统 zip）
 if (process.argv.includes('--check-only')) process.exit(0)

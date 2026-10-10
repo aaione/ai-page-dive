@@ -3,7 +3,7 @@
 ## Project Overview
 
 PageDive — Chrome 扩展（MV3）：一键调用本机已装的 AI CLI（claude / codex）深度总结当前网页。
-零配置、复用用户已有 CLI 订阅、内容不出本机、可插拔总结 workflow。
+零账号 · 零 API key（本机组件需一次终端安装，见 D1 r59 修订）、复用用户已有 CLI 订阅、内容不出本机、可插拔总结 workflow。
 
 ### Repository
 

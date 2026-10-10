@@ -621,7 +621,9 @@ export function App() {
               return {
                 ...s,
                 messages: s.messages.map((msg) =>
-                  msg.streaming ? { ...msg, streaming: false, error: '已取消', isError: true } : msg,
+                  // r69（r68 code low#10）：cancelled 标记随码——sr-only 终局分流靠它
+                  // 播「本轮已取消」，漏设会把取消播成「本轮已结束」
+                  msg.streaming ? { ...msg, streaming: false, error: '已取消', isError: true, cancelled: m.code === 'cancelled' } : msg,
                 ),
               }
             }

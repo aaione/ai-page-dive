@@ -7,8 +7,11 @@ const installCmd = `curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-
 /** forbidden：host 已装但本扩展 ID 不在白名单（只差补登记，无需再装） */
 const registerCmd = `ai-page-dive install --ext-id ${extId}`
 /** curl 走不通时的 npm 手动备选（r33-ux：与主命令同享点击复制）。
- * r51-review：钉版本对齐 install.sh（A3）——取 manifest 版本动态拼，发版 bump 自动跟随零漂移 */
-const npmCmd = `npm i -g @aaione/ai-page-dive@${chrome.runtime.getManifest().version} && ai-page-dive install --ext-id ${extId}`
+ * r51-review：钉版本对齐 install.sh（A3）——取 manifest 版本动态拼，发版 bump 自动跟随零漂移。
+ * r69（r68 产品#5）：拆两行与 README 同形态——&& 拼接时第一条失败会静默吞掉第二条
+ * （npm i 失败 → 登记未发生，面板 90s 后把用户误导去排查「Chrome 未完全重启」；
+ * r58#24 同场景三次复发族）。复制文本带换行，逐行跑失败各自可见 */
+const npmCmd = `npm i -g @aaione/ai-page-dive@${chrome.runtime.getManifest().version}\nai-page-dive install --ext-id ${extId}`
 /** r16（3-agent P0）：v1 仅 macOS——CWS 全球可见，Win/Linux 用户拿到 curl|sh 粘进
  * PowerShell 必败且面板永久停在轮询。非 darwin 整卡替换为不支持说明，不给死命令 */
 const unsupportedOs = !/mac/i.test(
@@ -166,7 +169,7 @@ export function Onboarding() {
               role="button"
               tabIndex={0}
               title="点击复制"
-              style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+              style={{ cursor: 'pointer', textDecoration: 'underline dotted', whiteSpace: 'pre-line' }}
               onClick={() => copy(npmCmd, true)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -188,8 +191,9 @@ export function Onboarding() {
           <summary>命令报错了？</summary>
           <p>
             <code>curl</code> 走不了代理/被墙 → 用 npm 方式手动安装（r51 深审：复用
-            npmCmd 常量——此处第二份命令曾漏钉版本，与首屏命令两处独立编码必漂移）：
-            <code>{npmCmd}</code>。
+            npmCmd 常量——此处第二份命令曾漏钉版本，与首屏命令两处独立编码必漂移），
+            两条分开跑：
+            <code style={{ whiteSpace: 'pre-line' }}>{npmCmd}</code>。
           </p>
           <p>
             <code>E404</code> / 版本不存在 → 该版本可能尚未发布到 npm（刚发版有窗口期）——稍等几分钟重试，或到 GitHub releases 确认。

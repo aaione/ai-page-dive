@@ -656,7 +656,9 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
                           onClick={() => toggleSkill(s.name)}
                           role="switch"
                           aria-checked={on}
-                          aria-label={`${on ? '停用' : '启用'}技能 ${s.name}`}
+                          /* r69（r68 code low#11）：陈述状态名（与 r67 CLI 开关同谱）——动作名
+                             （停用/启用）+ aria-checked 组合会让读屏报出与勾选态反向的语义 */
+                          aria-label={`技能 ${s.name} 启用`}
                         />
                       </div>
                     )

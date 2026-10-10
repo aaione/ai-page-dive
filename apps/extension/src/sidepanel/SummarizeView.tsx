@@ -646,7 +646,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             （host 侧跳过注入，与 task.ts 过滤同语义） */}
         {/* r56（#12）：resume 态渲染会话锚（快照页）而非活 pageMeta——导航后「对话上下文」
             仍指向快照页；key 同步用锚 url，导航不再触发无谓的重挂动画 */}
-        {pageMeta && <PageTips key={hasSession && ctxAnchor ? ctxAnchor.url : pageMeta.url} meta={hasSession && ctxAnchor ? { ...pageMeta, ...ctxAnchor } : pageMeta} idle={!messages.length} active={running} dimmed={hasSession ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
+        {/* r69（r68 产品 low）：tips 补失败分支——提取/运行失败终局仍说「已分享」
+            是与 r67「进行时谎言」同类语义不实（方向相反），终局性质分流与 sr-only 同口径 */}
+        {pageMeta && <PageTips key={hasSession && ctxAnchor ? ctxAnchor.url : pageMeta.url} meta={hasSession && ctxAnchor ? { ...pageMeta, ...ctxAnchor } : pageMeta} idle={!messages.length} active={running} failed={!running && messages.length > 0 && stream.done ? !!messages.at(-1)?.isError && !messages.at(-1)?.cancelled : false} dimmed={hasSession ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
         {chips.shown && chips.shown.length > 0 && (
           <div className={`pd-attach-chips${chips.exiting ? ' pd-exiting' : ''}`}>
             {chips.shown.map((a, i) => (
@@ -927,8 +929,10 @@ function MessageActions({ text, onNewChat, pageTitle }: { text: string; onNewCha
   return (
     <div className="pd-chat-actions">
       {/* r12 回退：复制回 icon 形态（r11 曾升文字主按钮，用户反馈突兀——三 icon
-          工具栏与竞品基线一致）；已复制态 icon 换 ✓ + tooltip 反馈 */}
-      <button onClick={copy} className="pd-chat-action-btn" title={copied ? '已复制 ✓' : copyFail ? '复制失败——请手动选中复制' : '复制全文'} aria-label="复制全文">
+          工具栏与竞品基线一致）；已复制态 icon 换 ✓ + tooltip 反馈。
+          r69（r68 产品 low）：aria-label 随状态走——title 变了而 aria 不变，读屏
+          用户点复制后无任何可感知确认，会重复点击或误以为失败 */}
+      <button onClick={copy} className="pd-chat-action-btn" title={copied ? '已复制 ✓' : copyFail ? '复制失败——请手动选中复制' : '复制全文'} aria-label={copied ? '已复制' : copyFail ? '复制失败' : '复制全文'}>
         {copied ? (
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
             <path d="m3 8.5 3.2 3.2L13 5" />
@@ -1199,7 +1203,7 @@ function ActionBar({
 /** 输入框上方 tips 条：「正在分享 "页面标题"」（参考 Gemini 插件，上下文透明化）。
  *  r43：启用中的技能以常驻微标在此展示——技能是「设置里开的全局状态」，归属输入区
  *  状态指示而非每条消息的属性（r37 气泡下独立徽标行形态退役：占版面且追问轮虚假标注） */
-function PageTips({ meta, idle, active, dimmed }: { meta: PageMeta; idle?: boolean; active?: boolean; dimmed?: false | 'resume' | 'quick' }) {
+function PageTips({ meta, idle, active, failed, dimmed }: { meta: PageMeta; idle?: boolean; active?: boolean; failed?: boolean; dimmed?: false | 'resume' | 'quick' }) {
   const [skills, setSkills] = useState<string[]>(() => readList('pd-enabled-skills'))
   useEffect(() => {
     const sync = () => setSkills(readList('pd-enabled-skills'))
@@ -1233,10 +1237,12 @@ function PageTips({ meta, idle, active, dimmed }: { meta: PageMeta; idle?: boole
             r55（#4）：resume 态（追问会话）根本没有分享行为在进行——上下文在
             CLI 会话里，追问不重读页面，文案如实。
             r67（r66 low）：非 active 的有消息态（取消后 / codex 还原）同族——
-            「正在分享」进行时谎言，三态分流 */}
+            「正在分享」进行时谎言，三态分流。
+            r69（r68 产品 low）：失败终局补第四态——页面实际没（成功）分享给
+            CLI，说「已分享」与事实相反 */}
         {dimmed === 'resume'
           ? `对话上下文「${meta.title || host || meta.url}」（追问不重读页面）`
-          : `${idle ? '已就绪' : active ? '正在分享' : '已分享'}「${meta.title || host || meta.url}」`}
+          : `${idle ? '已就绪' : active ? '正在分享' : failed ? '分享未成功' : '已分享'}「${meta.title || host || meta.url}」`}
         {host ? ` · ${host}` : ''}
       </span>
       {meta.notice && (
