@@ -108,3 +108,40 @@ describe('SummarizeView 停止按钮 cancel 帧契约（r63 M1 修复钉住，r6
     expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith({ t: 'cancel' })
   })
 })
+
+describe('SummarizeView tips 终局五态分流（r71 r70 product C9/L3）', () => {
+  // 契约：「分享未成功」只在 undelivered（页面未送达 CLI）终局出现；已送达的
+  // 生成阶段失败（timeout/is_error）如实「已分享」——说未成功会误导用户查提取/授权；
+  // cancelled 终局独立「已停止」。终局气泡形状实抄 App.tsx task-error 分支构造
+  const mountTips = (last: Record<string, unknown>) =>
+    render(
+      <SummarizeView
+        agents={[{ id: 'claude', available: true, version: '2.1.162' }]}
+        workflows={[]}
+        stream={{ ...stream, done: true, pending: false, messages: [{ id: 'e1', role: 'assistant', text: '', error: 'x', isError: true, ...last }] }}
+        agentId="claude"
+        onAgentChange={() => {}}
+        onStartResult={() => {}}
+        beginTurn={() => {}}
+        beginSession={() => {}}
+        pageMeta={{ url: 'https://example.com/a', title: '示例页' } as never}
+        resumable={false}
+      />,
+    )
+
+  it('no-permission 终局（未送达）→「分享未成功」', () => {
+    mountTips({ undelivered: true })
+    expect(screen.getByText(/分享未成功「示例页」/)).toBeTruthy()
+  })
+
+  it('timeout 终局（正文已过 stdin）→ 仍「已分享」，不得谎报未成功（C9）', () => {
+    mountTips({})
+    expect(screen.getByText(/已分享「示例页」/)).toBeTruthy()
+    expect(screen.queryByText(/分享未成功/)).toBeNull()
+  })
+
+  it('cancelled 终局 →「已停止」（L3 第五态）', () => {
+    mountTips({ cancelled: true })
+    expect(screen.getByText(/已停止「示例页」/)).toBeTruthy()
+  })
+})

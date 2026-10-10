@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { AgentStatus, WorkflowItem } from '@ai-page-dive/shared'
+import type { AgentStatus, PanelToSw, WorkflowItem } from '@ai-page-dive/shared'
 import type { ChatMessage, PageMeta, TaskStreamState } from './App.js'
 import { useListboxMenu, useRovingNav } from './a11y.js'
 import { useExitValue } from './motion.js'
@@ -356,7 +356,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     if (hasSession) {
       // 追问轮：agentId 由 SW 按会话归属决定，响应回带实际值——头部展示同步
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, instruction, followUp: true, attachments: atts, anchorTabId: getAnchorTabId?.() ?? undefined },
+        { t: 'summarize', agentId: effectiveAgent, instruction, followUp: true, attachments: atts, anchorTabId: getAnchorTabId?.() ?? undefined } satisfies PanelToSw,
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             if (resp.agentId) setFollowAgent(resp.agentId)
@@ -378,7 +378,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       // default→deep 的静默映射显式化，用户看到的按钮名 = 实际跑的档（wf 已在
       // beginTurn 前算好，r16）
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined, attachments: atts, historyLimit: historyKeep(), anchorTabId: getAnchorTabId?.() ?? undefined },
+        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined, attachments: atts, historyLimit: historyKeep(), anchorTabId: getAnchorTabId?.() ?? undefined } satisfies PanelToSw,
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             onStartResult(resp)
@@ -452,7 +452,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // r63（审计 M1）：带 taskId 定向取消——裸 cancel 会被 SW 无条件收割全局
     // currentTask，双窗口下连坐别窗在跑任务；pending 期（taskId 未绑定）退化
     // 裸帧，收的是本面板自己起的任务，语义不变
-    chrome.runtime.sendMessage({ t: 'cancel', taskId: streamRef.current.taskId ?? undefined }).catch(() => {})
+    chrome.runtime.sendMessage({ t: 'cancel', taskId: streamRef.current.taskId ?? undefined } satisfies PanelToSw).catch(() => {})
   }
 
   /** 新对话：清 UI + 通知 SW（SW 侧对进行中任务执行取消）。
@@ -468,7 +468,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // 上一会话失败 CTA 的旧档位（r44 F2 同族防御）
     ctaRetryWf.current = null
     setRetryNote('')
-    chrome.runtime.sendMessage({ t: 'new-session', anchorTabId: getAnchorTabId?.() ?? undefined }).catch(() => {})
+    chrome.runtime.sendMessage({ t: 'new-session', anchorTabId: getAnchorTabId?.() ?? undefined } satisfies PanelToSw).catch(() => {})
   }, [beginSession, getAnchorTabId])
 
   // r44-audit I3：running 中一键「新对话」静默取消烧 token 的任务 + 清空全部对话——
@@ -545,7 +545,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
           <button
             onClick={() => {
               setProbing(true)
-              chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-agents' } })
+              chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-agents' } } satisfies PanelToSw)
               setTimeout(() => setProbing(false), 8_000)
             }}
             disabled={probing}
@@ -647,8 +647,11 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
         {/* r56（#12）：resume 态渲染会话锚（快照页）而非活 pageMeta——导航后「对话上下文」
             仍指向快照页；key 同步用锚 url，导航不再触发无谓的重挂动画 */}
         {/* r69（r68 产品 low）：tips 补失败分支——提取/运行失败终局仍说「已分享」
-            是与 r67「进行时谎言」同类语义不实（方向相反），终局性质分流与 sr-only 同口径 */}
-        {pageMeta && <PageTips key={hasSession && ctxAnchor ? ctxAnchor.url : pageMeta.url} meta={hasSession && ctxAnchor ? { ...pageMeta, ...ctxAnchor } : pageMeta} idle={!messages.length} active={running} failed={!running && messages.length > 0 && stream.done ? !!messages.at(-1)?.isError && !messages.at(-1)?.cancelled : false} dimmed={hasSession ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
+            是与 r67「进行时谎言」同类语义不实（方向相反），终局性质分流与 sr-only 同口径。
+            r71（r70 product C9/L3）：失败分流依据收敛为 undelivered（页面未送达 CLI）——
+            timeout/is_error 等已送达的生成阶段失败如实说「已分享」（同屏错误气泡已陈述
+            事实）；cancelled 终局独立第五态「已停止」 */}
+        {pageMeta && <PageTips key={hasSession && ctxAnchor ? ctxAnchor.url : pageMeta.url} meta={hasSession && ctxAnchor ? { ...pageMeta, ...ctxAnchor } : pageMeta} idle={!messages.length} active={running} failed={!running && messages.length > 0 && stream.done ? !!messages.at(-1)?.isError && !!messages.at(-1)?.undelivered : false} stopped={!running && messages.length > 0 && stream.done ? !!messages.at(-1)?.cancelled : false} dimmed={hasSession ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
         {chips.shown && chips.shown.length > 0 && (
           <div className={`pd-attach-chips${chips.exiting ? ' pd-exiting' : ''}`}>
             {chips.shown.map((a, i) => (
@@ -1203,7 +1206,7 @@ function ActionBar({
 /** 输入框上方 tips 条：「正在分享 "页面标题"」（参考 Gemini 插件，上下文透明化）。
  *  r43：启用中的技能以常驻微标在此展示——技能是「设置里开的全局状态」，归属输入区
  *  状态指示而非每条消息的属性（r37 气泡下独立徽标行形态退役：占版面且追问轮虚假标注） */
-function PageTips({ meta, idle, active, failed, dimmed }: { meta: PageMeta; idle?: boolean; active?: boolean; failed?: boolean; dimmed?: false | 'resume' | 'quick' }) {
+function PageTips({ meta, idle, active, failed, stopped, dimmed }: { meta: PageMeta; idle?: boolean; active?: boolean; failed?: boolean; stopped?: boolean; dimmed?: false | 'resume' | 'quick' }) {
   const [skills, setSkills] = useState<string[]>(() => readList('pd-enabled-skills'))
   useEffect(() => {
     const sync = () => setSkills(readList('pd-enabled-skills'))
@@ -1239,10 +1242,13 @@ function PageTips({ meta, idle, active, failed, dimmed }: { meta: PageMeta; idle
             r67（r66 low）：非 active 的有消息态（取消后 / codex 还原）同族——
             「正在分享」进行时谎言，三态分流。
             r69（r68 产品 low）：失败终局补第四态——页面实际没（成功）分享给
-            CLI，说「已分享」与事实相反 */}
+            CLI，说「已分享」与事实相反。
+            r71（r70 product C9/L3）：失败分流依据收敛为 undelivered（页面未送达
+            CLI），已送达的生成阶段失败（timeout/is_error）保持「已分享」——说「分享
+            未成功」会误导用户去查提取/授权；cancelled 终局第五态「已停止」 */}
         {dimmed === 'resume'
           ? `对话上下文「${meta.title || host || meta.url}」（追问不重读页面）`
-          : `${idle ? '已就绪' : active ? '正在分享' : failed ? '分享未成功' : '已分享'}「${meta.title || host || meta.url}」`}
+          : `${idle ? '已就绪' : active ? '正在分享' : failed ? '分享未成功' : stopped ? '已停止' : '已分享'}「${meta.title || host || meta.url}」`}
         {host ? ` · ${host}` : ''}
       </span>
       {meta.notice && (

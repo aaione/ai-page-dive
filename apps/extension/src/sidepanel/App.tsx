@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AgentStatus, HistoryItem, HostToExt, PanelMsg, PanelReadyResp, WorkflowItem } from '@ai-page-dive/shared'
+import type { AgentStatus, HistoryItem, HostToExt, PanelMsg, PanelReadyResp, PanelToSw, WorkflowItem } from '@ai-page-dive/shared'
 import { useDialogFocus } from './a11y.js'
 import { parseHistoryTurns } from './historyTurns.js'
 import { useExitValue } from './motion.js'
@@ -54,6 +54,10 @@ export interface ChatMessage {
    *  提取授权失效/输入校验/NM 断连等启动前失败 CLI 根本没跑，不得错怪（r46：
    *  no-permission 曾显示「CLI 报告运行失败」自相矛盾） */
   cliFault?: boolean
+  /** r71（r70 product C9/L3）：终局时页面正文未送达 CLI（提取/注入/通道未起）——
+   *  tips 常驻条据此分流「分享未成功」；timeout/is_error/断连等正文已过 stdin 的
+   *  生成阶段失败不带（说「分享未成功」会误导用户去查授权/提取） */
+  undelivered?: boolean
   /** no-permission 气泡专属：内嵌「始终允许读取网页」授权按钮（r47：设置页入口
    *  删除后唯一授予出口，情境化到出错现场——点击即手势满足 request 约束） */
   grantHost?: boolean
@@ -214,7 +218,7 @@ export function App() {
       // 场景收割在跑任务；SW 已死场景消息会唤醒 SW（currentTask 内存已空，带 taskId
       // 的取消被 SW 拒收、无操作），host 早随 port 消亡被 Chrome 收割，无害。带
       // taskId：双窗口场景 SW 只对号收割本面板绑定的任务，绝不错杀别窗口新任务
-      chrome.runtime.sendMessage({ t: 'cancel', taskId: streamRef.current.taskId ?? undefined }).catch(() => {})
+      chrome.runtime.sendMessage({ t: 'cancel', taskId: streamRef.current.taskId ?? undefined } satisfies PanelToSw).catch(() => {})
       setStream((s) => {
         if (s.activeId === null && !s.pending) return s
         // r8-ux：把本轮问题放回输入框（发送时已清空）——重发不必对着气泡手抄
@@ -269,7 +273,7 @@ export function App() {
       // r69（r68 code#1）：带己窗标识——SW 按窗界定回包锚（双窗重开不串台）。
       // myWindowId 未落定时缺省发送 = SW 沿用单例口径（旧面板兼容行为）
       const myW = myWindowIdRef.current
-      chrome.runtime.sendMessage({ t: 'panel-ready', ...(myW != null ? { myWindowId: myW } : {}) }, (respRaw) => {
+      chrome.runtime.sendMessage({ t: 'panel-ready', ...(myW != null ? { myWindowId: myW } : {}) } satisfies PanelToSw, (respRaw) => {
         const resp = respRaw as PanelReadyResp | undefined
         if (chrome.runtime.lastError && !resp) {
           // 前 2 次 500ms/1s 退避，之后降频 5s 持续轮询（r4-ux F4：耗尽即停会让
@@ -303,7 +307,7 @@ export function App() {
           const hp = typeof resp.historyPath === 'string' ? resp.historyPath : ''
           if (hp && !resp?.activeTask) {
             restorePathRef.current = hp
-            chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: hp } }).catch(() => {})
+            chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: hp } } satisfies PanelToSw).catch(() => {})
             // 还原失败兜底（文件被删 / host 无回帧）：12s 后仍无 history-file 则退回
             // reopened 提示语义——绝不让追问入口锁死在中间态。
             // r46（review P6）：原 5s < host 冷启动可达 8s（nmport 自注释）——慢 spawn
@@ -622,8 +626,10 @@ export function App() {
                 ...s,
                 messages: s.messages.map((msg) =>
                   // r69（r68 code low#10）：cancelled 标记随码——sr-only 终局分流靠它
-                  // 播「本轮已取消」，漏设会把取消播成「本轮已结束」
-                  msg.streaming ? { ...msg, streaming: false, error: '已取消', isError: true, cancelled: m.code === 'cancelled' } : msg,
+                  // 播「本轮已取消」，漏设会把取消播成「本轮已结束」。
+                  // r71（r70 product L4）：error 不再硬编码「已取消」——过期帧可能是
+                  // timeout 等非取消终局，照码分流；undelivered 同步（tips 分流依据）
+                  msg.streaming ? { ...msg, streaming: false, error: m.code === 'cancelled' ? '已取消' : ERROR_LABEL[m.code ?? ''] ?? '本轮已结束', isError: true, cancelled: m.code === 'cancelled', undelivered: UNDELIVERED_CODES.has(m.code ?? '') } : msg,
                 ),
               }
             }
@@ -666,6 +672,7 @@ export function App() {
                     isError: true,
                     cliFault: m.code !== 'cancelled' && m.code !== 'content-mismatch',
                     cancelled: m.code === 'cancelled',
+                    undelivered: UNDELIVERED_CODES.has(m.code ?? ''),
                   }
                 : msg,
             )
@@ -757,8 +764,8 @@ export function App() {
   }, [])
 
   function requestLists() {
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-agents' } })
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-workflows' } })
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-agents' } } satisfies PanelToSw)
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-workflows' } } satisfies PanelToSw)
   }
 
   function onStartResult(resp: { error?: string; agentId?: string; taskId?: string; [k: string]: unknown }) {
@@ -775,7 +782,7 @@ export function App() {
       // 途中就闪跳安装引导丢对话态；0ms/1.5s/4s 三探皆死才落
       void (async () => {
         const ok = async () => {
-          try { return !!((await chrome.runtime.sendMessage({ t: 'panel-ready' })) as { ok?: boolean } | null)?.ok }
+          try { return !!((await chrome.runtime.sendMessage({ t: 'panel-ready' } satisfies PanelToSw)) as { ok?: boolean } | null)?.ok }
           catch { return false }
         }
         let dead = !(await ok())
@@ -830,6 +837,7 @@ export function App() {
           messages: [
             ...s.messages.filter((x) => !(x.streaming && !x.text)),
             { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true, cancelled: resp.error === 'cancelled',
+              undelivered: resp.error !== 'cancelled' && UNDELIVERED_CODES.has(resp.error ?? ''),
               ...(resp.error === 'no-permission' ? { grantHost: true } : {}) },
           ],
         }
@@ -910,13 +918,13 @@ export function App() {
     if (agentOk) {
       // r67（r66 code#1）：帧携带发起面板锚——SW 收割判定/sessions 键按它对号，
       // panelTabId 单例被双窗后开面板覆盖时不再误杀/漏杀
-      chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path, anchorTabId: anchorTabIdRef.current ?? undefined }).catch(() => {})
+      chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path, anchorTabId: anchorTabIdRef.current ?? undefined } satisfies PanelToSw).catch(() => {})
     } else if (streamRef.current.taskId) {
       // 只收割本面板绑定的任务（不装载会话前清场，对齐 SW 侧 resume-history 的
       // 顺带收割语义）——裸 cancel 无条件杀全局 currentTask，双窗口下连坐别窗在
       // 跑任务（r63 审计 M1）；未绑定则无事可清不发帧，别窗尾随 chunk 由 r16
       // foreignAdopt 锚页签拒收，不会污染本面板
-      chrome.runtime.sendMessage({ t: 'cancel', taskId: streamRef.current.taskId }).catch(() => {})
+      chrome.runtime.sendMessage({ t: 'cancel', taskId: streamRef.current.taskId } satisfies PanelToSw).catch(() => {})
     }
   }, [agents, disabledClis])
 
@@ -1082,6 +1090,16 @@ const ERROR_LABEL: Record<string, string> = {
   'ext-restarted': '扩展更新或重启打断了进行中的任务——请重新发起',
 }
 
+/** r71（r70 product C9/L3）：终局「页面未送达 CLI」code 集——tips 分流依据。
+ *  timeout/parse/is_error/断连/content-mismatch/ext-restarted 等已送达（正文已过
+ *  stdin）的生成阶段失败不在集内；cancelled 走独立「已停止」态也不在集内 */
+const UNDELIVERED_CODES = new Set([
+  'no-tab', 'unsupported-page', 'pdf-page', 'inject-failed', 'tab-closed', 'page-not-ready',
+  'extract-crash', 'no-permission', 'empty-content', 'frame-too-large', 'host-not-found',
+  'host-not-found-retry', 'spawn-fail', 'no-agent', 'bad-request', 'empty-instruction',
+  'session-lost',
+])
+
 /** r56（#13）：missedTerminal 错误气泡组装（4 个还原入口共用）——按 code 分流，
  *  对齐实时 task-error 分支（:611/:613）：ext-restarted 是扩展自身重启、cancelled/
  *  content-mismatch 非 CLI 故障，不挂「CLI 报告运行失败」前缀；timeout 用中文标签，
@@ -1100,6 +1118,8 @@ function missedErrBubble(mt: { taskId: string; code?: string; message?: string }
       : `${ERROR_LABEL[mt.code ?? ''] ?? `未知错误（码 ${mt.code ?? 'error'}）`}${mt.message ? `: ${authHint(mt.message)}` : ''}`,
     isError: true,
     cliFault: mt.code !== 'cancelled' && mt.code !== 'content-mismatch' && mt.code !== 'ext-restarted',
+    // r71（r70 product C9）：收件箱补发的错误终局同分流——tips 不把已送达失败标「分享未成功」
+    undelivered: UNDELIVERED_CODES.has(mt.code ?? ''),
   }
 }
 

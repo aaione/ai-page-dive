@@ -390,7 +390,9 @@ export interface PanelReadyResp {
 }
 
 // ── panel → SW 帧（r69：handleMessage(msg:any) 收敛——anchorTabId 字段拼错零编译
-// 错即静默回退 SW 单例，r68 code#5 协议治理第三例）──
+// 错即静默回退 SW 单例，r68 code#5 协议治理第三例。r71（r70 code C3）收口补齐：该
+// 闸原仅消费端半边；发送端字面量（App/SummarizeView 全部 chrome.runtime.sendMessage
+// 帧）现一律 satisfies PanelToSw——拼错在发送侧即编译红，不再依赖消费端兜底）──
 
 /** 各帧共用的锚字段：r67（r66 code#1）起 SW 收割/会话键按发起面板锚对号 */
 export interface AnchorCarrying {
