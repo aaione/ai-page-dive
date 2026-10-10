@@ -33,6 +33,9 @@ interface Props {
   /** host 的 agents 探测是否已回帧（r14 首旅程）：未回前 agents=[] 是在途不是空——
    * placeholder 不得抢跑「未检测到本机 AI CLI」假告示 */
   agentsLoaded?: boolean
+  /** r67（r66 code#1）：本面板锚定页签的取值器——summarize/new-session 帧携带
+   *  anchorTabId，SW 侧收割/会话键按发起面板锚对号（panelTabId 单例双窗错位） */
+  getAnchorTabId?: () => number | null
 }
 
 /** 待发送附件（r12：文本走 text、图片走 b64——host 落盘 ~/.ai-page-dive/attachments 持久化） */
@@ -105,7 +108,7 @@ export function useSetting(key: string): [string, (v: string) => void] {
  * 收回，见 DECISIONS D1 修订——旧版本不拦一键可用） */
 const MIN_VERSIONS: Record<string, string> = { claude: '2.1.162', codex: '0.156.1' }
 
-export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, sessionPage, pruneNotice, onDismissPruneNotice, onOpenSettings, resumable, sessionAgentId, pageUnsupported, agentsLoaded }: Props) {
+export function SummarizeView({ agents, workflows, stream, agentId, onAgentChange, onStartResult, beginTurn, beginSession, pageMeta, sessionPage, pruneNotice, onDismissPruneNotice, onOpenSettings, resumable, sessionAgentId, pageUnsupported, agentsLoaded, getAnchorTabId }: Props) {
   const disabledClis = useDisabledClis()
   const getEnabledSkills = useEnabledSkills()
   const [sumLang] = useSetting('pd-sum-lang')
@@ -353,7 +356,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     if (hasSession) {
       // 追问轮：agentId 由 SW 按会话归属决定，响应回带实际值——头部展示同步
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, instruction, followUp: true, attachments: atts },
+        { t: 'summarize', agentId: effectiveAgent, instruction, followUp: true, attachments: atts, anchorTabId: getAnchorTabId?.() ?? undefined },
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             if (resp.agentId) setFollowAgent(resp.agentId)
@@ -375,7 +378,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       // default→deep 的静默映射显式化，用户看到的按钮名 = 实际跑的档（wf 已在
       // beginTurn 前算好，r16）
       chrome.runtime.sendMessage(
-        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined, attachments: atts, historyLimit: historyKeep() },
+        { t: 'summarize', agentId: effectiveAgent, workflow: wf, instruction: text, skills, lang: sumLang || undefined, attachments: atts, historyLimit: historyKeep(), anchorTabId: getAnchorTabId?.() ?? undefined },
         (resp) => {
           if (!chrome.runtime.lastError && resp) {
             onStartResult(resp)
@@ -465,8 +468,8 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     // 上一会话失败 CTA 的旧档位（r44 F2 同族防御）
     ctaRetryWf.current = null
     setRetryNote('')
-    chrome.runtime.sendMessage({ t: 'new-session' }).catch(() => {})
-  }, [beginSession])
+    chrome.runtime.sendMessage({ t: 'new-session', anchorTabId: getAnchorTabId?.() ?? undefined }).catch(() => {})
+  }, [beginSession, getAnchorTabId])
 
   // r44-audit I3：running 中一键「新对话」静默取消烧 token 的任务 + 清空全部对话——
   // 破坏面大于历史删除（后者有两步确认）却零确认；running 态改两步，3.5s 窗口同删除谱

@@ -523,30 +523,36 @@ async function handleMessage(msg: any): Promise<unknown> {
       const skills = msg.skills as string[] | undefined
       const lang = msg.lang as string | undefined
       const attachments = msg.attachments as AttachMsg[] | undefined
+      // r67（r66 code#1）：收割/会话键用帧内发起面板锚 anchorTabId——panelTabId 是
+      // SW 单例，双窗后开面板即被覆盖；缺省字段退回全局锚（同版本 panel 必带）
+      const anchor = typeof msg.anchorTabId === 'number' ? msg.anchorTabId : panelTabId
       // 追问轮：复用本页签上一轮 CLI 会话（claude --resume），不重新提取页面。
       // 会话丢失时明确报错——静默降级为新总结会让用户误以为在追问
       if (msg.followUp === true) {
         // SW 恰在恢复中（微任务竞态窗）时补一次同步恢复——storage.session 读取 <1ms
-        if (panelTabId === null || !sessions.get(panelTabId)) await restoreSession()
-        const sess = panelTabId !== null ? sessions.get(panelTabId) : undefined
+        if (anchor === null || !sessions.get(anchor)) await restoreSession()
+        const sess = anchor !== null ? sessions.get(anchor) : undefined
         // r47-ux：sessionId 空串（thread.started 未达的降级归档）不可 resume——明示
         // 丢失，勿把空串交给 CLI（会变成语义不明的 resume 失败）
         if (!sess?.sessionId) return { error: 'session-lost' }
-        const r = startFollowUp(sess.agentId, sess.sessionId, instruction ?? '', sess.historyPath, attachments)
+        const r = startFollowUp(sess.agentId, sess.sessionId, instruction ?? '', sess.historyPath, attachments, anchor)
         return { ...r, agentId: sess.agentId }
       }
-      return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills, lang, attachments, msg.historyLimit as number | undefined)
+      return startSummarize(msg.agentId as string, msg.workflow as string, instruction, skills, lang, attachments, msg.historyLimit as number | undefined, anchor)
     }
     case 'resume-history': {
       // 历史详情「继续对话」：装载历史会话到当前页签（SW 记 sessions），后续 followUp 走 --resume。
       // 在途任务先取消——否则旧任务的尾随 chunk 污染恢复的对话（panel taskId 已重置 null 放行一切）。
       // r65（r64 code#1）：只收割本锚页签的任务——别窗在跑的任务连坐砍掉纯属误杀
       // （其尾随 chunk 由 panel 侧 r16 foreignAdopt 按锚页签拒收，跨锚污染不成立）
+      // r67（r66 code#1）：收割判定与 sessions 键改用帧内发起面板锚——r65 的
+      // panelTabId 单例在双窗后开面板时被覆盖，误杀/漏杀双向错位（半边残留补全）
       const { agentId, sessionId, historyPath } = msg
       if (!agentId || !sessionId) return { error: 'bad-request' }
-      if (currentTask && currentTask.tabId === panelTabId) cancelCurrent()
+      const anchor = typeof msg.anchorTabId === 'number' ? msg.anchorTabId : panelTabId
+      if (currentTask && anchor !== null && currentTask.tabId === anchor) cancelCurrent()
       sessionTouched = true // 显式设置会话：restoreSession 微任务不得用旧态覆盖
-      if (panelTabId !== null) sessions.set(panelTabId, { agentId, sessionId, historyPath })
+      if (anchor !== null) sessions.set(anchor, { agentId, sessionId, historyPath })
       currentAgentId = agentId
       persistSession()
       return { ok: true }
@@ -563,11 +569,15 @@ async function handleMessage(msg: any): Promise<unknown> {
       // 面板「新对话」：在跑的任务走既有取消路径，本页签会话清空——
       // 下一轮总结全新开始（不再 resume 上一条 CLI 会话）。
       // r65（r64 code#1）：同 resume-history——只收割本锚页签任务，别窗任务不连坐
-      if (currentTask && currentTask.tabId === panelTabId) cancelCurrent()
-      sessionTouched = true // 显式清空：restoreSession 微任务不得让旧会话「复活」
-      if (panelTabId !== null) sessions.delete(panelTabId)
-      persistSession()
-      return { ok: true }
+      // r67（r66 code#1）：收割判定与 sessions 键改用帧内发起面板锚（同 resume-history）
+      {
+        const anchor = typeof msg.anchorTabId === 'number' ? msg.anchorTabId : panelTabId
+        if (currentTask && anchor !== null && currentTask.tabId === anchor) cancelCurrent()
+        sessionTouched = true // 显式清空：restoreSession 微任务不得让旧会话「复活」
+        if (anchor !== null) sessions.delete(anchor)
+        persistSession()
+        return { ok: true }
+      }
     case 'nm':
       // panel → host 的通用转发（list-agents / list-workflows / history 等）
       // r8-ext：命中加 60s TTL（见 agentsCacheAt 注释）——探测要 spawn CLI --version
@@ -861,8 +871,10 @@ nmPort.onDisconnect(() => {
   }
 })
 
-/** 追问轮：上下文在 CLI 会话里，host 直接 resume，无提取/无正文 */
-function startFollowUp(agentId: string, sessionId: string, instruction: string, historyPath?: string, attachments?: AttachMsg[]) {
+/** 追问轮：上下文在 CLI 会话里，host 直接 resume，无提取/无正文。
+ *  r67（r66 code#1）：anchor = 发起面板锚（帧内 anchorTabId，缺省全局锚）——
+ *  任务邮戳/终局入箱页签跟随发起面板，不再被后开面板的单例 panelTabId 错位 */
+function startFollowUp(agentId: string, sessionId: string, instruction: string, historyPath?: string, attachments?: AttachMsg[], anchor: number | null = panelTabId) {
   if (!instruction.trim() && !attachments?.length) return { error: 'empty-instruction' }
   if (currentTask) cancelCurrent() // 收割在跑任务（同 startSummarize：句柄丢失 = 进程泄漏）
   const taskId = newTaskId()
@@ -877,18 +889,18 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
   if (frameTooLarge(frame)) return { error: 'frame-too-large' }
   const ok = nmPort.send(frame)
   if (!ok) {
-    emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '本机组件未就绪，追问未发出——请重试', tabId: panelTabId ?? -1 }, panelTabId ?? -1) // r58（#4）
+    emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '本机组件未就绪，追问未发出——请重试', tabId: anchor ?? -1 }, anchor ?? -1) // r58（#4）
     return { error: 'host-not-found', lastError: nmPort.lastError }
   }
-  currentTask = { taskId, tabId: panelTabId ?? -1, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
-  rememberTab(taskId, panelTabId ?? -1)
-  setRunningTask(taskId, panelTabId ?? -1) // r55（#10）：host 已受理，任务有了可死的实体
+  currentTask = { taskId, tabId: anchor ?? -1, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
+  rememberTab(taskId, anchor ?? -1)
+  setRunningTask(taskId, anchor ?? -1) // r55（#10）：host 已受理，任务有了可死的实体
   // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）。
   // r8-review：失败同样终止——重连拉起的新 host 没收过 task-start，追问会静默丢失
   if (!nmPort.send({ t: 'task-content', taskId, seq: 0, text: '', done: true })) {
     currentTask = null
     clearRunningTask() // r55（#10）
-    emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '追问发送中断（本机组件连接失败）——请重试', tabId: panelTabId ?? -1 }, panelTabId ?? -1) // r58（#4）
+    emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '追问发送中断（本机组件连接失败）——请重试', tabId: anchor ?? -1 }, anchor ?? -1) // r58（#4）
     return { error: 'host-not-found', lastError: nmPort.lastError }
   }
   // r62 审计（code #2）：r58#28 只修了 summarize 路径——追问轮 done 片被吞同样三重放大
@@ -900,8 +912,8 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
     if (cancelledTaskIds.size > 16) for (const id of cancelledTaskIds) { cancelledTaskIds.delete(id); break }
     nmPort.send({ t: 'task-cancel', taskId })
     emitTerminal(
-      { t: 'task-error', taskId, code: 'content-mismatch', message: '追问发送确认超时（NM 通道异常），已取消——请重试', tabId: panelTabId ?? -1 },
-      panelTabId ?? -1,
+      { t: 'task-error', taskId, code: 'content-mismatch', message: '追问发送确认超时（NM 通道异常），已取消——请重试', tabId: anchor ?? -1 },
+      anchor ?? -1,
     )
     currentTask = null
     clearRunningTask()
@@ -946,7 +958,7 @@ function pageMeta(): { title: string; url: string; favIconUrl?: string; approxTo
   return null
 }
 
-async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string, attachments?: AttachMsg[], historyLimit?: number) {
+async function startSummarize(agentId: string, workflow: string, instruction?: string, skills?: string[], lang?: string, attachments?: AttachMsg[], historyLimit?: number, anchor: number | null = panelTabId) {
   // 入口先收割在跑任务（提取/注入可能 await 数秒，期间旧任务继续烧额度）——
   // 对称于 resume-history/new-session 的既有守卫
   if (currentTask) cancelCurrent()
@@ -989,8 +1001,9 @@ async function startSummarize(agentId: string, workflow: string, instruction?: s
   currentAgentId = agentId
   // 新一轮总结开始：本页签旧会话失效（防切换 CLI 后追问串回旧 agent 的会话）。
   // r12：只清发起页签——别的页签会话不受牵连（页签维度独立）
+  // r67（r66 code#1）：清的是发起面板锚的会话（帧内 anchorTabId），非单例 panelTabId
   sessionTouched = true // 显式起新总结：restoreSession 微任务不得复活旧会话
-  if (panelTabId !== null) sessions.delete(panelTabId)
+  if (anchor !== null) sessions.delete(anchor)
   persistSession()
   currentTask = {
     taskId,

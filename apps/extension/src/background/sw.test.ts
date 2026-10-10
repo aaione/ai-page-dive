@@ -665,6 +665,29 @@ describe('sw.ts 回归网', () => {
     expect(h2.calls.nmSent).toContainEqual({ t: 'task-cancel', taskId: r2.taskId })
   })
 
+  // r67（r66 code#1）：r65 收割定向化以 panelTabId 单例为基准——双窗后开面板覆盖
+  // 单例后双向错位：A 窗操作命中别窗锚误杀 / A 窗锚失配漏杀（CLI 空跑 10min 白烧
+  // 额度）。帧携带发起面板锚 anchorTabId 后闭合；sessions 键与追问会话读取同锚对号
+  it('r67：帧内 anchorTabId 对号收割——单例被别窗覆盖后误杀/漏杀双向闭合', async () => {
+    // 双窗：A 面板锚 11 起任务（query mock 恒返 11 = 任务源页签），B 后开面板覆盖 panelTabId=22
+    const h = await boot({ seed: { panelTabId: 22, panelWindowId: 2 } })
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick', anchorTabId: 11 })
+    expect(r.ok).toBe(true)
+    // B 窗（帧锚 22）新对话：不得误杀 A 在 11 页签的在跑任务
+    await h.fireMessage({ t: 'new-session', anchorTabId: 22 })
+    expect(h.calls.nmSent.filter((m) => m.t === 'task-cancel')).toEqual([])
+    // A 窗（帧锚 11）恢复历史：收割本窗在跑任务——r65 语义下 11 ≠ 单例 22 会漏杀
+    await h.fireMessage({ t: 'resume-history', agentId: 'claude', sessionId: 's-x', historyPath: '/tmp/x.md', anchorTabId: 11 })
+    expect(h.calls.nmSent).toContainEqual({ t: 'task-cancel', taskId: r.taskId })
+    // sessions 按帧锚对号：A 锚 11 追问 resume 到刚装载的会话；B 锚 22 读不到 → session-lost
+    const fu = await h.fireMessage({ t: 'summarize', agentId: 'claude', instruction: '继续', followUp: true, anchorTabId: 11 })
+    expect(fu.ok).toBe(true)
+    const starts = h.calls.nmSent.filter((m) => m.t === 'task-start')
+    expect(starts[starts.length - 1].task.resumeSessionId).toBe('s-x')
+    const fu2 = await h.fireMessage({ t: 'summarize', agentId: 'claude', instruction: '继续', followUp: true, anchorTabId: 22 })
+    expect(fu2).toEqual({ error: 'session-lost' })
+  })
+
   // r58（#28）：正文对账超时兜底——回执被吞（done 片或 content-received 丢失）时
   // host 侧无超时（等正文齐才开跑），无 SW 侧兜底则三重放大：host 心跳永生保活
   // SW + panel 无限 loading + CLI 永不启动。15s 未到即取消终局；回执按期到达撤表

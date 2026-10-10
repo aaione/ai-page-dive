@@ -893,7 +893,9 @@ export function App() {
     // r33-ux：agentOk 但条目无 title/url（罕见）时清空而非残留上一页的 meta
     if (agentOk) setPageMeta(item.title || item.url ? { title: item.title ?? '', url: item.url ?? '' } : null)
     if (agentOk) {
-      chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path }).catch(() => {})
+      // r67（r66 code#1）：帧携带发起面板锚——SW 收割判定/sessions 键按它对号，
+      // panelTabId 单例被双窗后开面板覆盖时不再误杀/漏杀
+      chrome.runtime.sendMessage({ t: 'resume-history', agentId: item.agent, sessionId: item.sessionId, historyPath: item.path, anchorTabId: anchorTabIdRef.current ?? undefined }).catch(() => {})
     } else if (streamRef.current.taskId) {
       // 只收割本面板绑定的任务（不装载会话前清场，对齐 SW 侧 resume-history 的
       // 顺带收割语义）——裸 cancel 无条件杀全局 currentTask，双窗口下连坐别窗在
@@ -1021,7 +1023,7 @@ export function App() {
             </button>
           </div>
         )}
-        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} sessionPage={sessionPage} resumable={stream.resumable} sessionAgentId={sessionAgent} pageUnsupported={pageUnsupported} agentsLoaded={agentsLoaded} pruneNotice={pruneNotice} onDismissPruneNotice={() => setPruneNotice(null)} onOpenSettings={openSettingsData} />
+        <SummarizeView agents={agents} workflows={workflows} stream={stream} agentId={effectiveAgent} onAgentChange={setAgentId} onStartResult={onStartResult} beginTurn={beginTurn} beginSession={beginSession} pageMeta={pageMeta} sessionPage={sessionPage} resumable={stream.resumable} sessionAgentId={sessionAgent} pageUnsupported={pageUnsupported} agentsLoaded={agentsLoaded} getAnchorTabId={() => anchorTabIdRef.current} pruneNotice={pruneNotice} onDismissPruneNotice={() => setPruneNotice(null)} onOpenSettings={openSettingsData} />
       </main>
 
       {/* r35-motion：overlay 关闭先播 160ms 退场再卸载（useExitValue 期间保持旧值渲染） */}
