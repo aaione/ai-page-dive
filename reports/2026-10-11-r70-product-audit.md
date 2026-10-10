@@ -3,7 +3,7 @@
 - **对象**：main@015e8d2（r69 修复批后）· v0.1.4 · host 2196/2200 · 235 用例
 - **终审分数**：6.5 / 10 —— 判定：**不通过**
 - **核心问题**：PageDive 的 v1 作为产品是否高质量完成？
-- **收割对账**：confirmed 8 条 / rejected 1 条 / low 8 条；维度 5/5 交付
+- **收割对账**：confirmed 9 条 / rejected 1 条 / low 8 条；维度 5/5 交付
 
 ### 执行记录
 
@@ -12,6 +12,7 @@
 - 三跑（2026-10-11 16:2x）5/5 维度收官：15 agents / 666882 tokens，verdict 基于完整维度重判，维持 6.5/否。
 - **跨维度去重**：C2（curl 主线 E404 无排障条）/ C3（npm 备选线 + FAQ 空页）/ C4（README/install.sh 钉版）/ C6（三版本断链）系**同一发布链断根的四个截面**（分属 install/docs/release 三维度各自确认）——合并计为 1 条主发现「发布链 critical 第 10 轮」，实际独立发现数 = 8 − 3 = **5 条**（1 critical 发布链 + 2 medium CHANGELOG 账目 + 2 low）。C4/C2 审计员自标「非新发现/续计」。
 - 对账备注：C1（AGENTS:43 零配置）与 L7（docs 维度同款）同根重复——C1 为准（对抗验证 severityFinal 降 low），L7 并入。
+- **对账缺口补收（2026-10-11 复核时抓出）**：ux 维度 summary 报「新发现 1 medium（第四态过矫）」，但三跑最终 confirmed+rejected 中无此条——其 verify agent 在二跑以 prose 收尾（「已完成对抗验证：发现成立」）未走 StructuredOutput，journal 无记录，且 workflow `verified.filter(Boolean)` 对 verify 失败的发现静默丢弃（不进 confirmed 也不进 rejected）。按纪律 #2 对账差额从二跑 transcript（wdl5mt17u）提取完整条目与裁决补录为 C9——裁决链完整（isReal:true / medium / confidence:high），非主编裁断。
 
 ## 终审判词
 
@@ -84,6 +85,13 @@
 - **损害**：改 permissions（含 optional_host_permissions）后未重建 dist，check-only 因两字段未变照绿，zip 带旧权限上架——权限错位正是 CWS 审核最敏感打回点，且用户看到的授权提示与源码声明不符
 - **修法**：一致性断言升级为 dist↔public manifest 全对象 deep-equal（或至少加 name/permissions/optional_host_permissions/icons）；required 补收 action.default_icon
 - **复核**（confidence: high）：证据逐字属实：scripts/package-cws.mjs:37 确为 `for (const k of ['version', 'description'])`，:22 required 确为 ['manifest.json','sidepanel.html','background.js']（+content_scripts.js+icons 值），不收 action.default_icon。全仓搜过无别处做 dist↔public manifest deep-equal，CI（.github/workflows/ci.yml 22 腿）也是先 `pnpm -r build` 再 `package-cws.mjs --check-only`，即该一致性断言本身就是唯一的「dist 陈旧哨兵」，且哨兵只嗅 2 个字段——这是真实覆盖缺口。但影响推导被三重削弱：1) action.default_icon 与 manifest.icons 引用的是同一组 icon-16/32/48/128.png（实测 public/manifest.json 两处路径完全相同），:24 的 icons 循环已把这 4 个文件断言在盘，default_icon 子论点今日零实效；2) CWS 发布新包必须递增 version，而 version 恰在哨兵内——任何真实上架动作必触发哨兵强制重建，「zip 带旧权限上架」路径实质被堵死，只有「改权限不 bump version 只传草稿/本地装」的边角场景漏网；3) CI 内先 build 后 check，漂移不可能在 CI 发生，风险仅剩本地跳过文档明令的完整两段构建这一种叠加误操作。结论：事实成立、属发布工程加固项而非可感损伤主路径，severity 从 medium 降为 low。
+
+### C9. [MEDIUM] r69 tips 第四态矫枉过正：timeout/is_error/断连等分享已成功的失败终局也被标「分享未成功」（补收）
+
+- **证据**：SummarizeView.tsx:651 `failed=…!!messages.at(-1)?.isError…`；:1245 `failed?'分享未成功':'已分享'`。App.tsx:595 is_error、:667 timeout/parse、:714 断连均置 isError:true
+- **损害**：这些终局里页面正文已成功送达 CLI（失败发生在生成阶段），常驻状态条却说「分享未成功《标题》」，与同屏气泡的具体错误文案（如「任务超时」）直接矛盾，用户会误判故障环节去查授权/提取而非 CLI 本身
+- **修法**：failed 判定按错误码分流：spawn-fail/no-permission/extract 类（未送达）才标「分享未成功」，timeout/is_error/断连类（已送达、生成失败）保持「已分享」或用「本轮未完成」
+- **复核**（confidence: high，isReal: true，severityFinal: medium）：证据逐字核实成立。App.tsx 三处终局（is_error ~:594 / timeout+parse ~:667 / NM 断连 ~:717）均置 isError:true，而这三类失败均发生在 spawn 成功、正文已经 stdin 送达 CLI 之后的生成/传输阶段；:648-649 r69 注释自证本意只针对「页面未送达」情形，实现却用 isError 一刀切。无别处补位（failed 判定无错误码分流）。
 
 ## 驳回的发现（对抗验证 isReal:false，1 条）
 
