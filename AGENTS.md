@@ -40,7 +40,7 @@ chrome-extension:// 页面无法被自动化浏览器直接导航——`apps/ext
 
 ## v1 Priority
 
-**零配置 + 深度总结质量。** 其余一切（daemon、全文搜索、Windows、marketplace……）都是 v2+，见 DECISIONS.md。
+**零账号·零 API key + 深度总结质量。** 其余一切（daemon、全文搜索、Windows、marketplace……）都是 v2+，见 DECISIONS.md。
 
 ## Install Flow（用户视角）
 

@@ -7,7 +7,30 @@
 
 ## [Unreleased]
 
-r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收割定向化经 r66 复审为半边残留；发布链三连/CWS 材料/守门 CI 首跑 3 项属运营待办未动）+ r60–r63 审计修复批 + r64/r66 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`、`reports/2026-10-09-r66-*-audit.md`）+ r67 修复批（r66 code 可修 medium 3 项（#1/#2/#3）+ low 批，见 Fixed 尾部 r67 条目）+ r69 修复批（r68 code 帧锚半边口收口 + 产品 medium/low 批，见 Fixed 尾部 r69 条目）+ r70 双终审报告入库（`reports/2026-10-11-r70-*-audit.md`）。
+r71 修复批（r70 双终审 code 4 medium + product 去重后 3 medium 全数修复 + low 批：C1/C2/C3/C9/C8/C7 系 + L2/L3/L4/L9）。
+
+### Fixed
+
+- startSummarize 链尾裸 `tabs.query` 补防（r70 code#1）：内容源三级回退（帧锚 → target → 活跃页）的最后一级此前无 catch，Chrome API 抖动时未捕获 rejection 白死；panel-ready 异窗锚解析独立 `resolveRespAnchor`——query 空结果/异常静默回退单例锚（r69 修复目标场景不再无声退化）
+- tips 终局语义分流（r70 product C9 + L3/L4）：「分享未成功」判定收敛为「页面未送达 CLI」终局 code 集（提取/注入/通道未起）——timeout / CLI 运行内失败 / 断连等正文已过 stdin 的生成阶段失败如实显示「已分享」（同屏错误气泡已陈述事实，说未成功会误导用户查提取/授权）；取消终局独立第五态「已停止」；过期 task-error 帧的收尾气泡 error 按 code 分流（此前硬编码「已取消」）
+- `sudo npm uninstall -g` 时 preuninstall 钩子以 root 跑 rmSync——uninstall 补 `assertNotRoot` 守卫（install / postinstall 同款，对称防御）
+
+### Changed
+
+- panel → SW 全部 13 处发送帧 `satisfies PanelToSw` 类型闸（r70 code#3）：anchorTabId 等字段拼错从「零编译错即静默回退单例」变为发送侧编译红（此前仅 SW 消费端有闸）；protocol.ts 注释同步收窄口径
+- CWS 打包守门断言扩面（r70 product C8）：dist↔public manifest 一致性从 version/description 两字段扩到 name / permissions / optional_host_permissions / icons（深比较），`action.default_icon` 补进产物完整性清单——改权限面后未重建 dist 时旧权限不再静默上架
+
+### Docs
+
+- CHANGELOG 版本账归位（r70 product C7）：r59 之后至 r70 的修复从 Unreleased 并入 0.1.4 段（三处钉版 0.1.4 未发布，这些修复本就属于 0.1.4 实物）；r67 批测试计数补账（229→232 三例此前从未入账，r69 行曾误吞为 229→235）
+- AGENTS.md v1 Priority「零配置」→「零账号·零 API key」（D1 r59 修订第二轮漏网，r69 只改了概述行）；PRIVACY CLI 配置读取表述对齐实现（claude 默认模型取 `settings.json` 的 `model` 或其中 `env.ANTHROPIC_MODEL` 两路径，codex 取 `config.toml` 的 `model`）
+- 测试 235 → 239 用例：tips 终局五态分流 ×3（未送达 → 「分享未成功」 / 已送达失败 → 仍「已分享」 / 取消 → 「已停止」）+ 异窗锚 query 空结果/异常 → 回退单例 ×1；sw.test shim `tabs.query` 语义保真（queryReject 注入 / active 过滤 / 空结果如实返回 [] 不再谎报默认活跃页——r70 code#2「shim 无法表达 query 失败/空结果」解除）
+
+## [0.1.4] - 2026-10-11
+
+r71（r70 产品 C7）版本账归位：0.1.4 三处钉版未发布，r59 之后至 r70 的修复本就属于 0.1.4 实物，原 Unreleased 堆账并入本段，日期改并入封版日（发布时如跨日顺手更新）。
+
+r59 审计修复批（产品 + 代码双终审报告见 `reports/2026-10-05-*.md`）+ r60–r63 审计修复批 + r64/r66 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`、`reports/2026-10-09-r66-*-audit.md`）+ r67 修复批（r66 code 可修 medium 3 项（#1/#2/#3）+ low 批，见 Fixed 尾部 r67 条目）+ r69 修复批（r68 code 帧锚半边口收口 + 产品 medium/low 批，见 Fixed 尾部 r69 条目）+ r70 双终审报告入库（`reports/2026-10-11-r70-*-audit.md`）。
 
 ### Added
 
@@ -38,27 +61,6 @@ r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收
 - r69（r68 code#3）：SW 回归网 chrome.tabs.query mock 参数化（windowId 过滤 tabsDb / queryTab 注入任务源）——帧锚用例补误杀向鉴别力（此前 mock 恒返 11，seed 22 + 帧 22 零 cancel 对回退路径无鉴别力）
 - r69（r68 code#5）：面板 → SW 帧协议收敛 `PanelToSw`（`AnchorCarrying` 可选锚 + 五帧联合类型）——anchorTabId 拼错从「零编译错即静默回退单例」变为编译错，协议 any 第三例封口
 - r69（r68 low 批 + 产品 medium#5/#7）：安装命令 npmCmd 拆两行（`npm i -g …@version` / `install --ext-id …`，`white-space: pre-line`）；复制按钮 aria-label 随 copied/copyFail 变化；tips 补失败第四态（终局 isError 且未取消显示「分享未成功」）；过期 task-error 帧补 cancelled 标记；技能开关 aria-label 改状态名谱；AGENTS.md 概述「零配置」对齐 D1 r59 修订；`package-cws --check-only` 加 dist↔public manifest version/description 一致性断言（陈旧 dist 带旧文案上架的守门缺口）
-
-### Changed
-
-- 扩展构建挂 `tsc --noEmit` 类型门禁（vite 转译不查类型导致的历史假绿根因）
-
-### Docs
-
-- 测试 210 → 219 用例：CLI 真实流 fixture 重采（claude 2.1.162 / codex 0.156.1）+ 重放断言从「unrecognized 计数」单锚升级为「累积正文 === 采录终稿」双向锚
-- 测试 224 → 229 用例（r65）：assistant content 形状闸 / frontmatter 入口剥离 / SW 收割定向化 / 停止按钮 cancel 帧契约 ×2（r63 M1 修复钉住）；README 五档名对齐 workflow-labels 实名（论文模式 / 去 AI 味改写）、测试数字 25 文件口径补齐
-- 宪法同步：DECISIONS D3 权限清单补记 `storage`、「始终允许读取网页」开关实装位对齐授权气泡；README 档位列举补第五档「产品审计」；PRIVACY activeTab 行表述理顺；测试 219 → 224（C1 消毒 / 畸形 text_delta 闸 / SummarizeView 授权开关冒烟 ×3——UI 组件测试设施第一锹，`@testing-library/react`）
-- r66 双终审报告入库：代码 7.8（0 critical / 0 high / 7 medium——收割定向化半边残留、frontmatter 双剥丢首段新洞、测试债在涨）；产品 6.0 否（发布链第 7 轮 critical 维持、实驱 9 场景全绿）；本行上方 Unreleased 头措辞同步如实化（Top5 必修 2/5 → 如实分列，r66 产品#5）
-- r68 双终审报告入库（`reports/2026-10-10-r68-*-audit.md`）：代码 7.6 否（0 critical / 0 high / 7 medium——r67 帧锚修复「只收半边口」：面板锚播种与内容源 target 仍读单例）；产品 6.0 否（发布链第 9 轮 critical 维持、断口 74→81、远端 install.sh 钉 0.1.3 双版本 E404 补强；r66 low 批四项 + 两条 code medium 产品面实驱全部关账；新账 3 medium：面板 npmCmd 裸 && / dist 滞后守门不查一致性 / CHANGELOG 计数措辞）
-- 测试 229 → 235 用例（r69）：帧锚三用例（panel-ready 异窗回包锚 / summarize 内容源帧锚优先 / 帧锚误杀向鉴别 + 对照）；README ×2 + AGENTS.md 测试数字同步
-- r70 双终审报告入库（`reports/2026-10-11-r70-*-audit.md`）：代码 7.8 否（0 critical / 0 high / 4 medium——r69 帧锚收口经对抗验证确认、r68 核心否决点已解、硬约束 7/7 PASS；新账：startSummarize 链尾 tabs.query 裸奔无 catch / shim tabs.query 语义失真掩蔽空结果分支 / PanelToSw 收敛只做接收端半边 / 复杂度热点第五轮净升）；产品 6.5 否（发布链第 10 轮 critical 维持——registry 0.1.2 / 远端 install.sh 0.1.3 / 本地 0.1.4 三断链 + 85 commits 未推 + 零 tag；去重后独立新账 3 medium：CHANGELOG r69 测试计数增量归因失真（229→235 中 3 例实为 r67 批从未入账）+ 版本账错位（r66–r69 修复全堆 Unreleased 而 0.1.4 段仅 r59 批）+ tips 失败第四态矫枉过正（timeout/is_error/断连等正文已送达的失败终局也被标「分享未成功」——复核后补收：verify agent 未走结构化交付被 workflow 静默丢弃，按对账差额从 transcript 提取补录）；r69 四项 UX 修复经实驱 + 静态双路核实全部兑现）
-
-## [0.1.4] - 2026-10-06
-
-r59 审计修复批（产品 + 代码双终审报告见 `reports/2026-10-05-*.md`）。
-
-### Fixed
-
 - 额度耗尽类错误（usage limit / quota / insufficient credits）给出中文指引：等待额度重置、升级套餐或切换账号后重试
 - PDF 页面不再给出「滚动到底触发懒加载」的无效指引，改为专项提示：转存 HTML 或复制正文粘贴为附件后追问
 - 设置页 host 错误码中文化（读取失败 / 名称不合法 / 删除失败 / 打开目录失败），未知码兜底「未知错误（码 X）」；面板错过终局后的复读气泡同样过 authHint 归一
@@ -72,8 +74,20 @@ r59 审计修复批（产品 + 代码双终审报告见 `reports/2026-10-05-*.md
 
 - 存量目录权限收敛补齐三缺口：attachments 根与年月目录、历史旧年月目录、workflows 根统一收敛 0700（原 0755，同机其他用户可枚举文件名）
 
+### Changed
+
+- 扩展构建挂 `tsc --noEmit` 类型门禁（vite 转译不查类型导致的历史假绿根因）
+
 ### Docs
 
+- 测试 210 → 219 用例：CLI 真实流 fixture 重采（claude 2.1.162 / codex 0.156.1）+ 重放断言从「unrecognized 计数」单锚升级为「累积正文 === 采录终稿」双向锚
+- 测试 224 → 229 用例（r65）：assistant content 形状闸 / frontmatter 入口剥离 / SW 收割定向化 / 停止按钮 cancel 帧契约 ×2（r63 M1 修复钉住）；README 五档名对齐 workflow-labels 实名（论文模式 / 去 AI 味改写）、测试数字 25 文件口径补齐
+- 宪法同步：DECISIONS D3 权限清单补记 `storage`、「始终允许读取网页」开关实装位对齐授权气泡；README 档位列举补第五档「产品审计」；PRIVACY activeTab 行表述理顺；测试 219 → 224（C1 消毒 / 畸形 text_delta 闸 / SummarizeView 授权开关冒烟 ×3——UI 组件测试设施第一锹，`@testing-library/react`）
+- r66 双终审报告入库：代码 7.8（0 critical / 0 high / 7 medium——收割定向化半边残留、frontmatter 双剥丢首段新洞、测试债在涨）；产品 6.0 否（发布链第 7 轮 critical 维持、实驱 9 场景全绿）；本行上方 Unreleased 头措辞同步如实化（Top5 必修 2/5 → 如实分列，r66 产品#5）
+- r68 双终审报告入库（`reports/2026-10-10-r68-*-audit.md`）：代码 7.6 否（0 critical / 0 high / 7 medium——r67 帧锚修复「只收半边口」：面板锚播种与内容源 target 仍读单例）；产品 6.0 否（发布链第 9 轮 critical 维持、断口 74→81、远端 install.sh 钉 0.1.3 双版本 E404 补强；r66 low 批四项 + 两条 code medium 产品面实驱全部关账；新账 3 medium：面板 npmCmd 裸 && / dist 滞后守门不查一致性 / CHANGELOG 计数措辞）
+- 测试 229 → 232 用例（r67 批，r70 产品审计 C7 补账——3 例此前从未入账，r69 行曾误吞为 229→235）：帧内 anchorTabId 对号收割双向闭合（`195aeac`）/ frontmatter 后 --- 水平线开头单剥（`feadfc7`）/ 双窗不拆台契约（`e0e9a66`）各 +1
+- 测试 232 → 235 用例（r69）：帧锚三用例（panel-ready 异窗回包锚 / summarize 内容源帧锚优先 / 帧锚误杀向鉴别 + 对照）；README ×2 + AGENTS.md 测试数字同步
+- r70 双终审报告入库（`reports/2026-10-11-r70-*-audit.md`）：代码 7.8 否（0 critical / 0 high / 4 medium——r69 帧锚收口经对抗验证确认、r68 核心否决点已解、硬约束 7/7 PASS；新账：startSummarize 链尾 tabs.query 裸奔无 catch / shim tabs.query 语义失真掩蔽空结果分支 / PanelToSw 收敛只做接收端半边 / 复杂度热点第五轮净升）；产品 6.5 否（发布链第 10 轮 critical 维持——registry 0.1.2 / 远端 install.sh 0.1.3 / 本地 0.1.4 三断链 + 85 commits 未推 + 零 tag；去重后独立新账 3 medium：CHANGELOG r69 测试计数增量归因失真（229→235 中 3 例实为 r67 批从未入账）+ 版本账错位（r66–r69 修复全堆 Unreleased 而 0.1.4 段仅 r59 批）+ tips 失败第四态矫枉过正（timeout/is_error/断连等正文已送达的失败终局也被标「分享未成功」——复核后补收：verify agent 未走结构化交付被 workflow 静默丢弃，按对账差额从 transcript 提取补录）；r69 四项 UX 修复经实驱 + 静态双路核实全部兑现）
 - README 移除「CWS 审核中」失实表述，改为「准备提交 CWS，上架前先手动加载」；开发者节补 `pnpm test` 与 210 用例口径
 - DECISIONS.md 三处修订同步（D10 install.sh 主线、v2 路线图移出已交付项、决策 #1「零账号 · 零 API key」口径）
 - packages/shared 版本对齐 0.1.4（原脱轨 0.1.0）；测试 203 → 210 用例

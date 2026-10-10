@@ -13,7 +13,7 @@ PageDive has no servers, no accounts, and no API keys. When you click "summarize
 - **网页正文与元数据**：扩展在你点击总结时提取当前页正文（Readability），经 Chrome Native Messaging 传给本机组件，写入本机临时文件供本机 AI CLI 读取。全程在本机完成。
 - **你的输入与附件**：同样只在本机处理（附件为文本 ≤512KB/个 或 图片 ≤500KB/个，图片以 base64 传输）。
 - **AI CLI**：PageDive 以子进程方式调用你本机已安装且已登录的官方 CLI（claude / codex）。CLI 与其模型服务之间的通信遵循该 CLI 自身的服务条款与隐私政策；PageDive 不接触、不存储、不代理任何凭证或流量，也永不对你的 CLI 用量收费。
-- **CLI 本地配置读取（只读）**：探测可用 CLI 时读取其本地配置文件的默认模型字段（claude：`~/.claude/settings.json`；codex：`~/.codex/config.toml`）以在界面显示默认模型——仅此一个字段，best-effort；不解析其余内容，也不向任何地方回传。
+- **CLI 本地配置读取（只读）**：探测可用 CLI 时读取其本地配置文件的默认模型字段（claude：`~/.claude/settings.json` 的 `model` 或其中 `env.ANTHROPIC_MODEL`；codex：`~/.codex/config.toml` 的 `model`）以在界面显示默认模型——仅默认模型一义的两个取值路径，best-effort；不解析其余内容，也不向任何地方回传。
 - **分享出口（用户主动）**：设置页「分享给朋友」在你点击时，把本产品的链接与名称带至你所选平台的分享页（如微博/X，新标签打开）；除此之外不经手任何数据，分享内容也与你总结过的网页无关。
 
 ## 存储位置（全部在本机）
