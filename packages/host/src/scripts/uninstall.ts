@@ -6,8 +6,13 @@ import { existsSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { HOST_NAME, macOSManifestDirs } from './install.js'
+import { assertNotRoot } from '../rootguard.js'
 
 export function uninstall(): void {
+  // r71（r70 host low#2）：root 对称防御——install 有守卫而 uninstall 没有：
+  // sudo npm uninstall -g 时 preuninstall 钩子以 root 跑，rmSync 以 root 属主
+  // 删系统目录文件（/Library/Application Support/...），属主错乱风险同 install
+  assertNotRoot('uninstall')
   // r58（R3）：rmSync force 对缺失文件不报错——无条件 n++ 曾让干净机器也报
   // 「已清理 3 处」。只数真实删掉的
   let n = 0
