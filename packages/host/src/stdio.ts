@@ -164,6 +164,8 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
             let end = content.length, body = content // r56（#9）：>1MB 曾让 writeFrame throw 帧被吞、面板错标 not-found——对齐 history-read 收缩
             while (end > 0 && Buffer.byteLength(JSON.stringify(body), 'utf8') > NM_MAX - 1024) {
               end = Math.max(0, end - 65536)
+              // r71（r70 code L13）：截断点回退出代理对上半——lone surrogate 在截断终态永久乱码（对齐 history-read 的 UTF-8 边界回退）
+              while (end > 0 && content.charCodeAt(end - 1) >= 0xd800 && content.charCodeAt(end - 1) <= 0xdbff) end--
               body = content.slice(0, end) + '\n\n[... 已截断]'
             }
             // r57（#9）：truncated 标志——Settings 据此警示「保存将丢失未显示部分」，

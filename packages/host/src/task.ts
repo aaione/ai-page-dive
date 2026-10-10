@@ -412,7 +412,8 @@ export class Task {
     // NM 单帧 ≤1MB（字节维度）：CJK UTF-8 每字符 3 字节，按字符数切会击穿上限——
     // 按 JSON 序列化后字节收缩切片。用 JSON.stringify 而非裸 Buffer.byteLength：
     // 帧最终是 JSON（\ → \\、" → \"、控制字符 → \uXXXX），转义密集页最坏 2x 膨胀，
-    // 只测原文字节会让 encodeFrame 在 nm.ts 处 throw → chunk 静默丢失、正文缺段
+    // 只测原文字节会让 encodeFrame 在 nm.ts 处 throw → chunk 静默丢失、正文缺段。
+    // r71（r70 code L13）：码元切点不做边界回退——分片拼回无损，截断类（stdio 收缩）才须回退，两谱刻意不同
     let start = 0
     for (;;) {
       let end = Math.min(start + MAX_CHUNK, text.length)
