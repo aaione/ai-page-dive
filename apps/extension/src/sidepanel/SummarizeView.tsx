@@ -570,7 +570,9 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
       {/* r31-a11y：容器不再 aria-live——流式 chunk 逐帧变更会让读屏器整区重读（洪泛）；
           改由下方视觉隐藏 status 区只播报关键节点（完成；错误仍由气泡内 role=alert 播） */}
       <div className="pd-content" role="region" aria-label="对话内容" ref={contentRef} onScroll={onContentScroll}>
-        <span className="pd-sr-only" role="status">{!running && messages.length > 0 && stream.done ? '本轮已完成' : ''}</span>
+        {/* r67（r66 low）：终局性质分流——取消/错误终局也播「已完成」是语义误导
+            （错误细节由气泡内 role=alert 播，此处只纠正终局措辞不重复报错） */}
+        <span className="pd-sr-only" role="status">{!running && messages.length > 0 && stream.done ? (messages.at(-1)?.cancelled ? '本轮已取消' : messages.at(-1)?.isError ? '本轮已结束' : '本轮已完成') : ''}</span>
         {stream.reopened && !running && (
           // r7-ux：切 tab 面板收起后重开，React 态已丢但 SW 侧活会话健在——明示
           // 此前对话去哪了（不静默空白），且追问可接续原会话上下文（canFollowUp 已放开）
@@ -644,7 +646,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             （host 侧跳过注入，与 task.ts 过滤同语义） */}
         {/* r56（#12）：resume 态渲染会话锚（快照页）而非活 pageMeta——导航后「对话上下文」
             仍指向快照页；key 同步用锚 url，导航不再触发无谓的重挂动画 */}
-        {pageMeta && <PageTips key={hasSession && ctxAnchor ? ctxAnchor.url : pageMeta.url} meta={hasSession && ctxAnchor ? { ...pageMeta, ...ctxAnchor } : pageMeta} idle={!messages.length} dimmed={hasSession ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
+        {pageMeta && <PageTips key={hasSession && ctxAnchor ? ctxAnchor.url : pageMeta.url} meta={hasSession && ctxAnchor ? { ...pageMeta, ...ctxAnchor } : pageMeta} idle={!messages.length} active={running} dimmed={hasSession ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
         {chips.shown && chips.shown.length > 0 && (
           <div className={`pd-attach-chips${chips.exiting ? ' pd-exiting' : ''}`}>
             {chips.shown.map((a, i) => (
@@ -1197,7 +1199,7 @@ function ActionBar({
 /** 输入框上方 tips 条：「正在分享 "页面标题"」（参考 Gemini 插件，上下文透明化）。
  *  r43：启用中的技能以常驻微标在此展示——技能是「设置里开的全局状态」，归属输入区
  *  状态指示而非每条消息的属性（r37 气泡下独立徽标行形态退役：占版面且追问轮虚假标注） */
-function PageTips({ meta, idle, dimmed }: { meta: PageMeta; idle?: boolean; dimmed?: false | 'resume' | 'quick' }) {
+function PageTips({ meta, idle, active, dimmed }: { meta: PageMeta; idle?: boolean; active?: boolean; dimmed?: false | 'resume' | 'quick' }) {
   const [skills, setSkills] = useState<string[]>(() => readList('pd-enabled-skills'))
   useEffect(() => {
     const sync = () => setSkills(readList('pd-enabled-skills'))
@@ -1229,10 +1231,12 @@ function PageTips({ meta, idle, dimmed }: { meta: PageMeta; idle?: boolean; dimm
       <span className="pd-page-tips-text">
         {/* r44-audit F3：hero 空闲态无分享行为——「正在分享」是进行时谎言。
             r55（#4）：resume 态（追问会话）根本没有分享行为在进行——上下文在
-            CLI 会话里，追问不重读页面，文案如实 */}
+            CLI 会话里，追问不重读页面，文案如实。
+            r67（r66 low）：非 active 的有消息态（取消后 / codex 还原）同族——
+            「正在分享」进行时谎言，三态分流 */}
         {dimmed === 'resume'
           ? `对话上下文「${meta.title || host || meta.url}」（追问不重读页面）`
-          : `${idle ? '已就绪' : '正在分享'}「${meta.title || host || meta.url}」`}
+          : `${idle ? '已就绪' : active ? '正在分享' : '已分享'}「${meta.title || host || meta.url}」`}
         {host ? ` · ${host}` : ''}
       </span>
       {meta.notice && (

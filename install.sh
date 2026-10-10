@@ -57,7 +57,9 @@ if ! command -v ai-page-dive >/dev/null 2>&1; then
   NPM_BIN="$(npm prefix -g 2>/dev/null)/bin"
   die "npm 安装完成但 ai-page-dive 命令不可用——npm 全局命令目录（$NPM_BIN）不在 PATH。
   本会话临时启用：export PATH=\"$NPM_BIN:\$PATH\"
-  永久启用（zsh）：echo 'export PATH=\"$NPM_BIN:\$PATH\"' >> ~/.zshrc && source ~/.zshrc
+  永久启用（zsh，两条分开跑）：
+    echo 'export PATH=\"$NPM_BIN:\$PATH\"' >> ~/.zshrc
+    source ~/.zshrc
   然后重跑本命令。"
 fi
 # 退出码语义：0=完全就绪 / 2=组件就绪但零可用 CLI / 其他=硬失败（install 已打印原因）

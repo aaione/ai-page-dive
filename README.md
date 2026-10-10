@@ -42,7 +42,9 @@ curl -fsSL https://raw.githubusercontent.com/aaione/ai-page-dive/main/install.sh
 
 ```bash
 # Node >= 18；勿用 sudo npm——会写坏本机组件注册属主；钉版本与 install.sh 一致
-npm i -g @aaione/ai-page-dive@0.1.4 && ai-page-dive install --ext-id <扩展ID>
+# 两条分开跑：&& 拼接时第一条失败会静默吞掉第二条（r66 low，拆行失败各自可见）
+npm i -g @aaione/ai-page-dive@0.1.4
+ai-page-dive install --ext-id <扩展ID>
 ```
 </details>
 

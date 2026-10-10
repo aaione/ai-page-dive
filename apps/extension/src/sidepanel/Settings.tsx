@@ -594,7 +594,10 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
                           onClick={() => toggleCli(a.id)}
                           role="switch"
                           aria-checked={!off}
-                          aria-label={`${off ? '显示' : '隐藏'} ${a.id}`}
+                          /* r67（r66 low）：name 曾是点击动作（「隐藏 X」）——off=false（显示中）
+                             时 label「隐藏 X」+ checked=true 被 SR 读成「隐藏已开启」，
+                             与事实（正在显示）相反。name 改陈述被控状态，checked 同向 */
+                          aria-label={`${a.id} 显示于新对话`}
                         />
                       </div>
                     )
