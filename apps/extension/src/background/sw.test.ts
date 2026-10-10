@@ -51,6 +51,8 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
     setOptions: [] as any[],
     open: [] as any[],
     badge: [] as any[],
+    /** tabs.query 入参序列（windowId 过滤断言用） */
+    queries: [] as any[],
     nmSent: [] as any[],
     nmHandlers: [] as Array<(m: any) => void>,
     nmDisconnect: [] as Array<() => void>,
@@ -147,7 +149,10 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
       onUpdated: listeners(onUpdated),
       onRemoved: listeners(onRemoved),
       get: async (id: number) => tabsDb.get(id) ?? null,
-      query: async () => [{ id: 11, windowId: 2, url: opts.activeUrl ?? 'https://x/active', title: 'Active' }],
+      query: async (q?: any) => {
+        calls.queries.push(q)
+        return [{ id: 11, windowId: 2, url: opts.activeUrl ?? 'https://x/active', title: 'Active' }]
+      },
     },
     scripting: {
       // 第 1 次 = content.js files 注入；之后 = func 提取（默认正文可被各用例覆写）
@@ -194,6 +199,7 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
       onClicked: (tab: any) => onClicked.forEach((f) => f(tab)),
       onRemoved: (tabId: number) => onRemoved.forEach((f) => f(tabId)),
       onActivated: (info: any) => onActivated.forEach((f) => f(info)),
+      onCreated: (tab: any) => onCreated.forEach((f) => f(tab)),
     },
   }
 }
@@ -533,6 +539,34 @@ describe('sw.ts 回归网', () => {
     h.events.onActivated({ tabId: 9, windowId: 1 })
     await h.flush()
     expect(count9()).toBe(first)
+  })
+
+  // r67（r66 code#3）：windowId 零钉住——双窗不拆台契约（r9-backlog 语义）此前无
+  // 任何测试：锚在窗 2 时他窗（窗 1）激活/新建均不 disable 不扰动；同窗照收且
+  // ensureTabsDisabled 只扫锚窗口；panelWindowId 缺失（旧持久化态）宁可收起
+  it('r67（r66 code#3）：双窗不拆台——他窗 onActivated/onCreated 不 disable，同窗照收只扫锚窗口', async () => {
+    const h = await boot({ seed: { panelTabId: 7, panelWindowId: 2 } })
+    const q0 = h.calls.queries.length
+    // 他窗（窗 1）激活 tab 15：零 setOptions、ensureTabsDisabled 不跑
+    h.events.onActivated({ tabId: 15, windowId: 1 })
+    await h.flush()
+    expect(h.calls.setOptions.filter((o: any) => o.tabId === 15)).toHaveLength(0)
+    expect(h.calls.queries.length).toBe(q0)
+    // 他窗新建 tab 17 同理不预 disable（onCreated 同窗过滤）
+    h.events.onCreated({ id: 17, windowId: 1 })
+    await h.flush()
+    expect(h.calls.setOptions.filter((o: any) => o.tabId === 17)).toHaveLength(0)
+    // 同窗（窗 2）激活 tab 16：收起 + 预 disable 只扫锚窗口
+    h.events.onActivated({ tabId: 16, windowId: 2 })
+    await h.flush()
+    expect(h.calls.setOptions.filter((o: any) => o.tabId === 16 && o.enabled === false).length).toBeGreaterThanOrEqual(1)
+    expect(h.calls.queries.some((q: any) => q && q.windowId === 2)).toBe(true)
+
+    // 旧持久化态：panelWindowId 缺失 → 宁可收起（页签独立硬诉求，安全方向）
+    const h2 = await boot({ seed: { panelTabId: 7 } })
+    h2.events.onActivated({ tabId: 15, windowId: 1 })
+    await h2.flush()
+    expect(h2.calls.setOptions.filter((o: any) => o.tabId === 15 && o.enabled === false).length).toBeGreaterThanOrEqual(1)
   })
 
   // r55（#10）：扩展更新/重载打断在跑任务——storage.session 随之清空，收件箱/
