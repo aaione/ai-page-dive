@@ -7,7 +7,7 @@
 
 ## [Unreleased]
 
-r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收割定向化经 r66 复审为半边残留；发布链三连/CWS 材料/守门 CI 首跑 3 项属运营待办未动）+ r60–r63 审计修复批 + r64/r66 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`、`reports/2026-10-09-r66-*-audit.md`）+ r67 修复批（r66 code 可修 medium 3 项（#1/#2/#3）+ low 批，见 Fixed 尾部 r67 条目）+ r69 修复批（r68 code 帧锚半边口收口 + 产品 medium/low 批，见 Fixed 尾部 r69 条目）。
+r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收割定向化经 r66 复审为半边残留；发布链三连/CWS 材料/守门 CI 首跑 3 项属运营待办未动）+ r60–r63 审计修复批 + r64/r66 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`、`reports/2026-10-09-r66-*-audit.md`）+ r67 修复批（r66 code 可修 medium 3 项（#1/#2/#3）+ low 批，见 Fixed 尾部 r67 条目）+ r69 修复批（r68 code 帧锚半边口收口 + 产品 medium/low 批，见 Fixed 尾部 r69 条目）+ r70 双终审报告入库（`reports/2026-10-11-r70-*-audit.md`）。
 
 ### Added
 
@@ -51,6 +51,7 @@ r65 审计修复批（r64 双终审 Top5 必修：代码侧 2 项已修——收
 - r66 双终审报告入库：代码 7.8（0 critical / 0 high / 7 medium——收割定向化半边残留、frontmatter 双剥丢首段新洞、测试债在涨）；产品 6.0 否（发布链第 7 轮 critical 维持、实驱 9 场景全绿）；本行上方 Unreleased 头措辞同步如实化（Top5 必修 2/5 → 如实分列，r66 产品#5）
 - r68 双终审报告入库（`reports/2026-10-10-r68-*-audit.md`）：代码 7.6 否（0 critical / 0 high / 7 medium——r67 帧锚修复「只收半边口」：面板锚播种与内容源 target 仍读单例）；产品 6.0 否（发布链第 9 轮 critical 维持、断口 74→81、远端 install.sh 钉 0.1.3 双版本 E404 补强；r66 low 批四项 + 两条 code medium 产品面实驱全部关账；新账 3 medium：面板 npmCmd 裸 && / dist 滞后守门不查一致性 / CHANGELOG 计数措辞）
 - 测试 229 → 235 用例（r69）：帧锚三用例（panel-ready 异窗回包锚 / summarize 内容源帧锚优先 / 帧锚误杀向鉴别 + 对照）；README ×2 + AGENTS.md 测试数字同步
+- r70 双终审报告入库（`reports/2026-10-11-r70-*-audit.md`）：代码 7.8 否（0 critical / 0 high / 4 medium——r69 帧锚收口经对抗验证确认、r68 核心否决点已解、硬约束 7/7 PASS；新账：startSummarize 链尾 tabs.query 裸奔无 catch / shim tabs.query 语义失真掩蔽空结果分支 / PanelToSw 收敛只做接收端半边 / 复杂度热点第五轮净升）；产品 6.5 否（发布链第 10 轮 critical 维持——registry 0.1.2 / 远端 install.sh 0.1.3 / 本地 0.1.4 三断链 + 85 commits 未推 + 零 tag；去重后独立新账 2 medium：CHANGELOG r69 测试计数增量归因失真（229→235 中 3 例实为 r67 批从未入账）+ 版本账错位（r66–r69 修复全堆 Unreleased 而 0.1.4 段仅 r59 批）；r69 四项 UX 修复经实驱 + 静态双路核实全部兑现）
 
 ## [0.1.4] - 2026-10-06
 
