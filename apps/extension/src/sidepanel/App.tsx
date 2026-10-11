@@ -135,6 +135,15 @@ export function App() {
   /** host 探测结果是否已到（r14 首旅程）：区分「在途」与「真空」——空列表不该
    * 被渲染成「未检测到本机 AI CLI」假告示 */
   const [agentsLoaded, setAgentsLoaded] = useState(false)
+  // r72（r71 product P2）：agents 帧丢失（host spawn 二连失败/NM 断连于探测窗口）时
+  // 「正在检测」零按钮零出口，唯一恢复是关重开侧栏——10s 兜底置 loaded 落「未检测
+  // 到」空态，重试按钮随之出现（10s 远宽于正常冷启动几秒，慢活 host 会被误落空态
+  // 但重试按钮即再探测，可自愈）
+  useEffect(() => {
+    if (agentsLoaded) return
+    const t = setTimeout(() => setAgentsLoaded(true), 10_000)
+    return () => clearTimeout(t)
+  }, [agentsLoaded])
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [stream, setStream] = useState<TaskStreamState>(BLANK)
   const [agentId, setAgentId] = useState('')
@@ -242,7 +251,7 @@ export function App() {
             // 中性文案：不预设死因（可能是 SW 死，也可能是极端慢），普通用户可懂（R2-m4）。
             // r52（review #9）：wf 轮（一键总结）回填为空串——「已放回输入框」是假承诺，
             // 改指真实重试路径（与 retryNote 的 Enter 重发同机制）
-            { id: `w${Date.now()}`, role: 'assistant', text: '', error: rf?.wf ? '一键总结超时未完成——直接按 Enter 以原模式重试' : '响应超时——你的问题已放回输入框，可直接重发', isError: true },
+            { id: `w${Date.now()}`, role: 'assistant', text: '', error: rf?.wf ? '一键总结超时未完成——直接按 Enter 以原模式重试' : '响应超时——你的问题已放回输入框，可直接重发', isError: true, undelivered: s.pending },
           ],
         }
       })
@@ -735,7 +744,7 @@ export function App() {
           ...(rf ? { refill: rf } : {}),
               finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
               messages: needBubble
-                ? [...messages, { id: `e${Date.now()}`, role: 'assistant' as const, text: '', error: TEXT, isError: true }]
+                ? [...messages, { id: `e${Date.now()}`, role: 'assistant' as const, text: '', error: TEXT, isError: true, undelivered: true }]
                 : messages,
             }
           })
@@ -1087,18 +1096,23 @@ const ERROR_LABEL: Record<string, string> = {
   'bad-request': '请求参数不完整',
   'content-mismatch': '正文传输不完整，已取消——请重试',
   'host-shutting-down': '本机组件正在重启',
+  // r72（r71 code C3）：断连收件箱码（sw.ts emitTerminal code:'host-disconnected'）——
+  // 此前不在表内，missedErrBubble 兜底渲染成「未知错误（码 host-disconnected）」
+  'host-disconnected': '本机组件连接中断——请重试',
   // r55（#10）：SW 冷启动把孤儿任务指针折算成的终局（扩展更新/重载打断在跑任务）
   'ext-restarted': '扩展更新或重启打断了进行中的任务——请重新发起',
 }
 
 /** r71（r70 product C9/L3）：终局「页面未送达 CLI」code 集——tips 分流依据。
- *  timeout/parse/is_error/断连/content-mismatch/ext-restarted 等已送达（正文已过
- *  stdin）的生成阶段失败不在集内；cancelled 走独立「已停止」态也不在集内 */
+ *  timeout/parse/is_error/ext-restarted 等已送达（正文已过 stdin）的生成阶段失败
+ *  不在集内；cancelled 走独立「已停止」态也不在集内。r72（r71 code C6）收编
+ *  content-mismatch：SW 侧该终局=正文对账超时即取消（spawn 前），CLI 从未收到
+ *  完整正文——是典型未送达而非已送达失败 */
 const UNDELIVERED_CODES = new Set([
   'no-tab', 'unsupported-page', 'pdf-page', 'inject-failed', 'tab-closed', 'page-not-ready',
   'extract-crash', 'no-permission', 'empty-content', 'frame-too-large', 'host-not-found',
   'host-not-found-retry', 'spawn-fail', 'no-agent', 'bad-request', 'empty-instruction',
-  'session-lost',
+  'session-lost', 'content-mismatch',
 ])
 
 /** r56（#13）：missedTerminal 错误气泡组装（4 个还原入口共用）——按 code 分流，
@@ -1118,6 +1132,9 @@ function missedErrBubble(mt: { taskId: string; code?: string; message?: string }
       : mt.code === 'content-mismatch' ? (mt.message || '正文传输不完整，已取消——请重试')
       : `${ERROR_LABEL[mt.code ?? ''] ?? `未知错误（码 ${mt.code ?? 'error'}）`}${mt.message ? `: ${authHint(mt.message)}` : ''}`,
     isError: true,
+    // r72（r71 code C2）：收件箱补发的取消终局同样带 cancelled——tips 五态在 missed
+    // 落点此前误落「已分享」（stopped 判据读 cancelled，与实时分支 :675 不同步）
+    cancelled: mt.code === 'cancelled',
     cliFault: mt.code !== 'cancelled' && mt.code !== 'content-mismatch' && mt.code !== 'ext-restarted',
     // r71（r70 product C9）：收件箱补发的错误终局同分流——tips 不把已送达失败标「分享未成功」
     undelivered: UNDELIVERED_CODES.has(mt.code ?? ''),
