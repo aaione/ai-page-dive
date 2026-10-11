@@ -1004,7 +1004,10 @@ function pageMeta(): { title: string; url: string; favIconUrl?: string; approxTo
  *  no-tab 终态 */
 async function resolveContentTab(anchor: number | null): Promise<chrome.tabs.Tab | null> {
   let tab = anchor !== null ? await chrome.tabs.get(anchor).catch(() => null) : null
-  if (!tab) tab = target?.id ? await chrome.tabs.get(target.id).catch(() => null) : null
+  // r72（r71 code C5）：有锚但锚 tab 已关 → 跳过 target 单例兜底——target 可能是
+  // 别窗面板 action 点击的 tab（跨窗静默错页）；落级 3 活跃页（「用户正看」有 r46
+  // 安全论证 + page-meta 回显纠偏）。无锚保持 target 旧单例语义
+  if (!tab && anchor === null) tab = target?.id ? await chrome.tabs.get(target.id).catch(() => null) : null
   if (!tab) {
     const [active] = await chrome.tabs
       .query({ active: true, lastFocusedWindow: true })
