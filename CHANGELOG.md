@@ -7,9 +7,18 @@
 
 ## [Unreleased]
 
-r72 修复批（r71 双终审 confirmed 修复：code C2/C3/C5/C6/C8/C11 + product P1/P2/P3/P4/P6；C1/C4/C7/C9/C10 与 P7 明确挂账不修）。
+（暂无——0.1.4 未发布，r59 起全部批次已并入下方 0.1.4 段；r73 product C8 二次归位）
 
-### Fixed
+## [0.1.4] - 2026-10-11
+
+r59 起至 r73 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
+
+### Docs（r73 批——双终审报告入库）
+
+- r73 双终审报告入库（`reports/2026-10-11-r73-*-audit.md`）：代码 7.5 否（运行时 0 critical / 0 high；r71 六条 confirmed 修复经当前代码实读全部真清、五入口攻击链不可达、七硬约束全 PASS、C1 接收端 sender 闸实测销账——但 tests 维度 5.5：r72 唯一数据丢失级修复（task.ts error 分支 flushDelta+persist）零测试钉住（high）、undelivered 四落点全落零直测的 App.tsx 1159 行（high，tips 测试手搓 props 非贯通）、resolveContentTab 防跨窗错页分支零用例、双侧无失败流 fixture、UNDELIVERED_CODES 与协议 code 类型零联动（C7 续账）——判词「补齐三条 high 级测试缺口后可复审冲 8+」；首轮 tests 维度 agent 未交付整丢、评分虚高 8.0/是，同 runId resume 补跑后重裁 7.5/否）；产品 6.5 否（发布链 critical 第 12 轮 + 同根因 high：r72 E404 出路三条对真实用户是画饼——修复封存在未推的 105 commits，远端用户拿到的是无出路旧文案；medium：出路教装 0.1.2 跨协议漂移无警告 / Onboarding FAQ 指向零 release 死源 / CHANGELOG「16 处 satisfies」实数 15（第五轮计数水分复发，见下行修正）/ package-cws 深比较漏 content_scripts/commands/background / P7 CWS 材料三件第 12 轮仍缺）
+- 计数修正（r73 product C6 + code quality 同抓）：r72 批「三文件 16 处发送帧补 `satisfies PanelToSw`」实数 15 处——第 16 个 grep 命中是 protocol.ts 闸注释行而非发送帧（Settings 10 + HistoryView 4 + Onboarding 1）；commit 18fe375 message 同虚高（git 历史不可改，以本条为准）
+
+### Fixed（r72 批）
 
 - task.ts error 终局分支补 `flushDelta` + `persist`（r71 code C8，全仓唯一数据丢失类）：child error 事件此前不冲流不落盘，运行期错误轮的已产出输出凭空消失；收紧为有产出（`accText` 非空）才落「interrupted」——零产出轮（spawn 即败）不写空历史，与 spawn-fail 路径同谱
 - undelivered 四落点补齐（r71 code C2/C3/C6）：过期 task-error 收尾气泡补 `cancelled` 分流（取消终局此前漏盖「已停止」）/ `ERROR_LABEL` 补 `host-disconnected`（断连终局此前显示原始 code）/ `UNDELIVERED_CODES` 收编 `content-mismatch`（SW 侧该终局 = 正文对账超时即取消，spawn 前拦截，CLI 从未收到完整正文——按未送达计）/ 看门狗气泡与断连新气泡补 `undelivered` 落点
@@ -19,7 +28,7 @@ r72 修复批（r71 双终审 confirmed 修复：code C2/C3/C5/C6/C8/C11 + produ
 
 ### Changed
 
-- Settings / HistoryView / Onboarding 三文件 16 处发送帧补 `satisfies PanelToSw`（r71 code C11，r71 C3 收口余波）：App/SummarizeView 之外的 panel → SW 裸发字面量此前在类型闸外，字段拼错零编译错；protocol.ts 闸注释口径同步扩到四文件
+- Settings / HistoryView / Onboarding 三文件 15 处发送帧补 `satisfies PanelToSw`（r71 code C11，r71 C3 收口余波；计数 r73 修正——原记 16 处系把 protocol.ts 闸注释行计入）：App/SummarizeView 之外的 panel → SW 裸发字面量此前在类型闸外，字段拼错零编译错；protocol.ts 闸注释口径同步扩到四文件
 - `package-cws.mjs` 双加固：description ≤132 断言（超限 exit 1，堵 P4 同类回流）+ 打包前删旧 zip（`zip -r` 增量更新会残留上一版已删条目，r71 product P6）
 
 ### Docs
@@ -50,11 +59,7 @@ r72 修复批（r71 双终审 confirmed 修复：code C2/C3/C5/C6/C8/C11 + produ
 - 测试数字三处同步 235 → 239（README ×2 + AGENTS.md）：r71 批 +4 用例时漏更，审计前置自查抓出先修后审
 - r71 双终审报告入库（`reports/2026-10-11-r71-*-audit.md`）：代码 7.4 否（0 critical / 0 high / confirmed 11——r70 四条判「三真清一假清」：C1/C2/C9 逐字核实收口、C3 satisfies 只盖 App/SummarizeView 半边（Settings/HistoryView/Onboarding 约 15 处裸发在闸外）；新账：task.ts child error 终局分支不 flushDelta 不 persist（全仓唯一数据丢失类）/ panel 帧接收端零 sender 校验 / undelivered 四落点破口（missed 缺 cancelled、host-disconnected 与 content-mismatch 漏收）/ resolveContentTab 二级 target 跨窗错页 / UNDELIVERED_CODES 盖戳端零测试 + App.tsx 1142 行零直测）；产品 6.5 否（发布链 critical 第 11 轮维持——registry 0.1.2 / 远端 install.sh 0.1.3 / 本地 0.1.4 / 98 commits 未推 / 零 tag；新发现：manifest description 实测 143 字符超 Chrome 132 上限，CWS 上传确定性打回而三道守门零拦截；r71 门禁引入「正在检测」永久死路；PRIVACY 英文 Summary 漏改两路径）；双 workflow 骨架三分收集（confirmed/rejected/unfetched）落地，unfetched 0——r70 verify 静默丢失坑未复现
 
-## [0.1.4] - 2026-10-11
-
-r71（r70 产品 C7）版本账归位：0.1.4 三处钉版未发布，r59 之后至 r70 的修复本就属于 0.1.4 实物，原 Unreleased 堆账并入本段，日期改并入封版日（发布时如跨日顺手更新）。
-
-r59 审计修复批（产品 + 代码双终审报告见 `reports/2026-10-05-*.md`）+ r60–r63 审计修复批 + r64/r66 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`、`reports/2026-10-09-r66-*-audit.md`）+ r67 修复批（r66 code 可修 medium 3 项（#1/#2/#3）+ low 批，见 Fixed 尾部 r67 条目）+ r69 修复批（r68 code 帧锚半边口收口 + 产品 medium/low 批，见 Fixed 尾部 r69 条目）+ r70 双终审报告入库（`reports/2026-10-11-r70-*-audit.md`）。
+（r59–r70 批）r59 审计修复批（产品 + 代码双终审报告见 `reports/2026-10-05-*.md`）+ r60–r63 审计修复批 + r64/r66 双终审报告入库（`reports/2026-10-07-*-audit.md`、`reports/2026-10-08-*-audit.md`、`reports/2026-10-09-r64-*-audit.md`、`reports/2026-10-09-r66-*-audit.md`）+ r67 修复批（r66 code 可修 medium 3 项（#1/#2/#3）+ low 批，见 Fixed 尾部 r67 条目）+ r69 修复批（r68 code 帧锚半边口收口 + 产品 medium/low 批，见 Fixed 尾部 r69 条目）+ r70 双终审报告入库（`reports/2026-10-11-r70-*-audit.md`）。
 
 ### Added
 
