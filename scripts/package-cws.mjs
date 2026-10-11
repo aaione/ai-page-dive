@@ -5,7 +5,7 @@
  * manifest 声明的每个入口（content_scripts/background/html/icons）逐一断言在盘。
  * 用法：先跑完整两段 `pnpm build`，再 `node scripts/package-cws.mjs`。macOS（系统 zip）。 */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -54,11 +54,24 @@ for (const k of ['version', 'description', 'name', 'permissions', 'optional_host
 }
 console.log('✓ dist manifest 内容一致（version/description/name/permissions/optional_host_permissions/icons 对齐 public）')
 
+// r72（r71 产品 P4）：Chrome manifest 规范 description ≤132 字符——超限 CWS 上传
+// 确定性打回 Invalid value for 'description'（r71 实测 143 字符溜过三道门）。源头
+// 拦截 + 本断言兜底，防后续改文案再超
+for (const m of [manifest, srcManifest]) {
+  if (m.description.length > 132) {
+    console.error(`⛔ manifest description ${m.description.length} 字符超 Chrome 132 上限——CWS 上传必打回`)
+    process.exit(1)
+  }
+}
+
 // r65（r64 产品#6）：--check-only 到此为止——只跑完整性断言不打 zip（CI 挂钩用；
 // zip 只在上架打包时需要，且依赖系统 zip）
 if (process.argv.includes('--check-only')) process.exit(0)
 
-// CWS 要求 manifest 在 zip 根：cwd 进 dist 平铺打包
+// CWS 要求 manifest 在 zip 根：cwd 进 dist 平铺打包。
+// r72（r71 产品 P6）：zip -r 对已有 zip 是增量更新——已删文件的旧条目会残留，
+// 同版本号旧 zip 直接复用会把过期构建分发出去。先删旧档强制全量重产
 const out = join(REPO, 'apps/extension', `pagedive-cws-v${manifest.version}.zip`)
+if (existsSync(out)) rmSync(out)
 execFileSync('zip', ['-q', '-X', '-r', out, '.'], { cwd: DIST, stdio: 'inherit' })
 console.log(`✓ ${out}（${(readFileSync(out).length / 1024).toFixed(0)} KB，上传 Chrome Web Store 开发者后台用）`)
