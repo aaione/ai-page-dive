@@ -319,19 +319,19 @@ export class Task {
         await this.finish(code, signal, stderrTail, contentFile)
         resolve()
       })
-      // spawn 成功后的运行期错误（罕见）：兜底收割。
-      // r46（review C7）：与其余终局路径（isError/timeout/cancel/finish）对称——补
-      // timer 清理与 cwd 回收，防 mkdtemp 临时目录泄漏（timeoutTimer 有 finished
-      // 守卫自无害，cwd 泄漏是真损失）
+      // spawn 成功后的运行期错误（罕见）：兜底收割。r46 C7：与其余终局对称——timer
+      // 清理与 cwd 回收防 mkdtemp 临时目录泄漏（cwd 泄漏是真损失）
       this.proc!.child.on('error', () => {
         if (!this.finished) {
           this.finished = true
           clearTimeout(this.timeoutTimer)
-          // r47-audit（M5 终局不对称）：其余四条终局（cancel/isError/timeout/spawn 窗口取消）均
-          // reap，error 分支此前缺失——detached 进程组泄漏烧配额；且先收割再删 cwd（对齐
-          // 上方 cancelled 分支顺序，防删正在运行进程的工作目录）
+          // r47-audit M5：先 reap 再删 cwd（对齐 cancelled 序，防删运行中进程的工作目录）
           this.proc?.reap()
           this.cleanupCwd(contentFile)
+          // r72（r71 code C8）：对称补齐 flush+persist——漏发则运行期错误轮输出凭空
+          // 消失；零产出轮（spawn 即败）不落盘，与 spawn-fail 路径同谱（空历史污染列表）
+          this.flushDelta()
+          if (this.accText) void this.persist('interrupted')
           resolve()
           // r58（#2）：真实错误信息（如 spawn claude ENOENT）直达诊断——泛化文案看不出 CLI 缺失
           this.cb.onError('spawn-fail', this.spawnErr ? String(this.spawnErr.message ?? this.spawnErr) : 'child runtime error')
