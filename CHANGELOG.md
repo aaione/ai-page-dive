@@ -7,7 +7,28 @@
 
 ## [Unreleased]
 
-r71 修复批（r70 双终审 code 4 medium + product 去重后 3 medium 全数修复 + low 批：C1/C2/C3/C9/C8/C7 系 + L2/L3/L4/L9）。
+r72 修复批（r71 双终审 confirmed 修复：code C2/C3/C5/C6/C8/C11 + product P1/P2/P3/P4/P6；C1/C4/C7/C9/C10 与 P7 明确挂账不修）。
+
+### Fixed
+
+- task.ts error 终局分支补 `flushDelta` + `persist`（r71 code C8，全仓唯一数据丢失类）：child error 事件此前不冲流不落盘，运行期错误轮的已产出输出凭空消失；收紧为有产出（`accText` 非空）才落「interrupted」——零产出轮（spawn 即败）不写空历史，与 spawn-fail 路径同谱
+- undelivered 四落点补齐（r71 code C2/C3/C6）：过期 task-error 收尾气泡补 `cancelled` 分流（取消终局此前漏盖「已停止」）/ `ERROR_LABEL` 补 `host-disconnected`（断连终局此前显示原始 code）/ `UNDELIVERED_CODES` 收编 `content-mismatch`（SW 侧该终局 = 正文对账超时即取消，spawn 前拦截，CLI 从未收到完整正文——按未送达计）/ 看门狗气泡与断连新气泡补 `undelivered` 落点
+- `resolveContentTab` 级 2 加同窗约束（r71 code C5）：有帧锚但锚 tab 已关时跳过 target 单例兜底——target 可能是别窗面板 action 点击的 tab，静默错页跨窗；落级 3 活跃页（「用户正看」有 r46 安全论证 + page-meta 回显纠偏）；无锚保持 target 旧单例语义
+- manifest description 143 → 98 字符（r71 product P4）：原文案超 Chrome manifest ≤132 上限，CWS 上传确定性打回 `Invalid value for 'description'` 而三道守门零拦截
+- agentsLoaded 10s 超时兜底（r71 product P2）：r71 门禁引入的「正在检测」永久死路（探测响应丢失则重试按钮永不出现）解除
+
+### Changed
+
+- Settings / HistoryView / Onboarding 三文件 16 处发送帧补 `satisfies PanelToSw`（r71 code C11，r71 C3 收口余波）：App/SummarizeView 之外的 panel → SW 裸发字面量此前在类型闸外，字段拼错零编译错；protocol.ts 闸注释口径同步扩到四文件
+- `package-cws.mjs` 双加固：description ≤132 断言（超限 exit 1，堵 P4 同类回流）+ 打包前删旧 zip（`zip -r` 增量更新会残留上一版已删条目，r71 product P6）
+
+### Docs
+
+- PRIVACY 英文 Summary 默认模型读取补两路径（r71 product P3）：claude `settings.json` 的 `model` 或 `env.ANTHROPIC_MODEL`、codex `config.toml` 的 `model`——与中文段及实现对齐（此前英文只写泛称）
+- install.sh E404 指引可操作化（r71 product P1）：钉住版本未发布时给三条出路——`npm view dist-tags` 查最新版 / 装最新已发布版 / GitHub Issues 反馈（此前只说「版本可能未发布」无出路）
+- r72 批零新测试（239 维持）——C9/C10 测试债（UNDELIVERED_CODES 盖戳端 + App.tsx 直测）挂账 r71 报告
+
+
 
 ### Fixed
 
