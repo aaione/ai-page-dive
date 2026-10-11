@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentStatus, HostToExt, SkillItem, WorkflowItem } from '@ai-page-dive/shared'
+import type { AgentStatus, HostToExt, PanelToSw, SkillItem, WorkflowItem } from '@ai-page-dive/shared'
 import { useRovingNav, useListboxMenu } from './a11y.js'
 import { WF_LABEL, wfLabel } from './workflow-labels.js'
 import './Settings.css'
@@ -148,8 +148,8 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
 
   useEffect(() => {
     // mount 即拉列表（host 回包经 SW 广播，App.tsx 同帧双收无害）
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-workflows' } }, () => void chrome.runtime.lastError)
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-skills' } }, () => void chrome.runtime.lastError)
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-workflows' } } satisfies PanelToSw, () => void chrome.runtime.lastError)
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-skills' } } satisfies PanelToSw, () => void chrome.runtime.lastError)
     const listener = (m: HostToExt) => {
       switch (m.t) {
         case 'workflows':
@@ -180,13 +180,13 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
         case 'workflow-deleted':
           // 保存/删除后统一重拉刷新；保存新名后切到新名
           setHostError(null) // 成功即清错
-          chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-workflows' } }, () => void chrome.runtime.lastError)
+          chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'list-workflows' } } satisfies PanelToSw, () => void chrome.runtime.lastError)
           if (m.t === 'workflow-deleted') {
             const cur = editorRef.current
             if (cur && cur.name === m.name) {
               if (cur.builtin) {
                 // 内置项删用户副本 = 恢复默认：重读内置版
-                chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-read', name: m.name } }, () => void chrome.runtime.lastError)
+                chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-read', name: m.name } } satisfies PanelToSw, () => void chrome.runtime.lastError)
               } else {
                 setEditor(null)
               }
@@ -239,7 +239,7 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
       builtin: w.builtin,
       dirty: false,
     })
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-read', name: w.name } }, () => void chrome.runtime.lastError)
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-read', name: w.name } } satisfies PanelToSw, () => void chrome.runtime.lastError)
     // 10s 无 workflow-file 回包（host 忙/断连）：置只读超时态——不写 body 不标 dirty，
     // 防超时文案被一次误保存持久化成 workflow 正文（shadow 掉真版本）。
     // r33-fix：换选即清旧计时器（连切时旧计时器对不上 cur.name 有守卫，但不再白跑）
@@ -299,7 +299,7 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
       {
         t: 'nm',
         msg: { t: 'workflow-save', name: editor.name, description: editor.description, category: editor.category || undefined, body: editor.body, originalName: editor.originalName ?? undefined },
-      },
+      } satisfies PanelToSw,
       (resp) => {
         void chrome.runtime.lastError
         // r55（#11）：SW 帧限门禁拒发（约 1MB 上限，防 host 协议失步自杀）——此前
@@ -323,11 +323,11 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
     }
     clearTimeout(delWfTimer.current)
     setConfirmDelWf(false)
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-delete', name: editor.name } }, () => void chrome.runtime.lastError)
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-delete', name: editor.name } } satisfies PanelToSw, () => void chrome.runtime.lastError)
   }
 
   function revealWorkflow(name: string) {
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-reveal', name } }, () => void chrome.runtime.lastError)
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'workflow-reveal', name } } satisfies PanelToSw, () => void chrome.runtime.lastError)
   }
 
   function toggleCli(id: string) {
@@ -343,12 +343,12 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
   }
 
   function revealSkill(name?: string) {
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'skill-reveal', ...(name ? { name } : {}) } }, () => void chrome.runtime.lastError)
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'skill-reveal', ...(name ? { name } : {}) } } satisfies PanelToSw, () => void chrome.runtime.lastError)
   }
 
   /** 打开历史根目录（Finder）：目录即备份，拖走即导出 */
   function revealHistoryDir() {
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-reveal-root' } }, () => void chrome.runtime.lastError)
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-reveal-root' } } satisfies PanelToSw, () => void chrome.runtime.lastError)
   }
 
   /** r34：一键分享产品到微博/X——intent 页新 tab 打开，无需任何 host 权限

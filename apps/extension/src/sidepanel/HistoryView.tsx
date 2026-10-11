@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { HistoryFileMsg, HistoryItem, HistoryListResultMsg, HostToExt } from '@ai-page-dive/shared'
+import type { HistoryFileMsg, HistoryItem, HistoryListResultMsg, HostToExt, PanelToSw } from '@ai-page-dive/shared'
 import { useExitValue } from './motion.js'
 import { StreamMarkdown } from './StreamMarkdown.js'
 
@@ -74,7 +74,7 @@ export function HistoryView({
     }
     clearTimeout(confirmDelTimer.current)
     setConfirmDel(null)
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-delete', path } })
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-delete', path } } satisfies PanelToSw)
     setItems((xs) => xs.filter((x) => x.path !== path))
   }
   // r31-a11y：Esc 取消删除确认（capture 阶段拦截——先于 overlay 的 Esc 关闭，
@@ -155,7 +155,7 @@ export function HistoryView({
   }, [])
 
   function refresh(q = queryRef.current) {
-    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-list', query: q || undefined, limit: historyLimit() } })
+    chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-list', query: q || undefined, limit: historyLimit() } } satisfies PanelToSw)
   }
 
   // 搜索防抖 250ms：host 侧每次查询全量扫盘，每键击触发会让 IO 随历史量线性恶化
@@ -266,7 +266,7 @@ export function HistoryView({
                 readTimer.current = setTimeout(() => {
                   if (pendingPathRef.current === it.path) failRead()
                 }, 5000)
-                chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: it.path } })
+                chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-read', path: it.path } } satisfies PanelToSw)
               }}
               className="pd-history-item-main"
             >
@@ -282,7 +282,7 @@ export function HistoryView({
               </p>
             </button>
             <button
-              onClick={() => chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-reveal', path: it.path } })}
+              onClick={() => chrome.runtime.sendMessage({ t: 'nm', msg: { t: 'history-reveal', path: it.path } } satisfies PanelToSw)}
               className="pd-history-item-action"
               title="在 Finder 中显示"
               aria-label="在 Finder 中显示"

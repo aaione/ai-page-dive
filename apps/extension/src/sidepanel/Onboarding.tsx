@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { PanelToSw } from '@ai-page-dive/shared'
 
 /** 自愈命令：动态带当前扩展 ID——install 幂等 + origins 追加不覆盖 */
 const extId = chrome.runtime.id
@@ -45,7 +46,7 @@ export function Onboarding() {
     let alive = true
     const probe = () => {
       if (document.visibilityState === 'hidden') return // 可见性恢复时由 visibilitychange 立即触发
-      chrome.runtime.sendMessage({ t: 'panel-ready' }, (resp) => {
+      chrome.runtime.sendMessage({ t: 'panel-ready' } satisfies PanelToSw, (resp) => {
         void chrome.runtime.lastError
         if (!alive) return
         if (resp?.ok) location.reload()
