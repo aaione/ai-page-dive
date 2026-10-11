@@ -26,6 +26,8 @@ r71 修复批（r70 双终审 code 4 medium + product 去重后 3 medium 全数�
 - AGENTS.md v1 Priority「零配置」→「零账号·零 API key」（D1 r59 修订第二轮漏网，r69 只改了概述行）；PRIVACY CLI 配置读取表述对齐实现（claude 默认模型取 `settings.json` 的 `model` 或其中 `env.ANTHROPIC_MODEL` 两路径，codex 取 `config.toml` 的 `model`）
 - 测试 235 → 239 用例：tips 终局五态分流 ×3（未送达 → 「分享未成功」 / 已送达失败 → 仍「已分享」 / 取消 → 「已停止」）+ 异窗锚 query 空结果/异常 → 回退单例 ×1；sw.test shim `tabs.query` 语义保真（queryReject 注入 / active 过滤 / 空结果如实返回 [] 不再谎报默认活跃页——r70 code#2「shim 无法表达 query 失败/空结果」解除）
 - r71 low 批（B 批剩余四条）：workflow-read 截断点回退代理对边界（对齐 history-read，task.ts 分片谱保持并注明刻意不同）；Settings/HistoryView 两步确认补 sr-only 播报（对齐 SummarizeView confirmNew 谱）；重试检测按钮补 agentsLoaded 门禁（探测在途不再与「正在检测」并存）；foreignAdopt 收窄暴露并补齐 PanelMsg 的 SW 盖戳声明（tabId 邮戳进类型面）
+- 测试数字三处同步 235 → 239（README ×2 + AGENTS.md）：r71 批 +4 用例时漏更，审计前置自查抓出先修后审
+- r71 双终审报告入库（`reports/2026-10-11-r71-*-audit.md`）：代码 7.4 否（0 critical / 0 high / confirmed 11——r70 四条判「三真清一假清」：C1/C2/C9 逐字核实收口、C3 satisfies 只盖 App/SummarizeView 半边（Settings/HistoryView/Onboarding 约 15 处裸发在闸外）；新账：task.ts child error 终局分支不 flushDelta 不 persist（全仓唯一数据丢失类）/ panel 帧接收端零 sender 校验 / undelivered 四落点破口（missed 缺 cancelled、host-disconnected 与 content-mismatch 漏收）/ resolveContentTab 二级 target 跨窗错页 / UNDELIVERED_CODES 盖戳端零测试 + App.tsx 1142 行零直测）；产品 6.5 否（发布链 critical 第 11 轮维持——registry 0.1.2 / 远端 install.sh 0.1.3 / 本地 0.1.4 / 98 commits 未推 / 零 tag；新发现：manifest description 实测 143 字符超 Chrome 132 上限，CWS 上传确定性打回而三道守门零拦截；r71 门禁引入「正在检测」永久死路；PRIVACY 英文 Summary 漏改两路径）；双 workflow 骨架三分收集（confirmed/rejected/unfetched）落地，unfetched 0——r70 verify 静默丢失坑未复现
 
 ## [0.1.4] - 2026-10-11
 
