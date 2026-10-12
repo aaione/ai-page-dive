@@ -778,6 +778,32 @@ describe('sw.ts 回归网', () => {
     expect(h.calls.sent.find((m) => m?.t === 'task-status')).toMatchObject({ tabId: 31 })
   })
 
+  // r74（r73 code medium#3）：c216c9d 修的中间级此前零回归网——有帧锚但锚 tab 已关
+  //（tabs.get 失败）时必须跳过 target 单例兜底直落级 3 活跃页：target 可能是别窗
+  // 面板 action 点击的 tab（跨窗静默错页）。守卫改回无条件回退（!tab 即读 target）
+  // 则提取落在单例 22，邮戳 22 ≠ 活跃页 11 即红
+  it('r74：有锚但锚 tab 已关 → 跳 target 单例、落级 3 活跃页（跨窗错页防线）', async () => {
+    // 锚 31 不注入 tabsDb = tabs.get(31) 失败（tab 已关）；seed 单例 22（别窗）
+    const h = await boot({ seed: { panelTabId: 22, panelWindowId: 2 } })
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick', anchorTabId: 31 })
+    expect(r.ok).toBe(true)
+    expect(h.calls.sent.find((m) => m?.t === 'task-status')).toMatchObject({ tabId: 11 })
+  })
+
+  // r74：三级链级 2 有牙版——无锚时 target 单例兜底优先于活跃页（query 默认活跃页 11，
+  // 单例 22；级 2 被删直落级 3 则邮戳 11 即红）。:785 用例 queryTab=22 与单例同值无鉴别力。
+  // target 单例只有 action 点击（:304 同步赋值）/onUpdated/冷启动活跃页回填才设置——
+  // seed 仅恢复锚态，须先模拟图标点击把 target 钉在 22（tabsDb 同步注入供 get 命中）
+  it('r74：无锚 → target 单例兜底（级 2 语义保持）——优先于活跃页', async () => {
+    const h = await boot({ seed: { panelTabId: 22, panelWindowId: 2 } })
+    h.tabs.set(22, { id: 22, windowId: 2, active: true, url: 'https://x/b22', title: 'B22' })
+    h.events.onClicked({ id: 22, windowId: 2, url: 'https://x/b22', title: 'B22' })
+    await h.flush()
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect(r.ok).toBe(true)
+    expect(h.calls.sent.find((m) => m?.t === 'task-status')).toMatchObject({ tabId: 22 })
+  })
+
   // r69（r68 code#3）：误杀向鉴别力——query 默认活跃页恒返 11 时，seed 单例 22 的
   // 「new-session(帧锚 22) 零 cancel」对「代码回退读单例」无鉴别力（11≠22 同样不杀）。
   // 活跃页改返 22（= 单例锚，任务源落在 22）后：帧锚 11 的 new-session 零 cancel
