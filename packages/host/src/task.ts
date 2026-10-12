@@ -278,9 +278,6 @@ export class Task {
       // persist('interrupted')，用户看到失败但结果已完整交付。已交付则改走成功终局
       // （与 finish() 成功路径同款：persist('done') + onDone），收割照旧
       if (this.gotResultOk && this.accText) {
-        if (!this.input.resumeSessionId) {
-          this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
-        }
         void (async () => {
           await this.persist('done') // 落盘完成再发终局（对齐 isError 路径的持久化语义）
           this.cb.onDone(this.doneInfo(false, Date.now() - this.startedAt))
@@ -293,9 +290,6 @@ export class Task {
       }
       this.cb.onError('timeout', `task exceeded ${TASK_TIMEOUT_MS / 60_000}min`)
       // 部分输出落盘（对称于 cancel 路径）；不 await——persist 在事件循环里自然完成
-      if (!this.input.resumeSessionId) {
-        this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
-      }
       void this.persist('interrupted')
       // r53（#4）：先收割再删 cwd（M5 不变量，对齐 error/cancelled 分支）。收割挂死 CLI：
       // 走 cancel() 会被其 finished 守卫挡回（终局已前置），detached 进程组永久泄漏烧配额
@@ -372,7 +366,6 @@ export class Task {
           clearTimeout(this.timeoutTimer)
           this.proc?.reap()
           this.cleanupCwd(contentFile) // 不经过 finish()：isError 路径自回收 cwd（r4-impl）
-          if (!this.input.resumeSessionId) this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
           // 落盘完成再发终局：host 若在 persist 期间断连退出，错误轮历史不再丢失
           await this.persist('error')
           this.flushDelta() // isError 不经 finish()：终局前发完缓冲尾巴
@@ -438,9 +431,6 @@ export class Task {
     clearTimeout(this.timeoutTimer)
     this.cleanupCwd(contentFile)
     const durationMs = Date.now() - this.startedAt
-    if (!this.input.resumeSessionId) { // 追问轮不建新历史路径（append 首轮文件）
-      this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
-    }
     // r8-host：只有 cancelled/SIGTERM（reap 专属）算「已取消」；SIGKILL 可能来自 OOM killer/手杀，按被杀上报以免误导排障
     if (this.cancelled || signal === 'SIGTERM') {
       await this.persist('interrupted')
@@ -511,6 +501,9 @@ export class Task {
       }
       return
     }
+    // 首轮路径统一在此生成（r74：child 运行期 error 分支曾漏生成——saveHistory('') 必败，
+    // 有产出轮静默丢失落盘；四处终局调用点的重复 ||= 随之收敛到此）
+    this.historyPath ||= buildHistoryPath(new Date(), this.input.page.title)
     await saveHistory(
       this.historyPath,
       {

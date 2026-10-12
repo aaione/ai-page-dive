@@ -548,10 +548,79 @@ process.exit(0)`,
       expect(cbs.errors[0][0]).toBe('spawn-fail')
       // 真实诊断信息（修前恒为泛化 'child runtime error'，CLI 缺失不可辨）
       expect(cbs.errors[0][1]).toContain('ENOENT')
+      // r74（r73 code high#1）：零产出轮（spawn 即败）不落盘——与下方运行期 error 的
+      // interrupted 留痕对偶，空历史不污染列表（accText 空 → persist 跳过）
+      expect(await readdir(join(fakeHome, '.ai-page-dive', 'history')).catch(() => []) as string[]).toEqual([])
     } finally {
       process.env.HOME = origHome
       AGENTS[0].bin = origBin
       await rm(fakeHome, { recursive: true, force: true })
+    }
+  }, 15_000)
+
+  // r74（r73 code high#1）：r72 C8 的 flush+persist 此前零测试钉住——运行期 error
+  // （spawn 成功后 child error 事件）若回归丢 flushDelta/persist，已产出文本凭空
+  // 消失且全套测试全绿。触发：人工 emit error 驱动 handler（真实运行期 error 如
+  // EPIPE/ESRCH 无法在测试里可靠复现；被钉的是 handler 的冲流+落盘行为）。
+  // 时序：第二帧 console.log 后立刻写标记文件，测试轮询到标记再 +30ms emit——
+  // stdout 字节已入 pipe（FIFO）、帧确定已被 parse 攒批，且 emit 仍落在该帧的
+  // 50ms 攒批窗内：正常攒批不会发它，只有 error 分支的 flushDelta 能冲出（删掉即红）。
+  it('运行期 error：先吐帧后 error——尾段冲流 + 历史落 status:interrupted', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const dir = await mkdtemp(join(tmpdir(), 'pd-fake-'))
+    const script = join(dir, 'cli.mjs')
+    const marker = join(dir, 'frame2')
+    await writeFile(script, `import { writeFileSync } from 'node:fs'
+console.log(JSON.stringify({type:'system',subtype:'init'}))
+console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'前段'}]}}))
+setTimeout(() => {
+console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'前段后段'}]}}))
+writeFileSync(${JSON.stringify(marker)}, '1')
+}, 400)
+setTimeout(() => {}, 60_000) // 挂住进程：不发 result，等 error 事件
+`, 'utf8')
+    const origBin = AGENTS[0].bin
+    const orig = AGENTS[0].buildArgs
+    try {
+      AGENTS[0].bin = 'node'
+      AGENTS[0].buildArgs = () => [script]
+      const { task: mk, cbs } = makeCbs(); const task = mk('t-runtime-err')
+      task.start({ taskId: 't-runtime-err', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+      task.appendContent(BODY, true)
+      const runP = task.run()
+      for (let i = 0; i < 500; i++) { // 轮询标记：第二帧已入 stdout pipe
+        if (await stat(marker).catch(() => null)) break
+        await new Promise((r) => setTimeout(r, 10))
+      }
+      await new Promise((r) => setTimeout(r, 40)) // pipe 派发余量（< 50ms 攒批窗，窗终点=帧到达 host 时刻+50ms）
+      ;(task as any).proc.child.emit('error', new Error('runtime probe EACCES'))
+      await runP
+      expect(cbs.errors.length).toBe(1)
+      expect(cbs.errors[0][0]).toBe('spawn-fail') // 运行期兜底码（:337），真实诊断直达
+      expect(cbs.errors[0][1]).toContain('runtime probe')
+      // 冲流双片：第一片正常攒批；第二片靠 error 分支 flushDelta（r72 修前凭空消失）
+      expect(cbs.chunks.map((c) => c[0])).toEqual(['前段', '后段'])
+      await new Promise((r) => setTimeout(r, 300)) // persist('interrupted') 是 void 异步
+      const histDir = join(fakeHome, '.ai-page-dive', 'history')
+      const files: string[] = []
+      const walk = async (d: string): Promise<void> => {
+        for (const e of await readdir(d, { withFileTypes: true })) e.isDirectory() ? await walk(join(d, e.name)) : files.push(join(d, e.name))
+      }
+      // 轮询而非固定 sleep：全量并发下（runnative 3s 级用例抢 CPU）persist 的
+      // mkdtemp+writeFile 可能超 300ms——首跑实证 0 文件
+      for (let i = 0; i < 100 && !files.length; i++) {
+        await walk(histDir).catch(() => {})
+        if (!files.length) await new Promise((r) => setTimeout(r, 30))
+      }
+      // 有产出轮必须留痕——中断残文可回查（r72 修前该路径零落盘）
+      expect(files.length).toBe(1)
+      const raw = await readFile(files[0], 'utf8')
+      expect(raw).toContain('status: interrupted')
+      expect(raw).toContain('前段后段')
+    } finally {
+      AGENTS[0].bin = origBin
+      AGENTS[0].buildArgs = orig
+      await rm(dir, { recursive: true, force: true })
     }
   }, 15_000)
 
