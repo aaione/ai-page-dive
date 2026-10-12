@@ -40,9 +40,12 @@ console.log(`✓ dist 完整：${required.length} 个 manifest 声明产物全�
 // 比对，不一致即拒打包——完整两段 pnpm build 后 dist 才是新鲜的。
 // r71（r70 产品 C8）扩面：name/permissions/optional_host_permissions/icons 同断——
 // 改权限面后未重建 dist 时旧权限静默上架，恰是 CWS 审核最敏感打回点；对象/数组
-// 用 JSON.stringify 深比较
+// 用 JSON.stringify 深比较。
+// r74（r73 产品#6）再扩面：六键枚举漏了 background/side_panel/action/commands/
+// minimum_chrome_version 等——改为双侧键集并集全量深比较（构建对 manifest 是原样
+// 拷贝、不注入键，实测两文件键集恒同），新键自动纳入，零维护
 const srcManifest = JSON.parse(readFileSync(join(REPO, 'apps/extension/public/manifest.json'), 'utf8'))
-for (const k of ['version', 'description', 'name', 'permissions', 'optional_host_permissions', 'icons']) {
+for (const k of new Set([...Object.keys(manifest), ...Object.keys(srcManifest)])) {
   if (JSON.stringify(manifest[k]) !== JSON.stringify(srcManifest[k])) {
     console.error(
       `⛔ dist/manifest.json 的 ${k} 与 public/manifest.json 不一致` +
@@ -52,7 +55,7 @@ for (const k of ['version', 'description', 'name', 'permissions', 'optional_host
     process.exit(1)
   }
 }
-console.log('✓ dist manifest 内容一致（version/description/name/permissions/optional_host_permissions/icons 对齐 public）')
+console.log(`✓ dist manifest 内容一致（${Object.keys(srcManifest).length} 键全量深比较对齐 public）`)
 
 // r72（r71 产品 P4）：Chrome manifest 规范 description ≤132 字符——超限 CWS 上传
 // 确定性打回 Invalid value for 'description'（r71 实测 143 字符溜过三道门）。源头
