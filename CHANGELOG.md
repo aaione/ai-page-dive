@@ -13,6 +13,21 @@
 
 r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
 
+### Fixed（r78 批）
+
+- readability 残缺产出对账降级——课程表类页面不再静默丢正文（真机反馈排查闭环）：cmu-agents 课程表页实证，Readability sibling 裁剪把 Sep–Oct 8 整块当低分兄弟裁掉，结构化产出 1334 字符仅为页面可见文本 5361 的 25%，CLI 快照从 Oct 13 开始、Lecture 1-4 全丢——「成功/失败」二态间没有「成功但残缺」检测，兜底链只在产出为空时触发。修复：degraded 判据（markdown 非空但不足 innerText 1/4 且 innerText 过 looksLikeProse 双启发式）即降级全文兜底，宁带噪声勿丢正文（误伤面=长评论区被正常剥除的文章页带上评论噪声；漏检的损失是 CLI 对页面四分之三内容视而不见）；降级分支绕开 article.textContent（产出已判不可信）；extractor 降级标 innertext、notice「结构解析失败」→「结构解析不可信」涵盖两态。真页复测闭环（构建产物注入真实页面）：修复前 1334 字符/Oct 13 起/无 Lecture，修复后 11458 字符/Aug 25 起全学期/Lecture 1-14 全在（98fec8c）
+
+### Added（r78 批）
+
+- 264 → 266 用例：extract.test.ts +2（readability「成功但残缺」降级全文兜底——jsdom defineProperty 伪造 innerText own property、loadHtml 顺带清跨用例污染；反向锚——正常文章页剥导航后产出占比健康不误降级）；shadow 用例断言同步「结构解析不可信」新文案为存量改造
+
+### Added（r77 批）
+
+- 追问轮重抓页面快照 + 任务携带可视区截图（实时读取，eee8c70）：followUp 分支注入 content.js + allFrames 择优重提锚页签，压成 text 附件（480K 预算超限头部截断并在披露行注明比例）随 task-start 下发——host materializeAttachments/attachSection 既有链路落盘给路径，host 零改动（行数 2198 不动）；重抓失败降级纯文字追问不阻断；page-meta 增 resynced 字段、PageTips resume 态三分流；task 帧与 currentTask 的 page 在重抓成功时换真实锚（extractor=follow-up-resync）。截图：总结与追问轮 captureVisibleTab 截锚页签可视区（jpeg quality 75→50 两档压 280K 预算，kind:image 附件），锚页签非激活宁缺毋假跳过；帧超限逐级回退：丢截图→丢快照→保用户附件（attFrameOver 与 frameTooLarge 同 64K 安全边 + 4K 骨架余量估值）
+- 输入框 Ctrl+V 粘贴剪贴板图片直入附件链（24d6b5f）：textarea 补 onPaste，剪贴板文件全为图片时接管并转 onPickFiles（→ pickAttachments 既有预算/上限/超限提示全复用）；纯文本与图文混合走默认文本粘贴不劫持
+- 追问轮快照指纹复用（r77b，7f6ccc5）：SW 内存 lastSnap Map<tabId, 快照全文>，追问轮重抓后全文比对（URL 不变 ≠ 内容不变）——命中零附件零披露行零截图（CLI 会话里上轮正文还在，不再塞重复快照撑上下文），广播 unchanged page-meta；未命中照旧附最新并更新指纹（预算回退丢快照不记，宁多勿旧）；tab 关闭/SW 回收即失指纹 miss 照附；PageTips resume 态四分流
+- 254 → 264 用例：sw.test.ts +8（重抓成功全链/重抓失败降级/首轮截图两档压预算/帧超限回退①丢截图保快照/回退②丢快照保截图/非激活跳过/两轮同文第二轮零附件+unchanged/内容变更附新并更新指纹第三轮才复用）；SummarizeView.test.tsx +2（纯图粘贴出 chip、纯文本/图文混合不接管）；dev harness 增 ?resync=0 降级场景
+
 ### Fixed（r76 批）
 
 - sw.test.ts r74 两用例假网换真网（r75 code high#1：r74「补齐三条 high 测试缺口」实补两条半，sw 两用例经双重变异实证红条件虚假）：用例 1 补 onClicked 置位 target（还原「锚 tab 关 → 跳 target」竞态时序）；用例 2 重写为 `resolveContentTab(null, target)` 级 2 直测三断言矩阵（r76-A 顺带 resolveContentTab 参数化纯函数化——「anchor=null 且 target 有值」在消息路径只剩 onClicked 与 restoreSession 之间的冷启动竞态窗口，事件造态必踩时序赌注）

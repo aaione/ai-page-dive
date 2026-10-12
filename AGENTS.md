@@ -22,7 +22,7 @@ pnpm monorepo：
 - `packages/host` — 纯 Node >=18 + TS，运行时零依赖
 - `packages/shared` — AgentDef 类型 / NM 消息协议
 
-测试 vitest（host 流解析器 + buildArgs + 真实流 fixture 重放 + pgid 收割链（组长先退孙持组收割）/runNative 关停子进程集成 + spawn-fail 真诊断 + 终局删收敛（is_error/超时已交付零 tmp 残留）/肥 frontmatter 头兜底/存量 0755 收敛/prune 连带删附件/附件 symlink 穿链/NM 吞帧分型（handler 异常 ≠ JSON 损坏）/无 taskId cancel 收割最近任务/meta 消毒不可见区间 + extension 历史轮切分/SW 回归网（chrome shim 锚 session-lost 竞态/断连清理/丢片对账（取消登记防迟到覆写）/对账超时兜底（回执被吞 15s 终局）/收件箱判接收端/迟到终局清指针/分片上限/迟到失败句柄守卫/iframe 顶层锚）+ jsdom 内容提取三形状/CJK token 口径 + codex 形状端到端（meta/流累积/usage 终局/exec resume wiring）/NmPort 直测（probe 超时/stale port 重建/断连死因）/StreamMarkdown 渲染（节流 snap/复制按钮/img 泄出/128K 降级）+ 运行期 error 冲流落盘（标记文件钉 50ms 攒批窗）/resolveContentTab 落级链/终局三戳直测（UNDELIVERED_CODES 首被测试执行）+ persist 零产出守卫（timeout 零落盘）/运行期拆码 runtime-error/START_FAIL_LABEL 键全集（帧回调双通道同源）等单测，254 用例）。
+测试 vitest（host 流解析器 + buildArgs + 真实流 fixture 重放 + pgid 收割链（组长先退孙持组收割）/runNative 关停子进程集成 + spawn-fail 真诊断 + 终局删收敛（is_error/超时已交付零 tmp 残留）/肥 frontmatter 头兜底/存量 0755 收敛/prune 连带删附件/附件 symlink 穿链/NM 吞帧分型（handler 异常 ≠ JSON 损坏）/无 taskId cancel 收割最近任务/meta 消毒不可见区间 + extension 历史轮切分/SW 回归网（chrome shim 锚 session-lost 竞态/断连清理/丢片对账（取消登记防迟到覆写）/对账超时兜底（回执被吞 15s 终局）/收件箱判接收端/迟到终局清指针/分片上限/迟到失败句柄守卫/iframe 顶层锚）+ jsdom 内容提取三形状/CJK token 口径 + codex 形状端到端（meta/流累积/usage 终局/exec resume wiring）/NmPort 直测（probe 超时/stale port 重建/断连死因）/StreamMarkdown 渲染（节流 snap/复制按钮/img 泄出/128K 降级）+ 运行期 error 冲流落盘（标记文件钉 50ms 攒批窗）/resolveContentTab 落级链/终局三戳直测（UNDELIVERED_CODES 首被测试执行）+ persist 零产出守卫（timeout 零落盘）/运行期拆码 runtime-error/START_FAIL_LABEL 键全集（帧回调双通道同源）等单测，266 用例）。
 
 ## Dev Harness（UI 可视化自验）
 
