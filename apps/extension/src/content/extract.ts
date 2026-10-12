@@ -115,20 +115,28 @@ export function extractPage(): PageContent | { error: string } {
       td.remove(['thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col'])
       markdown = td.turndown(html)
     }
-    // Readability 失败/空壳（cloneNode 不克隆 shadow DOM——正文在 shadow root 里的
-    // 站点 Readability 拿到的是壳）→ 正文全文逐字兜底，截断防数 MB 正文烧穿订阅
+    // Readability 失败/空壳/「成功但残缺」（cloneNode 不克隆 shadow DOM——正文在
+    // shadow root 里的站点 Readability 拿到的是壳）→ 正文全文逐字兜底，截断防数
+    // MB 正文烧穿订阅。jsdom 无 innerText（真实 Chrome 才有）——?? '' 保持兜底链可求值
+    const innerText = document.body.innerText ?? ''
+    // r78（cmu-agents 课程表实证）：Readability 的 sibling 裁剪会把开头整块当低分
+    // 兄弟丢掉——结构化产出非空但不足页面可见文本 1/4（该页实测 1334/5361，Sep–
+    // Oct 8 的 Lecture 1-4 整块被裁，CLI 收到的快照从 Oct 13 开始）。「成功/失败」
+    // 二态间没有「成功但残缺」检测 = 静默丢正文。宁带噪声勿丢正文：looksLikeProse
+    // 过线且对账 1/4 即判残缺降级。误伤面 = 产出比真低于 1/4 的文章页（如长评论
+    // 区被正常剥除）会带上评论噪声——损失是总结变啰嗦，漏检的损失是 CLI 对页面
+    // 四分之三的内容视而不见，后者不可接受
+    const degraded = !markdown.trim() || (looksLikeProse(innerText) && markdown.length < innerText.length / 4)
     let originalChars = 0
-    if (!markdown.trim()) {
+    if (degraded) {
       // r57（#3）：shadow 兜底「非空即正文」会放行组件杂讯——正文在 light DOM 的
       // 站点上 Readability 失败时，shadow 里常是播放器/菜单短语，几百字符的按钮
       // 枚举被 CLI 总结得有模有样，比明确失败更误导（与丢片同罪）。looksLikeProse
       // 双启发式过线且不短于 innerText 才采纳 shadow 文本
-      // jsdom 无 innerText（真实 Chrome 才有）——?? '' 保持兜底链可求值
-      const innerText = document.body.innerText ?? ''
       const shadowText = collectShadowText(document.body)
-      const source =
-        article?.textContent ||
-        (looksLikeProse(shadowText) && shadowText.length >= innerText.length ? shadowText : innerText)
+      const fallback = looksLikeProse(shadowText) && shadowText.length >= innerText.length ? shadowText : innerText
+      // 残缺降级时 Readability 产出已判不可信——兜底不能回头取它的 article.textContent
+      const source = markdown.trim() ? fallback : article?.textContent || fallback
       originalChars = source.length
       markdown = source.slice(0, MAX_CONTENT)
     } else {
@@ -142,10 +150,10 @@ export function extractPage(): PageContent | { error: string } {
     // - 低置信：innerText 兜底路径拿到的是整页逐字文本（含导航/评论/杂讯），
     //   Readability 结构化解析失败本身即是信号
     const truncated = originalChars > MAX_CONTENT
-    const lowConfidence = !article?.content
+    const lowConfidence = degraded || !article?.content
     const notices: string[] = []
     if (truncated) notices.push(`原文 ${originalChars.toLocaleString()} 字符超上限，仅取前 ${MAX_CONTENT.toLocaleString()}`)
-    if (lowConfidence) notices.push('本页结构解析失败，已退化为全文提取，总结质量可能受限')
+    if (lowConfidence) notices.push('本页结构解析不可信，已退化为全文提取，总结质量可能受限')
 
     return {
       url: location.href,
@@ -154,7 +162,7 @@ export function extractPage(): PageContent | { error: string } {
       publishedTime: article?.publishedTime || undefined,
       siteName: article?.siteName || undefined,
       lang: document.documentElement.lang || undefined,
-      extractor: article?.content ? 'readability' : 'innertext',
+      extractor: !degraded && article?.content ? 'readability' : 'innertext',
       contentMarkdown: markdown,
       approxTokens: approxTokensOf(markdown),
       notice: notices.length ? notices.join('；') : undefined,

@@ -10,6 +10,9 @@ import { approxTokensOf, extractPage, looksLikeProse } from './extract.js'
 function loadHtml(title: string, body: string) {
   document.documentElement.lang = 'zh'
   document.title = title
+  // r78 用例伪造的 innerText own property 跨用例清掉（body 对象本身跨用例复用；
+  // lib.dom 声明 innerText 必有——赋值/delete 都过不了 tsc，defineProperty 直定义 own）
+  Object.defineProperty(document.body, 'innerText', { value: undefined, writable: true, configurable: true })
   const t = document.createElement('template')
   t.innerHTML = body
   document.body.replaceChildren(t.content)
@@ -56,7 +59,40 @@ describe('extractPage（jsdom 三形状）', () => {
     // cloneNode 不克隆 shadow root → Readability 空 → 逐字兜底链
     expect(page.extractor).toBe('innertext')
     expect(page.contentMarkdown).toContain('影子里的正文内容')
-    expect(page.notice).toContain('结构解析失败')
+    expect(page.notice).toContain('结构解析不可信')
+  })
+
+  it('r78：Readability「成功但残缺」——产出不足可见文本 1/4 即降级全文兜底（cmu-agents 课程表实证）', () => {
+    // jsdom 无 innerText（真实 Chrome 才有）——直接赋 own property 伪造可见文本，
+    // 模拟课程表/列表页：Readability 产出非空但 sibling 裁剪丢了开头整块
+    loadHtml(
+      '残缺页',
+      `<article><h1>残缺页</h1><p>结构化解析只留下的短正文块。</p></article>`,
+    )
+    const visible = 'Tue, Sep 2 — Lecture 1: 被裁剪掉的开头区块，含课程链接与讲次主题。'.repeat(60)
+    ;(document.body as HTMLElement & { innerText?: string }).innerText = visible
+    const r = extractPage()
+    const page = r as Exclude<ReturnType<typeof extractPage>, { error: string }>
+    // 降级：extractor 标诚实 + 可见文本独有内容（Lecture 1）进入产出
+    expect(page.extractor).toBe('innertext')
+    expect(page.contentMarkdown).toContain('Lecture 1')
+    expect(page.notice).toContain('结构解析不可信')
+  })
+
+  it('r78 反向锚：正常文章页剥导航后产出仍 ≥ 可见文本 1/4——不误降级', () => {
+    // 导航噪声 + 长正文：Readability 剥导航是正常裁剪，产出占比远高于 1/4
+    loadHtml(
+      '正常文章',
+      `<nav>首页 里程碑 关于我们 联系方式 登录 注册 搜索 设置</nav>
+       <article><h1>正常文章</h1><p>${'这是一段足够长的正常文章正文段落，用于证明剥除导航后的结构化产出占比健康。'.repeat(60)}</p></article>`,
+    )
+    const prose = '这是一段足够长的正常文章正文段落，用于证明剥除导航后的结构化产出占比健康。'.repeat(60)
+    ;(document.body as HTMLElement & { innerText?: string }).innerText =
+      `首页 里程碑 关于我们 联系方式 登录 注册 搜索 设置\n${prose}`
+    const r = extractPage()
+    const page = r as Exclude<ReturnType<typeof extractPage>, { error: string }>
+    expect(page.extractor).toBe('readability')
+    expect(page.notice).toBeUndefined()
   })
 
   it('r57 #3：shadow 短语杂讯不冒充正文——双启发式拦截后明确 empty-content，不产假总结', () => {
