@@ -101,7 +101,7 @@ Chrome 移除扩展后，终端**先执行 `ai-page-dive uninstall`** 清理本�
 <details>
 <summary>遇到问题？</summary>
 
-先走三步自查：**① 面板顶部有版本横幅** = 扩展与本机组件版本错位，复制横幅里的命令到终端重装即可对齐；**② 终端跑 `which claude` / `which codex`** 确认 CLI 在 PATH 且跑一次无鉴权提示；**③ 重装本机组件**（同②横幅命令，无脑可重复）。仍不行请到 [issues](https://github.com/aaione/ai-page-dive/issues) 搜索或新建（附上扩展版本号与横幅命令输出）。
+先走三步自查：**① 面板顶部有版本横幅** = 扩展与本机组件版本错位，复制横幅里的命令到终端重装即可对齐（若该命令报 **E404**：该版本尚未发布到 npm——勿手改装其他版本（跨版本消息协议可能不匹配），到 [issues](https://github.com/aaione/ai-page-dive/issues) 反馈或等发版后重跑）；**② 终端跑 `which claude` / `which codex`** 确认 CLI 在 PATH 且跑一次无鉴权提示；**③ 重装本机组件**（同②横幅命令，无脑可重复）。仍不行请到 [issues](https://github.com/aaione/ai-page-dive/issues) 搜索或新建（附上扩展版本号与横幅命令输出）。
 </details>
 
 ## 开发者
