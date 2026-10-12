@@ -119,6 +119,9 @@ export interface PageMeta {
   notice?: string
   /** 正文体量估算（用量透明化）；0/缺省不渲染 */
   approxTokens?: number
+  /** r77（实时读取）：本 meta 出自追问轮重抓（快照已随任务附件下发）——PageTips
+   *  resume 态据此分流「已附快照 / 未同步」；缺省 = 非追问来源或重抓降级 */
+  resynced?: boolean
 }
 
 export function App() {

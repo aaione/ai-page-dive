@@ -283,6 +283,90 @@ describe('sw.ts 回归网', () => {
     expect(r2.taskId).not.toBe(tid)
   })
 
+  // ── r77（实时读取）：追问轮重抓（成分③）+ 可视区截图（成分②）──
+  // 此前追问轮恒「不重新提取页面」——SPA 内切视图（hash 路由）后追问只能答旧页。
+  // 重抓走 text 附件通道（host materializeAttachments + attachSection，host 零改动）；
+  // 任何失败降级纯文字追问不阻断。截图只截激活页签（宁缺毋假），帧超限逐级回退。
+
+  it('r77 追问轮重抓成功：快照 text 附件 + instruction 披露行 + resynced page-meta + 真实锚 page', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '继续' })
+    expect(r.ok).toBe(true)
+    const task = h.calls.nmSent[0].task
+    expect(task.attachments).toEqual([expect.objectContaining({ name: '当前页快照.md', kind: 'text', text: 'x' })])
+    // 披露行前缀 + 原 instruction 原样保留（r57 #2：附件来源必须告知 CLI）
+    expect(task.instruction).toBe('（本轮已附当前页面最新快照，见附件 [File #1]，请读取后再作答）\n继续')
+    expect(task.page.extractor).toBe('follow-up-resync')
+    // panel tips resume 态三分流依据（SummarizeView 按 resynced 分支）
+    expect(h.calls.sent.find((m) => m.t === 'page-meta')?.page).toMatchObject({ resynced: true })
+  })
+
+  it('r77 追问轮重抓失败降级：纯文字追问（老行为），无附件/无披露行/无 resynced', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    // 注入即拒（授权失效/受限页）——resyncPage 返回 null，追问不阻断
+    ;(h.chrome.scripting.executeScript as any).mockReset().mockRejectedValue(new Error('cannot access'))
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '继续' })
+    expect(r.ok).toBe(true)
+    const task = h.calls.nmSent[0].task
+    expect(task.attachments).toBeUndefined()
+    expect(task.instruction).toBe('继续')
+    expect(task.page).toMatchObject({ extractor: 'follow-up', title: '追问' })
+    expect(h.calls.sent.find((m) => m.t === 'page-meta')).toBeUndefined()
+  })
+
+  it('r77 成分②：首轮总结带可视区截图，jpeg 两档压预算（75 超限 → 50 重试）', async () => {
+    const h = await boot()
+    // 锚页签必须激活（tabsDb 是 captureShot 的 tabs.get 依据）
+    h.tabs.set(11, { id: 11, windowId: 2, url: 'https://x/active', title: 'Active', active: true })
+    let cap = 0
+    ;(h.chrome.tabs as any).captureVisibleTab = vi.fn(async () => {
+      cap++
+      return cap === 1 ? `data:image/jpeg;base64,${'A'.repeat(300_000)}` : `data:image/jpeg;base64,${'B'.repeat(1000)}`
+    })
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect(r.ok).toBe(true)
+    expect((h.chrome.tabs as any).captureVisibleTab).toHaveBeenCalledTimes(2)
+    expect(h.calls.nmSent[0].task.attachments).toEqual([
+      expect.objectContaining({ name: '当前页截图.jpg', kind: 'image', mime: 'image/jpeg', b64: 'B'.repeat(1000) }),
+    ])
+  })
+
+  it('r77 帧预算逐级回退①：用户附件+快照+截图超限 → 丢截图保快照（用户附件/文本通道优先）', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    h.tabs.set(5, { id: 5, windowId: 1, url: 'https://x/art', title: 'Art', active: true })
+    ;(h.chrome.tabs as any).captureVisibleTab = vi.fn(async () => `data:image/jpeg;base64,${'A'.repeat(280_000)}`)
+    ;(h.chrome.scripting.executeScript as any).mockReset().mockResolvedValue([{ result: { ...PAGE, contentMarkdown: 's'.repeat(460_000) } }])
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '继续', attachments: [{ name: 'u.md', text: 'u'.repeat(300_000) }] })
+    expect(r.ok).toBe(true)
+    const task = h.calls.nmSent[0].task
+    expect(task.attachments.map((a: any) => a.name)).toEqual(['u.md', '当前页快照.md'])
+    // 披露行编号 = 用户附件数 + 1（host attachSection 统一编号，不漂移）
+    expect(task.instruction).toContain('见附件 [File #2]')
+  })
+
+  it('r77 帧预算逐级回退②：丢截图仍超 → 丢快照保截图，快照没附就不出现披露行', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    h.tabs.set(5, { id: 5, windowId: 1, url: 'https://x/art', title: 'Art', active: true })
+    ;(h.chrome.tabs as any).captureVisibleTab = vi.fn(async () => `data:image/jpeg;base64,${'B'.repeat(100_000)}`)
+    ;(h.chrome.scripting.executeScript as any).mockReset().mockResolvedValue([{ result: { ...PAGE, contentMarkdown: 's'.repeat(460_000) } }])
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '继续', attachments: [{ name: 'u.md', text: 'u'.repeat(830_000) }] })
+    expect(r.ok).toBe(true)
+    const task = h.calls.nmSent[0].task
+    expect(task.attachments.map((a: any) => a.name)).toEqual(['u.md', '当前页截图.jpg'])
+    expect(task.instruction).toBe('继续')
+    expect(h.calls.sent.find((m) => m.t === 'page-meta')).toBeUndefined()
+  })
+
+  it('r77 非激活锚页签跳过截图（captureVisibleTab 只截激活页签——宁缺毋假）', async () => {
+    const h = await boot()
+    h.tabs.set(11, { id: 11, windowId: 2, url: 'https://x/active', title: 'Active', active: false })
+    ;(h.chrome.tabs as any).captureVisibleTab = vi.fn(async () => 'data:image/jpeg;base64,AAAA')
+    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    expect(r.ok).toBe(true)
+    expect((h.chrome.tabs as any).captureVisibleTab).not.toHaveBeenCalled()
+    expect(h.calls.nmSent[0].task.attachments).toBeUndefined()
+  })
+
   it('分片 ≤ MAX_CHUNK（JSON 字节口径，转义密集正文强制走二分收缩）+ done 片 total 对账', async () => {
     const h = await boot()
     // 60 万原始字符、JSON 转义后 ~1.2MB：首个 512K 字符切片按字节口径必然超限，

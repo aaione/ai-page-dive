@@ -354,7 +354,16 @@ export const MAX_CHUNK = 512 * 1024
 /** SW 合成：tips 条元数据刷新（锚定 tab 切回/导航后）。page null = 不可提取页 */
 export interface PageMetaMsg {
   t: 'page-meta'
-  page: { title: string; url: string; favIconUrl?: string; notice?: string; approxTokens?: number } | null
+  page: {
+    title: string
+    url: string
+    favIconUrl?: string
+    notice?: string
+    approxTokens?: number
+    /** r77（实时读取）：本 meta 出自追问轮重抓（快照已随任务附件下发）——缺省 =
+     *  非追问来源或重抓降级，panel 据此分流 tips 文案 */
+    resynced?: boolean
+  } | null
   pageUnsupported?: boolean
 }
 /** SW 合成：图标再点仲裁（panel 比对锚 + 可见性自裁 window.close） */

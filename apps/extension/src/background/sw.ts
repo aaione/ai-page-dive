@@ -567,7 +567,7 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
       // SW 单例，双窗后开面板即被覆盖；缺省字段退回全局锚（同版本 panel 必带）
       // r69：读取收敛 readAnchor（r68 code#5）
       const anchor = readAnchor(msg)
-      // 追问轮：复用本页签上一轮 CLI 会话（claude --resume），不重新提取页面。
+      // 追问轮：复用本页签上一轮 CLI 会话（claude --resume）。
       // 会话丢失时明确报错——静默降级为新总结会让用户误以为在追问
       if (msg.followUp === true) {
         // SW 恰在恢复中（微任务竞态窗）时补一次同步恢复——storage.session 读取 <1ms
@@ -576,7 +576,32 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
         // r47-ux：sessionId 空串（thread.started 未达的降级归档）不可 resume——明示
         // 丢失，勿把空串交给 CLI（会变成语义不明的 resume 失败）
         if (!sess?.sessionId) return { error: 'session-lost' }
-        const r = startFollowUp(sess.agentId, sess.sessionId, instruction ?? '', sess.historyPath, attachments, anchor)
+        // r77（实时读取·成分③）：追问轮重抓锚页签最新快照随任务下发——此前恒
+        // 「不重新提取页面」，SPA 内切视图（hash 路由）后追问只能答旧页。重抓失败
+        //（授权失效/受限页/提取空）降级纯文字追问（上下文仍在 CLI 会话），不阻断
+        const snap = anchor !== null ? await resyncPage(anchor) : null
+        let atts = attachments ? [...attachments] : undefined
+        let inst = instruction ?? ''
+        if (snap) {
+          const pack = snapshotAttachment(snap.contentMarkdown, 480 * 1024)
+          if (pack) {
+            // r77（成分②）：截图预算内可带则带。帧超限逐级回退：带全量 → 丢截图 →
+            // 丢快照保截图 → 纯用户附件（用户主动携带的优先保留）
+            const shot = await captureShot(anchor!, 280 * 1024) // snap 非 null ⇒ anchor 非 null（代码不变式）
+            const base = atts ?? []
+            let next: AttachMsg[] = [...base, pack.att, ...(shot ? [shot] : [])]
+            if (attFrameOver(inst, next)) next = shot ? [...base, pack.att] : base
+            if (next.includes(pack.att) && attFrameOver(inst, next)) next = shot ? [...base, shot] : base
+            if (next.includes(pack.att)) {
+              // 披露行并进 instruction（截断比例如实——r57 #2：静默截断会被当
+              // 「原文就此结束」）；编号 = 用户附件数 + 1（host attachSection 统一编号）
+              inst = `（本轮已附当前页面最新快照，见附件 [File #${base.length + 1}]，请读取后再作答${pack.note}）\n${inst}`
+              sendToPanel({ t: 'page-meta', page: { title: snap.title, url: snap.url, approxTokens: snap.approxTokens, resynced: true } })
+            }
+            atts = next.length ? next : undefined
+          }
+        }
+        const r = startFollowUp(sess.agentId, sess.sessionId, inst, sess.historyPath, atts, anchor, snap ? { url: snap.url, title: snap.title, approxTokens: snap.approxTokens } : undefined)
         return { ...r, agentId: sess.agentId }
       }
       if (!msg.agentId || !msg.workflow) return { error: 'bad-request' }
@@ -727,7 +752,12 @@ function newTaskId(): string {
  * 满附件仍可击穿帧限（host 侧超限帧即失步自杀收割全部任务）。发送前按
  * JSON 序列化整帧口径兜底，留 64KB 给帧头/协议字段余量 */
 const NM_FRAME_MAX = 1024 * 1024
-const frameTooLarge = (frame: unknown) => new Blob([JSON.stringify(frame)]).size > NM_FRAME_MAX - 64 * 1024
+const frameBytes = (o: unknown) => new Blob([JSON.stringify(o)]).size
+const frameTooLarge = (frame: unknown) => frameBytes(frame) > NM_FRAME_MAX - 64 * 1024
+/** r77（实时读取）：附件组装预算——instruction + attachments 帧内字节 + 4KB 骨架
+ *  余量（taskId/page 等组帧误差），与 frameTooLarge 的 64KB 安全边同口径收口 */
+const attFrameOver = (inst: string, atts: AttachMsg[]) =>
+  frameBytes({ instruction: inst, attachments: atts }) + 4096 > NM_FRAME_MAX - 64 * 1024
 
 // host → panel 直通
 nmPort.onMessage((m) => {
@@ -915,19 +945,23 @@ nmPort.onDisconnect(() => {
   }
 })
 
-/** 追问轮：上下文在 CLI 会话里，host 直接 resume，无提取/无正文。
+/** 追问轮：上下文在 CLI 会话里，host 直接 resume，正文恒空（r77 快照走附件通道）。
  *  r67（r66 code#1）：anchor = 发起面板锚（帧内 anchorTabId，缺省全局锚）——
- *  任务邮戳/终局入箱页签跟随发起面板，不再被后开面板的单例 panelTabId 错位 */
-function startFollowUp(agentId: string, sessionId: string, instruction: string, historyPath?: string, attachments?: AttachMsg[], anchor: number | null = null) {
+ *  任务邮戳/终局入箱页签跟随发起面板，不再被后开面板的单例 panelTabId 错位
+ *  r77（实时读取·成分③）：resync 非空 = 追问轮重抓成功，page 用真实锚页元数据 */
+function startFollowUp(agentId: string, sessionId: string, instruction: string, historyPath?: string, attachments?: AttachMsg[], anchor: number | null = null, resync?: { url: string; title: string; approxTokens?: number }) {
   if (!instruction.trim() && !attachments?.length) return { error: 'empty-instruction' }
   if (currentTask) cancelCurrent() // 收割在跑任务（同 startSummarize：句柄丢失 = 进程泄漏）
   const taskId = newTaskId()
   // 追问轮也占任务位（taskId）：进行中可取消
+  const page = resync
+    ? { url: resync.url, title: resync.title, extractor: 'follow-up-resync', approxTokens: resync.approxTokens ?? 0 }
+    : { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }
   const frame = {
     t: 'task-start' as const,
     task: {
       taskId, agentId, resumeSessionId: sessionId, historyPath, instruction, attachments,
-      page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 },
+      page,
     },
   }
   if (frameTooLarge(frame)) return { error: 'frame-too-large' }
@@ -936,7 +970,7 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
     emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '本机组件未就绪，追问未发出——请重试', tabId: anchor ?? -1 }, anchor ?? -1) // r58（#4）
     return { error: 'host-not-found', lastError: nmPort.lastError }
   }
-  currentTask = { taskId, tabId: anchor ?? -1, page: { url: '', title: '追问', extractor: 'follow-up', approxTokens: 0 }, content: '', startedAt: Date.now() }
+  currentTask = { taskId, tabId: anchor ?? -1, page, content: '', startedAt: Date.now() }
   rememberTab(taskId, anchor ?? -1)
   setRunningTask(taskId, anchor ?? -1) // r55（#10）：host 已受理，任务有了可死的实体
   // host 的 Task 等 contentReady 才 run——补发空正文分片（done:true）。
@@ -963,6 +997,54 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
     clearRunningTask()
   }, RECONCILE_TIMEOUT_MS)
   return { ok: true, taskId }
+}
+
+/** r77（实时读取·成分③）：追问轮重抓锚页签——注入 content.js + allFrames 择优，
+ *  与首轮总结同一链路（JS 渲染后的 DOM 全量可见，hash 路由 SPA 切视图照样提）。
+ *  url/title 换顶层 tab 锚（r56 #10：allFrames 择优的 meta 是 frame 级）。
+ *  任何失败（授权失效/受限页/提取空）返回 null——降级纯文字追问，不阻断 */
+async function resyncPage(tabId: number): Promise<PageContent | null> {
+  const injectErr = await chrome.scripting
+    .executeScript({ target: { tabId, allFrames: true }, files: ['content.js'] })
+    .then(() => null, (e: unknown) => String((e as Error | undefined)?.message ?? e))
+  if (injectErr) return null
+  const page = await extractBest(tabId)
+  if ('error' in page) return null
+  const tab = await chrome.tabs.get(tabId).catch(() => null)
+  return { ...page, url: tab?.url ?? page.url, title: tab?.title ?? page.title }
+}
+
+/** r77（实时读取·成分②）：可视区截图随任务下发——markdown 线性化丢布局，表格/
+ *  课程表类页面的视觉保真通道。captureVisibleTab 只截该窗口激活页签——锚页签
+ *  非激活（用户切走）时截到的是别的页签，宁缺毋假跳过；jpeg 两档压预算；
+ *  失败静默 null（截图是增强不是依赖，文本通道不受影响） */
+async function captureShot(tabId: number, budgetBytes: number): Promise<AttachMsg | null> {
+  try {
+    const tab = await chrome.tabs.get(tabId)
+    if (!tab?.active || tab.windowId === undefined) return null
+    for (const quality of [75, 50]) {
+      const url: string = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality })
+      const b64 = url.split(',')[1] ?? ''
+      if (b64 && b64.length <= budgetBytes) return { name: '当前页截图.jpg', kind: 'image', b64, mime: 'image/jpeg' } // b64 是 ASCII，length 即帧内字节
+    }
+  } catch { /* 最小化窗口/授权窗口关闭等 */ }
+  return null
+}
+
+/** r77（成分③）：重抓快照压成 text 附件（host materializeAttachments 落盘 +
+ *  attachSection 给路径，CLI 自行 Read——resume 轮该链路本就生效，host 零改动）。
+ *  超预算从头截断并如实披露（r57 #2 同教训：静默截断会被当「原文就此结束」） */
+function snapshotAttachment(markdown: string, budget: number): { att: AttachMsg; note: string } | null {
+  if (!markdown.trim()) return null
+  let text = markdown
+  let note = ''
+  if (frameBytes(text) > budget) {
+    let end = text.length
+    while (end > 0 && frameBytes(text.slice(0, end)) > budget) end = Math.floor(end / 2)
+    text = text.slice(0, end)
+    note = `。原文 ${markdown.length.toLocaleString()} 字符超单帧传输预算，仅取前 ${end.toLocaleString()} 字符——后文可能缺席，不要臆测`
+  }
+  return { att: { name: '当前页快照.md', kind: 'text', text }, note }
 }
 
 /** 逐 frame 提取，取正文最长者为该页内容（iframe SPA：top frame 往往只有壳） */
@@ -1156,11 +1238,16 @@ async function startSummarize(o: StartSummarizeOpts) {
   // 提取成功 → 下发目标页元数据（panel tips 条「正在分享 …」；notice=截断/低置信提示）
   sendToPanel({ t: 'page-meta', page: { title: tab.title ?? meta.title, url: tab.url ?? meta.url, favIconUrl: tab.favIconUrl, notice: meta.notice, approxTokens: meta.approxTokens } })
 
+  // r77（实时读取·成分②）：可视区截图随任务下发（视觉保真通道）；非激活页签/
+  // 授权失效静默跳过。帧超限先丢截图（用户附件优先保留），attFrameOver 与追问轮同口径
+  const shot = await captureShot(tab.id!, 280 * 1024)
+  const taskAtts = shot && !attFrameOver(instruction ?? '', [...(attachments ?? []), shot]) ? [...(attachments ?? []), shot] : attachments
+
   const frame = {
     t: 'task-start' as const,
     // skills：panel 选中的技能名，host 读 ~/.ai-page-dive/skills 正文拼进 prompt
     // historyLimit：保留策略（r42）——host 首轮落盘后清理超出部分的最旧历史
-    task: { taskId, agentId, workflow, instruction, skills, lang, attachments, historyLimit, page: pageTop },
+    task: { taskId, agentId, workflow, instruction, skills, lang, attachments: taskAtts, historyLimit, page: pageTop },
   }
   if (frameTooLarge(frame)) {
     currentTask = null

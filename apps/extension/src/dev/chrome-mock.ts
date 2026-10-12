@@ -12,6 +12,8 @@
  *   ?swcycle=claude 同上但 canResume=true——还原后「继续追问」可用（followUp 续流）
  *   ?swcycle=lost   会话彻底丢——追问发得出去，回 session-lost 气泡 + 自愈降级
  *                  （resumable 置 false，重发自动走全新总结）
+ *   ?resync=0       追问轮重抓降级（r77 成分③：授权失效/受限页等）——page-meta
+ *                  不带 resynced，PageTips 显「本轮未同步页面」分支
  * 任务流：点「深度总结本页」后 mock 广播 reading→thinking→4 段流式 chunk→done，
  * 全程 ~2.4s，可验证 running 态（I3 两步确认/I1 禁用视觉/enterHint）与完成态；
  * 点「停止」→ nm task-cancel → 清假任务 timers + 回 task-error(cancelled)（r50）。
@@ -120,6 +122,9 @@ function route(msg: any): unknown {
     if (q.get('noextract')) return { error: 'no-permission' }
     // swcycle=lost：会话已随 SW 回收湮灭——追问打空（App 自愈降级全量总结）
     if (q.get('swcycle') === 'lost' && msg.followUp) return { error: 'session-lost' }
+    // r77（成分③）：追问轮 SW 会重抓页面并广播 resynced page-meta——mock 镜像；
+    // ?resync=0 模拟重抓降级（不广播，PageTips 走「本轮未同步页面」分支）
+    if (msg.followUp && q.get('resync') !== '0') setTimeout(() => cast({ t: 'page-meta', page: { ...PAGE, resynced: true } }), 30)
     return { agentId: 'claude', taskId: runFakeTask() }
   }
   return undefined
