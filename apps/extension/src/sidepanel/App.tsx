@@ -732,8 +732,12 @@ export function App() {
               ? '一键总结未完成——直接按 Enter 以原模式重试'
               // r53（#10）：回填对已有草稿是静默跳过（SummarizeView 守卫）——文案如实
               : '本机组件连接中断——你的问题已放回输入框（未覆盖已有草稿），可直接重发'
+            // r76（r75 code medium#4）：断连三戳统一经 stampTerminal——断连=正文已过
+            // stdin 的已送达失败（undelivered:false，同 missed 路径），此前收尾气泡零三戳、
+            // 新气泡硬编码 undelivered:true，同一事故的 tips 分流取决于面板当时开没开
+            const DISC = stampTerminal('host-disconnected')
             const messages = s.messages.map((msg) =>
-              msg.streaming ? { ...msg, streaming: false, error: TEXT, isError: true } : msg,
+              msg.streaming ? { ...msg, streaming: false, error: TEXT, isError: true, ...DISC } : msg,
             )
             // pending ⟺ 本轮尚无任何 assistant 帧——必然零气泡，断连即补（r5 修正：
             // 曾用 !messages.some(isError) 判定，上一轮遗留的错误气泡会吞掉本轮反馈）
@@ -749,7 +753,7 @@ export function App() {
           ...(rf ? { refill: rf } : {}),
               finished: s.taskId ? [...s.finished, s.taskId].slice(-8) : s.finished,
               messages: needBubble
-                ? [...messages, { id: `e${Date.now()}`, role: 'assistant' as const, text: '', error: TEXT, isError: true, undelivered: true }]
+                ? [...messages, { id: `e${Date.now()}`, role: 'assistant' as const, text: '', error: TEXT, isError: true, ...DISC }]
                 : messages,
             }
           })

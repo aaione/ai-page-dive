@@ -30,7 +30,10 @@ export const ERROR_LABEL: Partial<Record<TerminalCode, string>> = {
  *  不在集内；cancelled 走独立「已停止」态也不在集内。r72（r71 code C6）收编
  *  content-mismatch：SW 侧该终局=正文对账超时即取消（spawn 前），CLI 从未收到
  *  完整正文——是典型未送达而非已送达失败。r74（r73 code low）收编
- *  host-shutting-down：host 关闭收割窗内拒收 task-start，正文从未过 stdin。 */
+ *  host-shutting-down：host 关闭收割窗内拒收 task-start，正文从未过 stdin。
+ *  r76（r75 code medium#4）点名 host-disconnected 不收编：断连时正文已过
+ *  stdin（已送达），tips 不标「分享未成功」——App 实时/收尾/missed 三路径
+ *  统一走 stampTerminal 同值。 */
 const UNDELIVERED_CODES = new Set<TerminalCode>([
   'no-tab', 'unsupported-page', 'pdf-page', 'inject-failed', 'tab-closed', 'page-not-ready',
   'extract-crash', 'no-permission', 'empty-content', 'frame-too-large', 'host-not-found',
