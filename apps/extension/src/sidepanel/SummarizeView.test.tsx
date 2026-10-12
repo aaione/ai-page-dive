@@ -145,3 +145,24 @@ describe('SummarizeView tips 终局五态分流（r71 r70 product C9/L3）', () 
     expect(screen.getByText(/已停止「示例页」/)).toBeTruthy()
   })
 })
+
+describe('r77：Ctrl+V 粘贴剪贴板图片直入附件链', () => {
+  it('纯图片粘贴 → chip 渲染（pickAttachments 预算/上限/提示全复用）；纯文本粘贴不劫持', async () => {
+    mount()
+    const ta = screen.getByRole('textbox', { name: '自定义指令' })
+    fireEvent.paste(ta, { clipboardData: { files: [new File(['fake-png'], '粘贴图.png', { type: 'image/png' })] } })
+    await waitFor(() => expect(screen.getByText('粘贴图.png')).toBeTruthy())
+    // 纯文本粘贴（files 空）不产生新附件
+    fireEvent.paste(ta, { clipboardData: { files: [] } })
+    expect(screen.getAllByText('粘贴图.png').length).toBe(1)
+  })
+
+  it('图文混合粘贴不接管（复制网页段落常带图）——不产生附件 chip', () => {
+    mount()
+    const ta = screen.getByRole('textbox', { name: '自定义指令' })
+    fireEvent.paste(ta, {
+      clipboardData: { files: [new File(['x'], '混.png', { type: 'image/png' }), new File(['t'], 'a.txt', { type: 'text/plain' })] },
+    })
+    expect(screen.queryByText('混.png')).toBeNull()
+  })
+})

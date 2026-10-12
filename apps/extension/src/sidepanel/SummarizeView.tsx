@@ -1161,6 +1161,15 @@ function ActionBar({
             onStart()
           }
         }}
+        // r77：Ctrl+V 粘贴剪贴板图片直入附件链（onPickFiles → pickAttachments：
+        // 预算/上限/跳过提示全复用）。仅剪贴板文件全为图片时接管——纯文本与图文
+        // 混合（复制网页段落常带图）走默认文本粘贴，混合要贴图用「添加附件」按钮
+        onPaste={(e) => {
+          const files = Array.from(e.clipboardData?.files ?? [])
+          if (!files.length || !files.every((f) => f.type.startsWith('image/'))) return
+          e.preventDefault()
+          onPickFiles(e.clipboardData!.files)
+        }}
         // r7-ux：不再 disabled——运行中允许预输入下一问（Enter 已有 !running 守卫，
         // 发送按钮不受影响；锁死输入框只是防重发，守卫已覆盖）
         // r47：hasSession 优先——受限页仍可追问（不提取页面），placeholder 不得
