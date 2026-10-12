@@ -317,7 +317,11 @@ describe('sw.ts 回归网', () => {
     const p2 = h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
     await wait(10)
     rej1(new Error('frame went away')) // 旧任务注入失败晚归
-    expect(await p1).toMatchObject({ error: 'no-permission' })
+    const r1 = await p1
+    expect(r1).toMatchObject({ error: 'no-permission' })
+    // r76（r75 product high#3）：启动前失败族 return 带 taskId——panel 凭 finished
+    // 台账拦下迟到回调，帧/回调双通道只渲染一次
+    expect(typeof r1.taskId).toBe('string')
     res2([{ result: { ...PAGE, contentMarkdown: 'y' } }])
     const r2 = await p2
     expect(r2.ok).toBe(true)

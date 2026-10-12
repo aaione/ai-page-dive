@@ -7,7 +7,7 @@ import { Onboarding } from './Onboarding.js'
 import { SummarizeView, useDisabledClis } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
 import { Settings } from './Settings.js'
-import { ERROR_LABEL, stampTerminal } from './terminal.js'
+import { ERROR_LABEL, START_FAIL_LABEL, stampTerminal } from './terminal.js'
 
 type Overlay = null | 'history' | 'settings'
 
@@ -682,7 +682,9 @@ export function App() {
                         // ERROR_LABEL 会「正文传输不完整」重复两遍；单用 message
                         : m.code === 'content-mismatch' && m.message
                           ? m.message
-                          : `${ERROR_LABEL[m.code] ?? `未知错误（码 ${m.code}）`}: ${authHint(m.message)}`,
+                          // r76：启动前失败族帧通道优先 START_FAIL_LABEL（SW message 是
+                          // 原始英文不拼进气泡）——不再落「未知错误（码 no-permission）」
+                          : START_FAIL_LABEL[m.code as TerminalCode] ?? `${ERROR_LABEL[m.code] ?? `未知错误（码 ${m.code}）`}: ${authHint(m.message)}`,
                     isError: true,
                     // r74（r73 code low#8）：三戳收敛 stampTerminal——统一 missed 版
                     // 三排除（多排 ext-restarted，实时不可达：SW 冷启动孤儿指针折算
@@ -815,22 +817,13 @@ export function App() {
       resp = { ...resp, error: 'host-not-found-retry' }
     }
     if (resp?.error) {
-      const msg =
-        resp.error === 'host-not-found-retry' ? '本机组件连接闪断——通常已自动恢复，请重试'
-        : resp.error === 'no-tab' ? '没有可总结的页面（先在普通网页上点扩展图标）'
-        : resp.error === 'unsupported-page' ? '浏览器内置页面无法提取（chrome:// 等）'
-        : resp.error === 'pdf-page' ? 'PDF 页面暂不支持总结——转存为 HTML 页面，或复制正文粘贴为附件后直接追问'
-        : resp.error === 'inject-failed' ? `扩展文件加载失败（content.js 缺失——多为更新或加载不完整）${resp.detail ? `（原始信息：${String(resp.detail).slice(0, 120)}）` : ''}——请在 chrome://extensions 刷新 PageDive 后重试`
-        : resp.error === 'tab-closed' ? '刚看的页面已关闭——在要总结的页面上重试'
-        : resp.error === 'page-not-ready' ? '页面尚未就绪（或正在显示错误页）——刷新页面后重试'
-        : resp.error === 'extract-crash' ? `页面脚本冲突导致提取失败${resp.detail ? `（原始信息：${String(resp.detail).slice(0, 80)}）` : ''}——可重试，或粘贴正文作为附件直接追问`
-        : resp.error === 'no-permission' ? `本页尚未授权提取（换页后授权失效）——点工具栏上的 PageDive 图标后重试，或开启「始终允许」一劳永逸${resp.detail ? `（原始信息：${String(resp.detail).slice(0, 120)}）` : ''}`
-        : resp.error === 'empty-content' ? '页面没有可提取的正文——等页面加载完成（或滚动到底部触发懒加载）后重试；也可粘贴正文作为附件直接追问'
-        : resp.error === 'cancelled' ? '已取消'
-        : resp.error === 'empty-instruction' ? '请输入要追问的内容（或直接点「新对话」重新总结本页）'
-        : resp.error === 'session-lost' ? '会话已失效（扩展服务重启）——直接重新发送即可（将开始全新总结）'
-        : resp.error === 'frame-too-large' ? '内容过长（输入 + 附件超出单帧 1MB 上限）——精简附件或缩短输入后重试'
-        : String(resp.error)
+      // r76（r75 product high#3）：14 键文案表并入 terminal.ts START_FAIL_LABEL——
+      // 帧通道（task-error 同码）同查一张表，双通道一副面孔；detail 原始英文由
+      // 回调通道句尾拼接（截断上限沿 r46 口径）
+      const code = String(resp.error)
+      const DETAIL_MAX: Record<string, number> = { 'inject-failed': 120, 'extract-crash': 80, 'no-permission': 120 }
+      const base = START_FAIL_LABEL[code as TerminalCode] ?? code
+      const msg = resp.detail && DETAIL_MAX[code] ? `${base}（原始信息：${String(resp.detail).slice(0, DETAIL_MAX[code])}）` : base
       setStream((s) => {
         // 旧轮 send 的迟到取消回调（新对话后重发，SW 提取窗口秒级）：resp.taskId 已
         // 在终局台账——静默丢弃，勿清掉新一轮 pending/滤掉其占位气泡（r4-regression）

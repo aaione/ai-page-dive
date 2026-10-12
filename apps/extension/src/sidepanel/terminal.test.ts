@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ERROR_LABEL, stampTerminal } from './terminal.js'
+import { ERROR_LABEL, START_FAIL_LABEL, stampTerminal } from './terminal.js'
 
 // r74（r73 code high#2）：终局三戳谓词直测——UNDELIVERED_CODES.has 生产逻辑此前
 // 零测试执行（tips 五态测试手搓 props），本文件是其第一道回归网；谱系口径见
@@ -55,5 +55,18 @@ describe('ERROR_LABEL 键域（Partial：未送达族走各自专属展示，不
     expect(ERROR_LABEL['runtime-error']).toContain('运行中异常退出')
     expect(ERROR_LABEL['no-tab']).toBeUndefined()
     expect(ERROR_LABEL['extract-crash']).toBeUndefined()
+  })
+
+  it('r76 START_FAIL_LABEL：启动前失败族 14 键全有文案（帧/回调双通道同源）', () => {
+    // 键全集钉死——删键即红（消费端 App 两通道都查本表，漏键落「未知错误/裸码」）
+    for (const code of [
+      'host-not-found-retry', 'no-tab', 'unsupported-page', 'pdf-page', 'inject-failed',
+      'tab-closed', 'page-not-ready', 'extract-crash', 'no-permission', 'empty-content',
+      'cancelled', 'empty-instruction', 'session-lost', 'frame-too-large',
+    ] as const) {
+      expect(START_FAIL_LABEL[code], code).toBeTruthy()
+    }
+    // 抽查首跑最高频路径：授权失败不再「未知错误（码 no-permission）」
+    expect(START_FAIL_LABEL['no-permission']).toContain('点工具栏上的 PageDive 图标')
   })
 })

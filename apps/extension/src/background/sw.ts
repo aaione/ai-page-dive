@@ -1119,18 +1119,21 @@ async function startSummarize(o: StartSummarizeOpts) {
       tab.id!,
     )
     // r46：文件加载失败（dist 不完整/升级中，真机曾因单段构建误报授权失效）不是
-    // 授权问题——单独归因，免得「点图标重授权」指引对缺文件场景空转
-    if (/Could not load file/i.test(injectErr)) return { error: 'inject-failed', detail: injectErr }
+    // 授权问题——单独归因，免得「点图标重授权」指引对缺文件场景空转。
+    // r76（r75 product high#3）：本族 return 带 taskId——上方 emitTerminal 帧已渲染
+    // 终局（并记入 panel finished 台账），迟到回调凭 taskId 被 App :837 守卫拦下，
+    // 帧/回调双通道只渲染一次（此前双气泡：帧「未知错误（码 X）」+ 回调定制文案）
+    if (/Could not load file/i.test(injectErr)) return { error: 'inject-failed', detail: injectErr, taskId }
     // r46：目标 tab 已关（用户关页后点总结）——非授权问题，重授权指引空转
-    if (/No tab with id/i.test(injectErr)) return { error: 'tab-closed' }
+    if (/No tab with id/i.test(injectErr)) return { error: 'tab-closed', taskId }
     // 授权失效（无手势/已切页）：原样带回错误文本，panel 给重授权指引
-    return { error: 'no-permission', detail: injectErr }
+    return { error: 'no-permission', detail: injectErr, taskId }
   }
   const page = await extractBest(tab.id!)
   if ('error' in page) {
     if (currentTask?.taskId === taskId) currentTask = null // r56（#4）：同上，迟到失败不清他人句柄
     emitTerminal({ t: 'task-error', taskId, code: page.error, message: page.detail ?? '', tabId: tab.id! }, tab.id!) // r58（#3）：同 inject 族
-    return { error: page.error }
+    return { error: page.error, taskId }
   }
   // 提取窗口内被取消/被新任务顶替（currentTask 已易主）：终止，绝不再发 task-start。
   // 带 taskId 让 panel 对账（F9 台账）——「新对话后立刻重发」时此迟到回调若不带

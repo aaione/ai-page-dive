@@ -25,6 +25,27 @@ export const ERROR_LABEL: Partial<Record<TerminalCode, string>> = {
   'ext-restarted': '扩展更新或重启打断了进行中的任务——请重新发起',
 }
 
+/** r76（r75 product high#3）：启动前失败族（SW onStartResult return error / 同码
+ *  task-error 帧）文案单一事实源——此前 14 键内联在 App.tsx send 回调，帧通道查
+ *  ERROR_LABEL 落「未知错误（码 no-permission）: 原始英文」，同一失败双通道两副
+ *  面孔。两通道同查本表；detail（原始英文）由回调通道句尾拼接，帧通道不拼。 */
+export const START_FAIL_LABEL: Partial<Record<TerminalCode, string>> = {
+  'host-not-found-retry': '本机组件连接闪断——通常已自动恢复，请重试',
+  'no-tab': '没有可总结的页面（先在普通网页上点扩展图标）',
+  'unsupported-page': '浏览器内置页面无法提取（chrome:// 等）',
+  'pdf-page': 'PDF 页面暂不支持总结——转存为 HTML 页面，或复制正文粘贴为附件后直接追问',
+  'inject-failed': '扩展文件加载失败（content.js 缺失——多为更新或加载不完整）——请在 chrome://extensions 刷新 PageDive 后重试',
+  'tab-closed': '刚看的页面已关闭——在要总结的页面上重试',
+  'page-not-ready': '页面尚未就绪（或正在显示错误页）——刷新页面后重试',
+  'extract-crash': '页面脚本冲突导致提取失败——可重试，或粘贴正文作为附件直接追问',
+  'no-permission': '本页尚未授权提取（换页后授权失效）——点工具栏上的 PageDive 图标后重试，或开启「始终允许」一劳永逸',
+  'empty-content': '页面没有可提取的正文——等页面加载完成（或滚动到底部触发懒加载）后重试；也可粘贴正文作为附件直接追问',
+  cancelled: '已取消',
+  'empty-instruction': '请输入要追问的内容（或直接点「新对话」重新总结本页）',
+  'session-lost': '会话已失效（扩展服务重启）——直接重新发送即可（将开始全新总结）',
+  'frame-too-large': '内容过长（输入 + 附件超出单帧 1MB 上限）——精简附件或缩短输入后重试',
+}
+
 /** r71（r70 product C9/L3）：终局「页面未送达 CLI」code 集——tips 分流依据。
  *  timeout/parse/is_error/ext-restarted 等已送达（正文已过 stdin）的生成阶段失败
  *  不在集内；cancelled 走独立「已停止」态也不在集内。r72（r71 code C6）收编
