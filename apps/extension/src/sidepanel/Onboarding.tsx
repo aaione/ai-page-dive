@@ -197,7 +197,7 @@ export function Onboarding() {
             <code style={{ whiteSpace: 'pre-line' }}>{npmCmd}</code>。
           </p>
           <p>
-            <code>E404</code> / 版本不存在 → 该版本可能尚未发布到 npm（刚发版有窗口期）——稍等几分钟重试，或到 GitHub releases 确认。
+            <code>E404</code> / 版本不存在 → 该版本尚未发布到 npm（扩展刚更新、本机组件还没跟上）——到 GitHub Issues 反馈或等发版后重试，勿手改装其他版本（跨版本消息协议可能不匹配）。
           </p>
           <p>
             <code>EACCES</code> / 权限错误 → 改用 nvm/Homebrew 的 Node 重装（免 sudo；
