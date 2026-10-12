@@ -11,7 +11,20 @@
 
 ## [0.1.4] - 2026-10-12
 
-r59 起至 r75 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
+r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
+
+### Fixed（r76 批）
+
+- sw.test.ts r74 两用例假网换真网（r75 code high#1：r74「补齐三条 high 测试缺口」实补两条半，sw 两用例经双重变异实证红条件虚假）：用例 1 补 onClicked 置位 target（还原「锚 tab 关 → 跳 target」竞态时序）；用例 2 重写为 `resolveContentTab(null, target)` 级 2 直测三断言矩阵（r76-A 顺带 resolveContentTab 参数化纯函数化——「anchor=null 且 target 有值」在消息路径只剩 onClicked 与 restoreSession 之间的冷启动竞态窗口，事件造态必踩时序赌注）
+- host persist 零产出守卫单点 + is_error 正文入册（r75 code medium#2）：守卫 `!accText && !attachFiles.length && !errorText` 不落盘（空体文件污染历史列表；timeout/finish/运行期 error 调用点同守）；is_error 轮传 `errorText`（≤4000 字符）豁免守卫留排障痕迹——正文以 `> ⚠️` 前缀入册、resume 分支条件与首轮 body 同步收窄（r76-B）
+- 运行期 error 拆码 `runtime-error`（r75 code medium#3）：spawn.ts 以 `child.pid == null` 判 spawn 窗口与运行期崩溃（resolve 在 IIFE 同步段无条件执行，ENOENT 的 reject 恒 no-op——pid 是现成窗口区分零新变量）；task.ts error handler 接 err 参数透传真实诊断；onError 签名补码（vitest 走 esbuild 无类型检查全测绿漏网，`pnpm build` tsc 首跑即红——r76-G 验证链前置抓获）；shared `TerminalCode` 24 → 25 项；panel 文案「CLI 运行中异常退出」不入未送达族（正文已过 stdin，tips 不误标「分享未成功」）（r76-C）
+- host-disconnected 三路径三戳统一（r75 code medium#4）：App 断连路径改 `stampTerminal('host-disconnected')` 同值（原实时路径零三戳、收尾路径硬编码 undelivered:true 相异）；terminal.ts 注释点名不收编 UNDELIVERED_CODES（r76-D；App 零直测无独立变异网，挂账）
+- 启动前失败族 14 键文案单一事实源 + 双通道去重（r75 product high#3）：`START_FAIL_LABEL` 从 App.tsx 内联拆进 terminal.ts（帧/回调双通道同查，首跑授权失败不再「未知错误（码 no-permission）: 裸英文」）；SW 启动前失败族四 return 补 taskId——帧已渲染并 push finished 台账，return 后迟到回调被 finished 守卫拦下不再叠双气泡（r76-E）
+- 版本横幅 E404 出路口径对齐 + README 排障补 E404（r75 product low + high#4）：sw.ts outdated/upgrade 两横幅尾注抽 `E404_HINT` 单源——Issues 反馈出路 + 勿手改装其他版本（跨版本协议不匹配比 E404 更难排查），对齐 install.sh/Onboarding 口径（原「稍后几分钟重试」）；README 自查①步补同口径括注；CWS zip 以 r76 构建重打包（原 zip 为 10-08 陈旧构建、缺 r72-r75 修复，按文件名信任直传即向商店分发残缺物），`package-cws --check-only` 双绿（r76-F）
+
+### Added（r76 批）
+
+- 251 → 254 用例：task.test.ts 零产出 is_error 轮落盘豁免用例；terminal.test.ts runtime-error 三戳用例 + `START_FAIL_LABEL` 14 键全集用例（删键即红）；sw.test.ts r74 两用例修活与 r56#4 用例补 taskId 断言为存量改造（计数不变）
 
 ### Docs（r75 批——双终审报告入库）
 
