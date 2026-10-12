@@ -9,9 +9,25 @@
 
 （暂无——0.1.4 未发布，r59 起全部批次已并入下方 0.1.4 段；r73 product C8 二次归位）
 
-## [0.1.4] - 2026-10-11
+## [0.1.4] - 2026-10-12
 
-r59 起至 r73 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
+r59 起至 r74 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
+
+### Fixed（r74 批）
+
+- host 历史路径生成收敛进 `persist`（r73 code high#1 的用例钉出 r72 C8 修复自身缺陷）：child 运行期 error 终局此前不生成 `historyPath` 就调 `persist`——`saveHistory('')` 必败（`ENOENT open ''`），有产出轮静默丢失落盘；四处终局调用点的重复 `||=` 生成一并收敛进 persist 非 resume 分支（追问轮 append 语义不变；host 行数 2199 → 2192）
+- App.tsx 终局三戳收敛 `terminal.ts`（r73 code high#2 + low#8）：过期帧/实时帧/missedErrBubble 三处内联判定拆为 `stampTerminal()`（cancelled / undelivered / cliFault 三戳，对齐 missed 版三排除——零行为变化）；`UNDELIVERED_CODES` 收编 `host-shutting-down`（收割窗拒收 = 正文从未过 stdin，tips 分流「分享未成功」）；`ERROR_LABEL` 键域改 `Partial<Record<TerminalCode, string>>` 与闭集编译期互锁（App.tsx 1159 → 1137 行）
+- install.sh E404 出路去跨代漂移（r73 product medium#3）：去掉「`npm view` 查最新版改装」指引——新旧版本间消息协议可能不匹配；改为到 Issues 反馈、发版后重跑本命令（URL 单独成行可复制）
+- Onboarding FAQ E404 死源改活（r73 product medium#4）：指向 GitHub Issues 而非零 release 的 releases 页，补跨版本协议不匹配警告
+
+### Added（r74 批）
+
+- 239 → 251 用例：task.test.ts 运行期 error 分支贯通用例（fake CLI 先吐帧后 error——标记文件轮询钉进 50ms 攒批窗内的时序：尾段靠 `flushDelta` 冲出 + 历史落 `status: interrupted` + spawn 即败零产出轮不落盘）；`terminal.test.ts` 9 直测（`UNDELIVERED_CODES` 生产逻辑首次被测试执行：三戳谱全覆盖 + `host-shutting-down` 收编钉 + 已送达/未送达族采样 + `ERROR_LABEL` 键域）；sw.test.ts `resolveContentTab` 落级链两用例（有锚但锚 tab 已关 → 跳 target 单例落级 3 活跃页 / 无锚 → target 单例兜底语义保持）
+- shared 导出 `TerminalCode` 终局码闭集（24 项 union）：`TaskErrorMsg.code` 8 键 ∪ SW 盖戳 3 键（host-disconnected / ext-restarted / session-lost）∪ SW onStartResult 未送达族 13 键；协议帧 `code` 保持 `string`——跨进程边界诚实，闭集外迟到新码仍落 panel 兜底「未知错误」
+
+### Changed（r74 批）
+
+- `package-cws.mjs` manifest 一致性改双侧键集并集全量深比较（r73 product medium#6）：原六键枚举漏了 background / side_panel / action 等——新键自动纳入零维护（实测 dist / public 键集恒同 13 键，构建原样拷贝不注入键）
 
 ### Docs（r73 批——双终审报告入库）
 
