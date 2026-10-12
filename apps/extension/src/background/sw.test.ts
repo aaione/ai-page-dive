@@ -186,7 +186,7 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
   }
 
   vi.resetModules()
-  await import('./sw.js')
+  const sw = await import('./sw.js')
 
   // 放开延迟并解决所有挂起的 storage.get，让被测逻辑走完宏任务
   const flush = async () => {
@@ -201,6 +201,8 @@ async function boot(opts: { seed?: Record<string, any>; seedLocal?: Record<strin
   return {
     chrome,
     calls,
+    /** r76：sw 模块引用——resolveContentTab 纯函数直测（见 :781 段用例） */
+    sw,
     local: localStore,
     /** r69：tabs.get/query(windowId) 的可写 tab 台账——异窗锚/内容源用例注入页签 */
     tabs: tabsDb,
@@ -781,27 +783,36 @@ describe('sw.ts 回归网', () => {
   // r74（r73 code medium#3）：c216c9d 修的中间级此前零回归网——有帧锚但锚 tab 已关
   //（tabs.get 失败）时必须跳过 target 单例兜底直落级 3 活跃页：target 可能是别窗
   // 面板 action 点击的 tab（跨窗静默错页）。守卫改回无条件回退（!tab 即读 target）
-  // 则提取落在单例 22，邮戳 22 ≠ 活跃页 11 即红
+  // 则提取落在单例 22，邮戳 22 ≠ 活跃页 11 即红。
+  // r76（r75 code high#1）：target 是纯内存单例（seed 只恢复锚态不设单例）——r74 版
+  // 未置位 target，守卫两侧单例均空行为等价，双变异实证不红。补 action 点击把 target
+  // 钉在 22（:304 同步赋值，tabsDb 同步注入供 get 命中）才有「守卫弱化 → 22」的对照
   it('r74：有锚但锚 tab 已关 → 跳 target 单例、落级 3 活跃页（跨窗错页防线）', async () => {
-    // 锚 31 不注入 tabsDb = tabs.get(31) 失败（tab 已关）；seed 单例 22（别窗）
+    // 锚 31 不注入 tabsDb = tabs.get(31) 失败（tab 已关）；单例 22 = 别窗点击遗留
     const h = await boot({ seed: { panelTabId: 22, panelWindowId: 2 } })
+    h.tabs.set(22, { id: 22, windowId: 2, active: true, url: 'https://x/b22', title: 'B22' })
+    h.events.onClicked({ id: 22, windowId: 2, url: 'https://x/b22', title: 'B22' })
+    await h.flush()
     const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick', anchorTabId: 31 })
     expect(r.ok).toBe(true)
     expect(h.calls.sent.find((m) => m?.t === 'task-status')).toMatchObject({ tabId: 11 })
   })
 
-  // r74：三级链级 2 有牙版——无锚时 target 单例兜底优先于活跃页（query 默认活跃页 11，
-  // 单例 22；级 2 被删直落级 3 则邮戳 11 即红）。:785 用例 queryTab=22 与单例同值无鉴别力。
-  // target 单例只有 action 点击（:304 同步赋值）/onUpdated/冷启动活跃页回填才设置——
-  // seed 仅恢复锚态，须先模拟图标点击把 target 钉在 22（tabsDb 同步注入供 get 命中）
-  it('r74：无锚 → target 单例兜底（级 2 语义保持）——优先于活跃页', async () => {
-    const h = await boot({ seed: { panelTabId: 22, panelWindowId: 2 } })
-    h.tabs.set(22, { id: 22, windowId: 2, active: true, url: 'https://x/b22', title: 'B22' })
-    h.events.onClicked({ id: 22, windowId: 2, url: 'https://x/b22', title: 'B22' })
-    await h.flush()
-    const r = await h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
-    expect(r.ok).toBe(true)
-    expect(h.calls.sent.find((m) => m?.t === 'task-status')).toMatchObject({ tabId: 22 })
+  // r76（r75 code high#1）：级 2 直测——消息路径上「anchor=null 且 target 有值」不可
+  // 稳定构造（target 三赋值点 onClicked/:315、活跃页回填 :471 均伴随 panelTabId 写入，
+  // r74 版被 readAnchor 折算成 anchor=panelTabId 走级 1，级 2 在该路径根本不可达），
+  // 唯一窗口是 onClicked 同步段与 restoreSession 完成之间的冷启动竞态——事件造态必踩
+  // 时序赌注，故 resolveContentTab 参数化后按矩阵直测（r75 修法 B）。query 默认活跃页
+  // 11、单例 22：级 2 在位得 22，级 2 被删（anchor===null 直落 query）得 11 即红
+  it('r76：级 2 语义——anchor=null 时 target 单例兜底优先于活跃页', async () => {
+    const t22 = { id: 22, windowId: 2, active: true, url: 'https://x/b22', title: 'B22' } as any
+    const h = await boot({})
+    h.tabs.set(22, t22)
+    expect((await h.sw.resolveContentTab(null, t22))?.id).toBe(22)
+    // 对照（守卫语义纯函数面）：有锚但锚 tab 已关 → 单例不兜底，落活跃页 11
+    expect((await h.sw.resolveContentTab(31, t22))?.id).toBe(11)
+    // 对照（无单例）：anchor=null 且无 target → 活跃页
+    expect((await h.sw.resolveContentTab(null, null))?.id).toBe(11)
   })
 
   // r69（r68 code#3）：误杀向鉴别力——query 默认活跃页恒返 11 时，seed 单例 22 的

@@ -1002,12 +1002,14 @@ function pageMeta(): { title: string; url: string; favIconUrl?: string; approxTo
  *  从权沿用旧链）。r70 code#1：链尾 query 原裸奔无 catch（同族 :268/:446/:462 均
  *  设防）——rejection 冒泡成无分型裸错串且旧任务已被入口收割；对齐设防，异常归
  *  no-tab 终态 */
-async function resolveContentTab(anchor: number | null): Promise<chrome.tabs.Tab | null> {
+export async function resolveContentTab(anchor: number | null, targetTab: chrome.tabs.Tab | null): Promise<chrome.tabs.Tab | null> {
   let tab = anchor !== null ? await chrome.tabs.get(anchor).catch(() => null) : null
   // r72（r71 code C5）：有锚但锚 tab 已关 → 跳过 target 单例兜底——target 可能是
   // 别窗面板 action 点击的 tab（跨窗静默错页）；落级 3 活跃页（「用户正看」有 r46
-  // 安全论证 + page-meta 回显纠偏）。无锚保持 target 旧单例语义
-  if (!tab && anchor === null) tab = target?.id ? await chrome.tabs.get(target.id).catch(() => null) : null
+  // 安全论证 + page-meta 回显纠偏）。无锚保持 target 旧单例语义。
+  // r76（r75 code high#1）：target 参数化——「anchor=null 且 target 有值」在消息路径
+  // 只有冷启动竞态窗口可达（三赋值点均伴随 panelTabId 写入），级 2 回归网靠直测矩阵
+  if (!tab && anchor === null) tab = targetTab?.id ? await chrome.tabs.get(targetTab.id).catch(() => null) : null
   if (!tab) {
     const [active] = await chrome.tabs
       .query({ active: true, lastFocusedWindow: true })
@@ -1047,7 +1049,7 @@ async function startSummarize(o: StartSummarizeOpts) {
   // r69（r68 code#2）：内容源与帧锚同源——target 单例被后开面板的 action 点击
   // 覆盖后，A 窗锚的总结会提取 B 窗页面（错页总结 + currentTask.tabId 与帧锚
   // 错位的双向会话错乱）。r71：三级链抽 resolveContentTab
-  const tab = await resolveContentTab(anchor)
+  const tab = await resolveContentTab(anchor, target)
   if (!tab?.id) return { error: 'no-tab' }
   // chrome:// 等受限页面无法注入（file/view-source/data 同样不可注入，
   // 归入 unsupported 而非误导用户的 no-permission）
