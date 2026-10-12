@@ -57,6 +57,8 @@ console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text
 console.log(JSON.stringify({type:'result',is_error:false,result:'完成',usage:{input_tokens:1,output_tokens:2}}))`,
     is_error: `console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'部分'}]}}))
 console.log(JSON.stringify({type:'result',is_error:true,result:'认证失败'}))`,
+    // r76（r75 code medium#2）：CLI 未登录即败形态——零 delta 直接 is_error
+    'is_error-empty': `console.log(JSON.stringify({type:'result',is_error:true,result:'未登录'}))`,
     slow: `setTimeout(() => console.log(JSON.stringify({type:'result',is_error:false,result:'完成'})), 60_000)`,
     // r7-blocker 回归：exit≠0 的两种形态（无 result 崩溃 / result 成功交付后异常退出）
     crash: `console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'半截'}]}}))
@@ -404,8 +406,39 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'完成',usage:{
     expect(cbs.done?.isError).toBe(true)
     expect(cbs.done?.errorText).toBe('认证失败')
     expect(cbs.errors).toEqual([])
+    // r76（r75 code medium#2）：有产出 is_error 轮错误文案入册 body 首段（正文在后）
+    const raw = await readFile(cbs.done.historyPath, 'utf8')
+    expect(raw).toContain('status: error')
+    expect(raw).toContain('> ⚠️ 认证失败')
+    expect(raw).toContain('部分')
     await rm(cbs.done.historyPath, { force: true }).catch(() => {})
     await rm(join(script, '..'), { recursive: true, force: true })
+  }, 30_000)
+
+  // r76（r75 code medium#2）：零产出 is_error 轮（未登录即败形态）——错误文案仍入册。
+  // persist 零产出守卫若无 errorText 豁免（守卫改 !accText && !attachFiles.length），
+  // 此轮不落盘、readFile ENOENT 即红
+  it('is_error 零产出轮：错误文案入册 body 首段（守卫 errorText 豁免）', async () => {
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const script = await FAKE_CLI('is_error-empty')
+    AGENTS[0].bin = 'node'
+    const orig = AGENTS[0].buildArgs
+    AGENTS[0].buildArgs = () => [script]
+    try {
+      const { task: mk, cbs } = makeCbs(); const task = mk()
+      task.start({ taskId: 't2e', agentId: 'claude', workflow: 'quick', page: PAGE as any })
+      task.appendContent(BODY, true)
+      await task.run()
+      await new Promise((r) => setTimeout(r, 300))
+      expect(cbs.done?.isError).toBe(true)
+      expect(cbs.chunks).toEqual([]) // 钉死零产出前提
+      const raw = await readFile(cbs.done.historyPath, 'utf8')
+      expect(raw).toContain('status: error')
+      expect(raw).toContain('> ⚠️ 未登录')
+    } finally {
+      AGENTS[0].buildArgs = orig
+      await rm(join(script, '..'), { recursive: true, force: true })
+    }
   }, 30_000)
 
   it('spawn 窗口内取消：发 onError(cancelled) 恰一次（无终局帧 = panel 锁死 + 任务泄漏）', async () => {
@@ -908,6 +941,11 @@ console.log(JSON.stringify({type:'result',is_error:false,result:'ok',usage:{}}))
       await tick(); await tick() // 二次推进不再补发（timeoutSent 前置）
       expect(cbs.errors.filter(([c]) => c === 'timeout')).toHaveLength(1)
       expect(cbs.done).toBeNull()
+      // r76（r75 code medium#2）：零产出 timeout 轮不落盘——空体文件只含 frontmatter
+      // 污染历史列表（persist 零产出守卫删除则此处必红）。fake timers 下用 setImmediate
+      // 转真事件循环等 persist 的 void 异步链走完
+      for (let i = 0; i < 50; i++) await new Promise((r) => setImmediate(r))
+      expect(await readdir(join(fakeHome, '.ai-page-dive', 'history')).catch(() => [])).toEqual([])
       AGENTS[0].buildArgs = orig
       await rm(join(script, '..'), { recursive: true, force: true })
     } finally {

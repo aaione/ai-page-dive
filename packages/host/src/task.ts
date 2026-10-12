@@ -322,10 +322,10 @@ export class Task {
           // r47-audit M5：先 reap 再删 cwd（对齐 cancelled 序，防删运行中进程的工作目录）
           this.proc?.reap()
           this.cleanupCwd(contentFile)
-          // r72（r71 code C8）：对称补齐 flush+persist——漏发则运行期错误轮输出凭空
-          // 消失；零产出轮（spawn 即败）不落盘，与 spawn-fail 路径同谱（空历史污染列表）
+          // r72 C8：对称补齐 flush+persist（漏发则错误轮输出凭空消失）；零产出守卫
+          // r76 收敛进 persist 单点（与 spawn-fail 同谱：空历史污染列表）
           this.flushDelta()
-          if (this.accText) void this.persist('interrupted')
+          void this.persist('interrupted')
           resolve()
           // r58（#2）：真实错误信息（如 spawn claude ENOENT）直达诊断——泛化文案看不出 CLI 缺失
           this.cb.onError('spawn-fail', this.spawnErr ? String(this.spawnErr.message ?? this.spawnErr) : 'child runtime error')
@@ -366,8 +366,9 @@ export class Task {
           clearTimeout(this.timeoutTimer)
           this.proc?.reap()
           this.cleanupCwd(contentFile) // 不经过 finish()：isError 路径自回收 cwd（r4-impl）
-          // 落盘完成再发终局：host 若在 persist 期间断连退出，错误轮历史不再丢失
-          await this.persist('error')
+          // 落盘完成再发终局：host 若在 persist 期间断连退出，错误轮历史不再丢失。
+          // r76：错误文案入册 body 首段（此前只进面板帧，面板错过即历史零痕迹）
+          await this.persist('error', ev.text.slice(0, 4000))
           this.flushDelta() // isError 不经 finish()：终局前发完缓冲尾巴
           // errorText 截 4000：r46（review C9）——无上限直接进帧会在 >1MB 时 encodeFrame
           // throw、终局帧被静默丢弃、面板永久 running；诊断用途下 4000 字符绰绰有余
@@ -480,13 +481,17 @@ export class Task {
     return this.input.historyPath || (this.persistOk ? this.historyPath : '')
   }
 
-  private async persist(status: 'done' | 'interrupted' | 'error'): Promise<void> {
+  private async persist(status: 'done' | 'interrupted' | 'error', errorText = ''): Promise<void> {
     if (!this.input) return
+    // r76（r75 code medium#2）：零产出守卫单点——空正文无附件无错误文案不落盘
+    // （空体文件污染历史列表；timeout/finish/:328 调用点同守）。is_error 传
+    // errorText 例外：零产出失败轮也留排障痕迹
+    if (!this.accText && !this.attachFiles.length && !errorText) return
     const logFail = (e: unknown) =>
       console.error(`[ai-page-dive] history persist failed (${this.effectiveHistoryPath}):`, e instanceof Error ? e.message : e)
     // 追问轮：user + assistant append 到首轮历史文件（多轮对话完整记录）
     if (this.input.resumeSessionId) {
-      if (this.input.historyPath && this.accText) {
+      if (this.input.historyPath && (this.accText || errorText)) {
         await appendHistoryTurn(this.input.historyPath, {
           // r8-ux：纯附件追问轮兜底——空 user 段落盘后恢复会话时该轮凭空消失；
           // r12：附件以 [Image #N] 标记行落盘（恢复会话可还原带过哪些附件）
@@ -496,7 +501,7 @@ export class Task {
               (this.input.attachments?.length
                 ? `（附件：${this.input.attachments.map((a) => a.name).join('、')}）`
                 : '')),
-          assistant: this.accText,
+          assistant: this.accText + (errorText ? `\n\n> ⚠️ ${errorText}` : ''),
         }).catch(logFail)
       }
       return
@@ -524,6 +529,7 @@ export class Task {
       // r12：首轮带附件时以 pd:user 段先行落标记（恢复会话时附件轮次可还原）。r33-sec：accText
       // 转义同 appendHistoryTurn；r54（#6）：附件标记行同样过 escapePd——APFS 文件名可含 pd 标记
       // 字样，两路转义口径对称，防恢复会话时轮边界被附件名伪造
+      (errorText ? `> ⚠️ ${escapePd(errorText)}\n\n` : '') +
       (this.attachFiles.length ? `<!-- pd:user -->\n${escapePd(attachMarkers(this.attachFiles))}\n` : '') + escapePd(this.accText),
     )
       .then((actual) => { // 冲突重试换了文件名：终局回传实际路径；成功才置 persistOk
