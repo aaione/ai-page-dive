@@ -42,15 +42,16 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
         env: { ...cliEnv(), NO_COLOR: '1' },
       })
 
-      // ENOENT 等只走 'error' 事件，exit 不触发——必须监听，否则上层永久挂起
+      // ENOENT 等只走 'error' 事件，exit 不触发——必须监听。r76（r75 medium#3）：
+      // pid 判 spawn 窗口（undefined=从未起进程）与运行期崩溃——后者不写 spawnErr，
+      // task.ts 据此拆 runtime-error 码（不再复用 spawn-fail 误导重装方向）
       child.on('error', (err) => {
-        opts.onSpawnError?.(err)
-        reject(err)
+        if (child.pid == null) { opts.onSpawnError?.(err); reject(err) }
       })
       // stdin 异步 EPIPE（r5-impl：大 prompt 塞管道 + CLI 快速退出——未登录/resume 失效会话）：写 stdin 的同步 try/catch 捕不到异步 error 事件，
       // 无监听则 uncaughtException 崩掉整个 host（连带杀死同 host 在途任务）。空监听吞掉——CLI 死亡由 exit 路径收割
       child.stdin!.on('error', () => {})
-      // r8-host：删除 deferStdin/writeStdin 死代码（无调用方；opencode 的 cwd 需求已由 makeAgentCwd + cwd 选项解决），spawn 后直接写 prompt
+      // r8-host：deferStdin/writeStdin 死代码已删——spawn 后直接写 prompt
       try {
         child.stdin!.write(opts.stdinData)
         child.stdin!.end()
@@ -60,8 +61,7 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
       child.stdout!.setEncoding('utf8')
       child.stdout!.on('data', (d: string) => {
         pending += d
-        // r8-host：病态单行超长输出上界——JSON 行正常 <1MB（claude result 行含全文
-        // 亦只数百 KB），超 8MB 判 CLI 已疯，丢缓冲防 host 峰值内存被拉爆
+        // r8-host：病态单行 >8MB（JSON 行正常 <1MB）判 CLI 已疯，丢缓冲防内存拉爆
         if (pending.length > 8 * 1024 * 1024) {
           console.error('[ai-page-dive] stdout single line >8MB, dropping buffer')
           pending = ''
@@ -74,8 +74,7 @@ export function spawnCli(opts: SpawnOpts & { cwd?: string }): Promise<SpawnedPro
           pending = pending.slice(i + 1)
           if (line.trim()) opts.onStdoutLine(line)
         }
-        // NM 出口背压：出口积压 >4MB 说明对端消费不动，停读 CLI stdout 让内核管道
-        // 顶住上游，drain 排空即恢复——否则 write 缓冲在 host 内存无界涨（r47 C8）
+        // NM 出口背压（r47 C8）：出口积压 >4MB 停读 stdout，drain 恢复——防无界涨
         const nmOut = process.stdout
         if (!child.stdout!.isPaused() && nmOut.writableLength > 4 * 1024 * 1024) {
           child.stdout!.pause()

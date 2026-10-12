@@ -629,7 +629,7 @@ setTimeout(() => {}, 60_000) // 挂住进程：不发 result，等 error 事件
       ;(task as any).proc.child.emit('error', new Error('runtime probe EACCES'))
       await runP
       expect(cbs.errors.length).toBe(1)
-      expect(cbs.errors[0][0]).toBe('spawn-fail') // 运行期兜底码（:337），真实诊断直达
+      expect(cbs.errors[0][0]).toBe('runtime-error') // r76 拆码：spawn 已成功，不再复用 spawn-fail 误导重装方向
       expect(cbs.errors[0][1]).toContain('runtime probe')
       // 冲流双片：第一片正常攒批；第二片靠 error 分支 flushDelta（r72 修前凭空消失）
       expect(cbs.chunks.map((c) => c[0])).toEqual(['前段', '后段'])

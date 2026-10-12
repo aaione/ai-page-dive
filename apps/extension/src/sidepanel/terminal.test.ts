@@ -34,6 +34,10 @@ describe('stampTerminal 终局三戳', () => {
     }
   })
 
+  it('r76 拆码 runtime-error：spawn 已成功——已送达失败族，非 spawn-fail 的未送达谱系', () => {
+    expect(stampTerminal('runtime-error')).toEqual({ cancelled: false, undelivered: false, cliFault: true })
+  })
+
   it('ext-restarted：扩展自身重启，非 CLI 锅', () => {
     expect(stampTerminal('ext-restarted')).toEqual({ cancelled: false, undelivered: false, cliFault: false })
   })
@@ -48,6 +52,7 @@ describe('ERROR_LABEL 键域（Partial：未送达族走各自专属展示，不
   it('终局码有文案；未送达族不在表（走 onStartResult 专属文案/兜底）', () => {
     expect(ERROR_LABEL.timeout).toContain('任务超时')
     expect(ERROR_LABEL['host-disconnected']).toContain('连接中断')
+    expect(ERROR_LABEL['runtime-error']).toContain('运行中异常退出')
     expect(ERROR_LABEL['no-tab']).toBeUndefined()
     expect(ERROR_LABEL['extract-crash']).toBeUndefined()
   })

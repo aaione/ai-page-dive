@@ -249,12 +249,12 @@ export interface TaskDoneMsg {
 
 /** r74（r73 code#6/low）：终局 code 闭集——panel 侧 UNDELIVERED_CODES/ERROR_LABEL
  *  两张手维护表（sidepanel/terminal.ts）以其为键类型编译期互锁：键写错或集合成员
- *  不在闭集即编译红。谱系 = 下方 TaskErrorMsg.code 8 键 ∪ SW 盖戳/合成码
+ *  不在闭集即编译红。谱系 = 下方 TaskErrorMsg.code 9 键 ∪ SW 盖戳/合成码
  *  （host-disconnected/ext-restarted/session-lost）∪ SW onStartResult 未送达族
  *  13 键。协议帧 code 字段保持 string——跨进程边界运行时即 string，闭集外的
  *  迟到新码仍落 panel 兜底「未知错误」，不在编译期假装穷尽。 */
 export type TerminalCode =
-  | 'spawn-fail' | 'timeout' | 'cancelled' | 'parse' | 'no-agent' | 'bad-request'
+  | 'spawn-fail' | 'runtime-error' | 'timeout' | 'cancelled' | 'parse' | 'no-agent' | 'bad-request'
   | 'content-mismatch' | 'host-shutting-down' | 'host-disconnected' | 'ext-restarted'
   | 'session-lost'
   | 'no-tab' | 'unsupported-page' | 'pdf-page' | 'inject-failed' | 'tab-closed'
@@ -264,7 +264,7 @@ export type TerminalCode =
 export interface TaskErrorMsg {
   t: 'task-error'
   taskId: string
-  code: 'spawn-fail' | 'timeout' | 'cancelled' | 'parse' | 'no-agent' | 'bad-request' | 'content-mismatch' | 'host-shutting-down'
+  code: 'spawn-fail' | 'runtime-error' | 'timeout' | 'cancelled' | 'parse' | 'no-agent' | 'bad-request' | 'content-mismatch' | 'host-shutting-down'
   message: string
 }
 

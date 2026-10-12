@@ -315,7 +315,7 @@ export class Task {
       })
       // spawn 成功后的运行期错误（罕见）：兜底收割。r46 C7：与其余终局对称——timer
       // 清理与 cwd 回收防 mkdtemp 临时目录泄漏（cwd 泄漏是真损失）
-      this.proc!.child.on('error', () => {
+      this.proc!.child.on('error', (err) => {
         if (!this.finished) {
           this.finished = true
           clearTimeout(this.timeoutTimer)
@@ -327,8 +327,9 @@ export class Task {
           this.flushDelta()
           void this.persist('interrupted')
           resolve()
-          // r58（#2）：真实错误信息（如 spawn claude ENOENT）直达诊断——泛化文案看不出 CLI 缺失
-          this.cb.onError('spawn-fail', this.spawnErr ? String(this.spawnErr.message ?? this.spawnErr) : 'child runtime error')
+          // r58（#2）：真实错误直达诊断（如 ENOENT）。r76（r75 medium#3）：运行期崩溃
+          // 拆 'runtime-error' 码——spawn 已成功，复用 spawn-fail 会把用户引向重装错向
+          this.cb.onError(this.spawnErr ? 'spawn-fail' : 'runtime-error', String((this.spawnErr ?? err) instanceof Error ? (this.spawnErr ?? err).message : (this.spawnErr ?? err)))
         }
       })
     })

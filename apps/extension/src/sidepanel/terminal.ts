@@ -6,6 +6,9 @@ import type { TerminalCode } from '@ai-page-dive/shared'
 
 export const ERROR_LABEL: Partial<Record<TerminalCode, string>> = {
   'spawn-fail': 'CLI 启动失败——终端跑一次 which claude / which codex 确认已安装，或用官方安装器重装后重试',
+  // r76（r75 code medium#3）：运行期崩溃拆码——spawn 已成功、正文已过 stdin，
+  // 不入 UNDELIVERED_CODES（已送达的生成阶段失败），tips 不再误标「分享未成功」
+  'runtime-error': 'CLI 运行中异常退出——本次总结未完成，请重试',
   // r52（review #16）：完整用户向文案——host 原始英文 "task exceeded 10min" 不再
   // 拼进气泡（task-error 分支的 timeout 专用处理 + console.debug 维护者通道）
   timeout: '任务超时（上限 10 分钟）——你的问题已放回输入框（未覆盖已有草稿），可直接重发',
