@@ -42,7 +42,7 @@ export interface TaskCallbacks {
     sessionId?: string
     unrecognized?: number
   }) => void
-  onError: (code: 'spawn-fail' | 'timeout' | 'cancelled' | 'parse' | 'no-agent', message: string) => void
+  onError: (code: 'spawn-fail' | 'runtime-error' | 'timeout' | 'cancelled' | 'parse' | 'no-agent', message: string) => void
   /** r57（#24）：prune 实删了超限旧历史（removed>0）——触达 panel 的唯一信号 */
   onPruned?: (removed: number, limit: number) => void
 }
