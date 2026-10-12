@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AgentStatus, HistoryItem, HostToExt, PanelMsg, PanelReadyResp, PanelToSw, WorkflowItem } from '@ai-page-dive/shared'
+import type { AgentStatus, HistoryItem, HostToExt, PanelMsg, PanelReadyResp, PanelToSw, TerminalCode, WorkflowItem } from '@ai-page-dive/shared'
 import { useDialogFocus } from './a11y.js'
 import { parseHistoryTurns } from './historyTurns.js'
 import { useExitValue } from './motion.js'
@@ -7,6 +7,7 @@ import { Onboarding } from './Onboarding.js'
 import { SummarizeView, useDisabledClis } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
 import { Settings } from './Settings.js'
+import { ERROR_LABEL, stampTerminal } from './terminal.js'
 
 type Overlay = null | 'history' | 'settings'
 
@@ -632,6 +633,9 @@ export function App() {
             if (foreignAdopt(m, s)) return s
             // 过期帧（绑定的是别的任务）：不劫持新一轮状态，仅收尾还在 streaming 的气泡
             if (s.taskId !== null && s.taskId !== m.taskId) {
+              // r74（r73 code low#8）：三戳单一事实源——此处只取 cancelled/undelivered，
+              // 不引入 cliFault 新字段（过期帧收尾气泡此前无此前缀，保持）
+              const st = stampTerminal(m.code)
               return {
                 ...s,
                 messages: s.messages.map((msg) =>
@@ -639,7 +643,7 @@ export function App() {
                   // 播「本轮已取消」，漏设会把取消播成「本轮已结束」。
                   // r71（r70 product L4）：error 不再硬编码「已取消」——过期帧可能是
                   // timeout 等非取消终局，照码分流；undelivered 同步（tips 分流依据）
-                  msg.streaming ? { ...msg, streaming: false, error: m.code === 'cancelled' ? '已取消' : ERROR_LABEL[m.code ?? ''] ?? '本轮已结束', isError: true, cancelled: m.code === 'cancelled', undelivered: UNDELIVERED_CODES.has(m.code ?? '') } : msg,
+                  msg.streaming ? { ...msg, streaming: false, error: m.code === 'cancelled' ? '已取消' : ERROR_LABEL[m.code ?? ''] ?? '本轮已结束', isError: true, cancelled: st.cancelled, undelivered: st.undelivered } : msg,
                 ),
               }
             }
@@ -680,9 +684,10 @@ export function App() {
                           ? m.message
                           : `${ERROR_LABEL[m.code] ?? `未知错误（码 ${m.code}）`}: ${authHint(m.message)}`,
                     isError: true,
-                    cliFault: m.code !== 'cancelled' && m.code !== 'content-mismatch',
-                    cancelled: m.code === 'cancelled',
-                    undelivered: UNDELIVERED_CODES.has(m.code ?? ''),
+                    // r74（r73 code low#8）：三戳收敛 stampTerminal——统一 missed 版
+                    // 三排除（多排 ext-restarted，实时不可达：SW 冷启动孤儿指针折算
+                    // 必走 missed 路径），零行为变化
+                    ...stampTerminal(m.code),
                   }
                 : msg,
             )
@@ -846,8 +851,11 @@ export function App() {
           ...(resp.error === 'session-lost' ? { resumable: false } : {}),
           messages: [
             ...s.messages.filter((x) => !(x.streaming && !x.text)),
-            { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true, cancelled: resp.error === 'cancelled',
-              undelivered: resp.error !== 'cancelled' && UNDELIVERED_CODES.has(resp.error ?? ''),
+            { id: `e${Date.now()}`, role: 'assistant', text: '', error: msg, isError: true,
+              // r74（r73 code low#8）：三戳收敛 stampTerminal（此处只取两戳——启动前
+              // 失败无 cliFault 语义；原前置 !== 'cancelled' 冗余，cancelled 不在集）
+              cancelled: stampTerminal(resp.error).cancelled,
+              undelivered: stampTerminal(resp.error).undelivered,
               ...(resp.error === 'no-permission' ? { grantHost: true } : {}) },
           ],
         }
@@ -1085,35 +1093,6 @@ const PHASE_LABEL: Record<string, string> = {
   reading: '正在读取正文',
   thinking: '思考中…',
 }
-const ERROR_LABEL: Record<string, string> = {
-  'spawn-fail': 'CLI 启动失败——终端跑一次 which claude / which codex 确认已安装，或用官方安装器重装后重试',
-  // r52（review #16）：完整用户向文案——host 原始英文 "task exceeded 10min" 不再
-  // 拼进气泡（task-error 分支的 timeout 专用处理 + console.debug 维护者通道）
-  timeout: '任务超时（上限 10 分钟）——你的问题已放回输入框（未覆盖已有草稿），可直接重发',
-  cancelled: '已取消',
-  parse: 'CLI 输出异常',
-  'no-agent': '未知 CLI',
-  'bad-request': '请求参数不完整',
-  'content-mismatch': '正文传输不完整，已取消——请重试',
-  'host-shutting-down': '本机组件正在重启',
-  // r72（r71 code C3）：断连收件箱码（sw.ts emitTerminal code:'host-disconnected'）——
-  // 此前不在表内，missedErrBubble 兜底渲染成「未知错误（码 host-disconnected）」
-  'host-disconnected': '本机组件连接中断——请重试',
-  // r55（#10）：SW 冷启动把孤儿任务指针折算成的终局（扩展更新/重载打断在跑任务）
-  'ext-restarted': '扩展更新或重启打断了进行中的任务——请重新发起',
-}
-
-/** r71（r70 product C9/L3）：终局「页面未送达 CLI」code 集——tips 分流依据。
- *  timeout/parse/is_error/ext-restarted 等已送达（正文已过 stdin）的生成阶段失败
- *  不在集内；cancelled 走独立「已停止」态也不在集内。r72（r71 code C6）收编
- *  content-mismatch：SW 侧该终局=正文对账超时即取消（spawn 前），CLI 从未收到
- *  完整正文——是典型未送达而非已送达失败 */
-const UNDELIVERED_CODES = new Set([
-  'no-tab', 'unsupported-page', 'pdf-page', 'inject-failed', 'tab-closed', 'page-not-ready',
-  'extract-crash', 'no-permission', 'empty-content', 'frame-too-large', 'host-not-found',
-  'host-not-found-retry', 'spawn-fail', 'no-agent', 'bad-request', 'empty-instruction',
-  'session-lost', 'content-mismatch',
-])
 
 /** r56（#13）：missedTerminal 错误气泡组装（4 个还原入口共用）——按 code 分流，
  *  对齐实时 task-error 分支（:611/:613）：ext-restarted 是扩展自身重启、cancelled/
@@ -1130,14 +1109,13 @@ function missedErrBubble(mt: { taskId: string; code?: string; message?: string }
       //（"task cancelled" 等）与 label 同义，拼接成「已取消: task cancelled」双重前缀
       : mt.code === 'cancelled' ? '已取消'
       : mt.code === 'content-mismatch' ? (mt.message || '正文传输不完整，已取消——请重试')
-      : `${ERROR_LABEL[mt.code ?? ''] ?? `未知错误（码 ${mt.code ?? 'error'}）`}${mt.message ? `: ${authHint(mt.message)}` : ''}`,
+      // r74：missedTerminal.code 跨进程即 string——cast 进闭集索引，闭集外新码仍落 ?? 兜底
+      : `${ERROR_LABEL[(mt.code ?? '') as TerminalCode] ?? `未知错误（码 ${mt.code ?? 'error'}）`}${mt.message ? `: ${authHint(mt.message)}` : ''}`,
     isError: true,
     // r72（r71 code C2）：收件箱补发的取消终局同样带 cancelled——tips 五态在 missed
-    // 落点此前误落「已分享」（stopped 判据读 cancelled，与实时分支 :675 不同步）
-    cancelled: mt.code === 'cancelled',
-    cliFault: mt.code !== 'cancelled' && mt.code !== 'content-mismatch' && mt.code !== 'ext-restarted',
-    // r71（r70 product C9）：收件箱补发的错误终局同分流——tips 不把已送达失败标「分享未成功」
-    undelivered: UNDELIVERED_CODES.has(mt.code ?? ''),
+    // 落点此前误落「已分享」（stopped 判据读 cancelled，与实时分支 :675 不同步）。
+    // r74（r73 code low#8）：三戳收敛 stampTerminal（本函数即统一版语义的原型）
+    ...stampTerminal(mt.code),
   }
 }
 
