@@ -62,6 +62,11 @@ let reconcileTimer: ReturnType<typeof setTimeout> | null = null
 type Session = { agentId: string; sessionId: string; historyPath?: string; page?: { url: string; title: string } }
 const sessions = new Map<number, Session>()
 
+/** r77b（实时读取·指纹复用）：每 tab 最近一次随任务下发的快照全文（全文比对，
+ *  零碰撞讨论）。追问轮重抓后一致 → 零附件零披露（CLI 会话里上轮正文还在，再塞
+ *  一份重复快照只会撑上下文）；SW 回收后 Map 即空 → miss 照附，宁多勿旧 */
+const lastSnap = new Map<number, string>()
+
 /** 面板收起期间错过的任务终局收件箱（r53 #5 / r54 #5）——不变式规约（r57 盲区5）：
  *  ① 入箱仅 task-error 族（host 原生转发 :744 段 / SW 合成 emitTerminal——取消/
  *    断连/丢片/启动前失败族 r58 #3#4 / SW 冷启动 ext-restarted）。task-done 不入箱
@@ -376,6 +381,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   sessions.delete(tabId) // r12：页签没了，其会话归档一并清理
   disabledTabs.delete(tabId) // r13：账随 tab 消亡，防 Set 无界增长
   lastTerminals.delete(tabId) // r53（#5）：收件箱同随页签消亡，防过期终局补发到新页签会话
+  lastSnap.delete(tabId) // r77b：快照指纹同随页签消亡
   if (panelTabId === tabId) {
     // 反向清扫（r13-review）：锚已失，per-tab disable 失去语义——残余 disabled
     // tab 经 Chrome 原生侧边栏 UI 打不开面板且无自愈路径（仅图标点击才 anchor
@@ -582,7 +588,11 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
         const snap = anchor !== null ? await resyncPage(anchor) : null
         let atts = attachments ? [...attachments] : undefined
         let inst = instruction ?? ''
-        if (snap) {
+        if (snap && anchor !== null && lastSnap.get(anchor) === snap.contentMarkdown) {
+          // r77b：指纹命中——与上轮随任务下发的快照全文一致（URL 不变 ≠ 内容不变，
+          // 指纹粒度比路径严）→ 零附件零披露行，截图同跳过（页面没变）
+          sendToPanel({ t: 'page-meta', page: { title: snap.title, url: snap.url, approxTokens: snap.approxTokens, unchanged: true } })
+        } else if (snap) {
           const pack = snapshotAttachment(snap.contentMarkdown, 480 * 1024)
           if (pack) {
             // r77（成分②）：截图预算内可带则带。帧超限逐级回退：带全量 → 丢截图 →
@@ -597,6 +607,7 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
               // 「原文就此结束」）；编号 = 用户附件数 + 1（host attachSection 统一编号）
               inst = `（本轮已附当前页面最新快照，见附件 [File #${base.length + 1}]，请读取后再作答${pack.note}）\n${inst}`
               sendToPanel({ t: 'page-meta', page: { title: snap.title, url: snap.url, approxTokens: snap.approxTokens, resynced: true } })
+              lastSnap.set(anchor!, snap.contentMarkdown) // r77b：真附上了才记指纹（预算回退丢快照不记——CLI 上下文里没有）
             }
             atts = next.length ? next : undefined
           }
@@ -1228,6 +1239,7 @@ async function startSummarize(o: StartSummarizeOpts) {
   if (!currentTask || currentTask.taskId !== taskId) return { error: 'cancelled', taskId }
 
   const { contentMarkdown, ...meta } = page
+  lastSnap.set(tab.id!, contentMarkdown) // r77b：首轮正文随任务下发，即该 tab 的首个快照指纹
   // r56（#10）：正文可能来自 iframe（allFrames 择优）——meta.url/title 是 frame 级
   // （location.href/内帧 title），历史 frontmatter/tips/取消文案会失锚到内帧；
   // 顶层 tab 的 url/title 才是用户视角的页面锚

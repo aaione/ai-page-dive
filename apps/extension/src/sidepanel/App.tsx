@@ -122,6 +122,9 @@ export interface PageMeta {
   /** r77（实时读取）：本 meta 出自追问轮重抓（快照已随任务附件下发）——PageTips
    *  resume 态据此分流「已附快照 / 未同步」；缺省 = 非追问来源或重抓降级 */
   resynced?: boolean
+  /** r77b（指纹复用）：重抓成功但与上轮快照全文一致——零附件零 token 膨胀，
+   *  CLI 基于会话已有正文作答；与 resynced 互斥 */
+  unchanged?: boolean
 }
 
 export function App() {

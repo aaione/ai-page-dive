@@ -367,6 +367,40 @@ describe('sw.ts 回归网', () => {
     expect(h.calls.nmSent[0].task.attachments).toBeUndefined()
   })
 
+  it('r77b 指纹复用：两轮追问重抓内容一致 → 第二轮零附件零披露 + unchanged page-meta', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const M = [{ result: { ...PAGE, contentMarkdown: '同文' } }]
+    ;(h.chrome.scripting.executeScript as any).mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce(M).mockResolvedValueOnce([]).mockResolvedValueOnce(M)
+    const r1 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '一问' })
+    expect(r1.ok).toBe(true)
+    expect(h.calls.nmSent[0].task.attachments?.some((a: any) => a.name === '当前页快照.md')).toBe(true)
+    // 第二轮重抓逐字一致（页面没动）——CLI 会话里上轮正文还在，不再塞重复快照
+    const r2 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '二问' })
+    expect(r2.ok).toBe(true)
+    const t2 = h.calls.nmSent.filter((m: any) => m.t === 'task-start').at(-1).task
+    expect(t2.attachments).toBeUndefined()
+    expect(t2.instruction).toBe('二问')
+    expect(h.calls.sent.filter((m: any) => m.t === 'page-meta').at(-1)?.page).toMatchObject({ unchanged: true })
+  })
+
+  it('r77b 指纹未命中：内容已变 → 附最新快照并更新指纹，第三轮同文才复用', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const R = (md: string) => [{ result: { ...PAGE, contentMarkdown: md } }]
+    ;(h.chrome.scripting.executeScript as any)
+      .mockReset()
+      .mockResolvedValueOnce([]).mockResolvedValueOnce(R('旧版'))
+      .mockResolvedValueOnce([]).mockResolvedValueOnce(R('新版'))
+      .mockResolvedValueOnce([]).mockResolvedValueOnce(R('新版'))
+    await h.fireMessage({ t: 'summarize', followUp: true, instruction: '一问' })
+    await h.fireMessage({ t: 'summarize', followUp: true, instruction: '二问' })
+    const t2 = h.calls.nmSent.filter((m: any) => m.t === 'task-start').at(-1).task
+    expect(t2.attachments?.some((a: any) => a.name === '当前页快照.md' && a.text === '新版')).toBe(true)
+    const r3 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '三问' })
+    expect(r3.ok).toBe(true)
+    const t3 = h.calls.nmSent.filter((m: any) => m.t === 'task-start').at(-1).task
+    expect(t3.attachments).toBeUndefined()
+  })
+
   it('分片 ≤ MAX_CHUNK（JSON 字节口径，转义密集正文强制走二分收缩）+ done 片 total 对账', async () => {
     const h = await boot()
     // 60 万原始字符、JSON 转义后 ~1.2MB：首个 512K 字符切片按字节口径必然超限，

@@ -1257,12 +1257,16 @@ function PageTips({ meta, idle, active, failed, stopped, dimmed }: { meta: PageM
             r71（r70 product C9/L3）：失败分流依据收敛为 undelivered（页面未送达
             CLI），已送达的生成阶段失败（timeout/is_error）保持「已分享」——说「分享
             未成功」会误导用户去查提取/授权；cancelled 终局第五态「已停止」。
-            r77（实时读取·成分③）：resume 态三分流——重抓成功「追问已附当前页
-            快照」（meta.resynced）；重抓降级「本轮未同步页面」如实披露 */}
+            r77（实时读取·成分③）：resume 态分流——重抓成功「追问已附当前页
+            快照」（meta.resynced）；r77b 指纹命中「页面无变化」（meta.unchanged，
+            与上轮快照全文一致，零附件零 token 膨胀）；重抓降级「本轮未同步页面」
+            如实披露 */}
         {dimmed === 'resume'
           ? meta.resynced
             ? `对话上下文「${meta.title || host || meta.url}」· 追问已附当前页快照`
-            : `对话上下文「${meta.title || host || meta.url}」（本轮未同步页面——基于此前内容作答）`
+            : meta.unchanged
+              ? `对话上下文「${meta.title || host || meta.url}」· 页面无变化——基于已有内容作答`
+              : `对话上下文「${meta.title || host || meta.url}」（本轮未同步页面——基于此前内容作答）`
           : `${idle ? '已就绪' : active ? '正在分享' : failed ? '分享未成功' : stopped ? '已停止' : '已分享'}「${meta.title || host || meta.url}」`}
         {host ? ` · ${host}` : ''}
       </span>
