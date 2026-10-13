@@ -14,6 +14,11 @@
  *                  （resumable 置 false，重发自动走全新总结）
  *   ?resync=0       追问轮重抓降级（r77 成分③：授权失效/受限页等）——page-meta
  *                  不带 resynced，PageTips 显「本轮未同步页面」分支
+ *   ?taskfail=<code> mock 流第 2 段 chunk 后以 task-error(code) 终局替代 done
+ *                  （r78 审计 harness 空洞#3：错误族终局 + App 自动 refill 回填——
+ *                  code 直传分流，如 timeout / is_error / spawn-fail）
+ *   ?hostdown=1     流中途广播 __host-disconnected + task-error(host-disconnected)
+ *                  双帧（镜像 sw.ts:947-953；r78 审计 harness 空洞#2）
  * 任务流：点「深度总结本页」后 mock 广播 reading→thinking→4 段流式 chunk→done，
  * 全程 ~2.4s，可验证 running 态（I3 两步确认/I1 禁用视觉/enterHint）与完成态；
  * 点「停止」→ nm task-cancel → 清假任务 timers + 回 task-error(cancelled)（r50）。
@@ -76,6 +81,28 @@ function runFakeTask() {
   const taskId = `mock-${++seq}`
   fakeTaskId = taskId
   const at = (ms: number, fn: () => void) => fakeTimers.push(setTimeout(fn, ms))
+  // r78（审计 harness 空洞#2/#3）：错误终局两场景——流到第 2 段 chunk 后掐掉
+  // 后续时间线，按场景发对应终局帧；refill 回填是 App 收 task-error 的自动行为
+  const fail = q.get('taskfail') ?? (q.get('hostdown') ? 'host-disconnected' : null)
+  if (fail) {
+    // 1500ms = 第 2 段 chunk（1100ms）已落地、第 3 段（1500ms）前——同刻 timer
+    // 按创建序先触发（本 at 先 push），clearTimeout 掐掉第 3 段起的时间线
+    at(1500, () => {
+      fakeTimers.forEach(clearTimeout)
+      fakeTimers = []
+      if (fail === 'host-disconnected') cast({ t: '__host-disconnected', taskId })
+      setTimeout(
+        () =>
+          cast({
+            t: 'task-error',
+            taskId,
+            code: fail,
+            message: fail === 'host-disconnected' ? '本机组件连接中断，任务已终止——请重试' : `mock 错误终局（${fail}）`,
+          }),
+        50,
+      )
+    })
+  }
   at(0, () => cast({ t: 'task-status', taskId, phase: 'reading', agentId: 'claude', tabId: 1 }))
   at(300, () => cast({ t: 'task-status', taskId, phase: 'thinking', agentId: 'claude' }))
   at(500, () => cast({ t: 'task-meta', taskId, agentId: 'claude', model: 'GLM-4.6', sessionId: `sess-${taskId}` }))
