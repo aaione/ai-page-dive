@@ -15,9 +15,9 @@ r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期�
 
 ### Added（r80 批——OpenHands/open-design 对比优化）
 
-- claude resume 目标丢失识别 + 全链自愈（A）：claude.ts 识别 CLI 本地失败形状（result 帧 `is_error` 且零轮次零 API 时间——真机实测非 UUID 假 ID 与合法 UUID 不存在两形状同型，零 token 消耗；有 API 时间/轮次的真失败不识别，防误杀活会话；对照 open-design #4275 教训选结构化形状而非随版本漂移的 stderr prose），TaskErrorMsg.code 闭集补 `session-lost`；task.ts 结合 resumeSessionId 走 onError('session-lost') 专属终局（非 resume 轮同形状仍 is_error onDone）；SW task-error 分支清源页签会话句柄（historyPath 保留——历史还原仍可用，否则重开面板 get-state 恢复 resumable:true 再撞同一死会话）；面板 resumable:false——重发即全新总结；terminal.ts 启动前失败文案去「扩展服务重启」限定（同码现双触发）
+- claude resume 目标丢失识别 + 全链自愈（A）：claude.ts 识别 CLI 本地失败形状（result 帧 `is_error` 且零轮次零 API 时间——真机实测非 UUID 假 ID 与合法 UUID 不存在两形状同型，零 token 消耗；有 API 时间/轮次的真失败不识别，防误杀活会话；对照 open-design #4275 教训选结构化形状而非随版本漂移的 stderr prose），TaskErrorMsg.code 闭集补 `session-lost`；task.ts 结合 resumeSessionId 走 onError('session-lost') 专属终局（非 resume 轮同形状仍 is_error onDone）；codex 侧真机实测（0.162）resume 目标丢失为 stdout 零帧 + exit 1 + stderr prose「no rollout found for thread id」（无 turn.failed 帧；非 UUID 假 id 静默开新 thread 无丢失形状）——finish 的 exit≠0 无 result 分支以 stderrTail 匹配走同码 session-lost，文案漂移回退 parse 码不劣于现状；SW task-error 分支清源页签会话句柄（historyPath 保留——历史还原仍可用，否则重开面板 get-state 恢复 resumable:true 再撞同一死会话）；面板 resumable:false——重发即全新总结；terminal.ts 启动前失败文案去「扩展服务重启」限定（同码现双触发）
 - 10min 一次性总闸改双闸看门狗（B）：idle 闸每过程帧重挂（长产出任务不再被中途误杀——慢思考后持续吐流的全链总算活到终局）+ 硬上限 3× 不重置（idle 语义放宽后的配额保护，流式炸弹最迟 30min 强收）；终局后靠回调首行 finished 守卫自然失效；scheduleCleanup 11min → 31min 配套（硬上限期临时文件不得被删）
-- 271 → 277 用例：claude-parser.test.ts resumeLost 形状（两丢失形状 → true / 有 API 时间 / 有轮次 → false + 存量 3 处补字段）；task-resume-lost.test.ts +2（resume 轮走 session-lost 不落 is_error done / 非 resume 轮同形状仍 is_error onDone——帧实抄真机）；task-watchdog.test.ts +2（帧续命活过旧总闸刻度 / 永续流硬上限强收）；sw.test.ts +1（session-lost 帧清源页签 sessionId 保 historyPath + timeout 码对照不清——calls 单例跨 boot 共享，断言按基线切片）
+- 271 → 278 用例：claude-parser.test.ts resumeLost 形状（两丢失形状 → true / 有 API 时间 / 有轮次 → false + 存量 3 处补字段）；task-resume-lost.test.ts +3（resume 轮走 session-lost 不落 is_error done / 非 resume 轮同形状仍 is_error onDone——帧实抄真机 / codex 丢失形状 stdout 空 + stderr prose + exit 1 → session-lost——stderr 实抄真机 0.162）；task-watchdog.test.ts +2（帧续命活过旧总闸刻度 / 永续流硬上限强收）；sw.test.ts +1（session-lost 帧清源页签 sessionId 保 historyPath + timeout 码对照不清——calls 单例跨 boot 共享，断言按基线切片）
 
 ### Added（r79 批）
 

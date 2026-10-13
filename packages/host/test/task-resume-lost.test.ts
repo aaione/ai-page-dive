@@ -80,4 +80,46 @@ describe('resume 目标丢失终局（r80 A）', () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  // r80(A)续：codex resume 目标丢失真机形状（0.162 实测）——stdout 零帧、exit 1、
+  // stderr prose「no rollout found for thread id」。非 UUID 假 id codex 静默开新
+  // thread 正常跑（真机实测），无丢失形状，不需用例
+  it('codex resume 目标丢失（stdout 空 + stderr prose + exit 1）→ onError(session-lost)', async () => {
+    const { Task } = await import('../src/task.js')
+    const { AGENTS } = await import('../src/agents/registry.js')
+    const codex = AGENTS.find((a) => a.id === 'codex')!
+    const dir = await mkdtemp(join(tmpdir(), 'pd-c-'))
+    const script = join(dir, 'cli.mjs')
+    await writeFile(
+      script,
+      `process.stderr.write('Error: thread/resume: thread/resume failed: no rollout found for thread id 00000000-0000-4000-8000-000000000000 (code -32600)\\n');process.exit(1)`,
+      'utf8',
+    )
+    codex.bin = 'node'
+    const orig = codex.buildArgs
+    codex.buildArgs = () => [script]
+    const fakeHome = await mkdtemp(join(tmpdir(), 'pd-home-'))
+    const origHome = process.env.HOME
+    process.env.HOME = fakeHome
+    const done: any[] = []
+    const errors: [string, string][] = []
+    try {
+      const task = new Task('t-codex-lost', {
+        onStatus: () => {}, onMeta: () => {}, onChunk: () => {},
+        onDone: (info) => done.push(info),
+        onError: (code, message) => errors.push([code, message]),
+      })
+      task.start({ taskId: 't-codex-lost', agentId: 'codex', resumeSessionId: '00000000-0000-4000-8000-000000000000', historyPath: '', page: PAGE as any })
+      await task.run()
+      expect(errors.map((e) => e[0])).toEqual(['session-lost'])
+      expect(errors[0][1]).toContain('no rollout found')
+      expect(done).toEqual([])
+    } finally {
+      process.env.HOME = origHome
+      codex.bin = 'codex'
+      codex.buildArgs = orig
+      await rm(fakeHome, { recursive: true, force: true })
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })

@@ -448,8 +448,6 @@ export class Task {
       this.cb.onError('cancelled', 'task cancelled')
       return
     }
-    // r37 的 opencode Gatekeeper 文案随适配器删除（r55，DECISIONS D5 修订）——r37 排障
-    // 记录见 git 历史
     if (signal === 'SIGKILL') {
       await this.persist('interrupted')
       this.cb.onError('parse', `killed by SIGKILL${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}（可能被系统或用户终止）`)
@@ -460,11 +458,13 @@ export class Task {
     const isError = code !== 0 ? !delivered : !this.accText
     await this.persist(isError ? 'error' : 'done')
     if (code !== 0 && !delivered) {
+      // r80(A)续：codex resume 目标丢失——stdout 零帧 exit 1，stderr prose 唯一通道
+      // （真机 0.162 实测；文案漂移则回退 parse 码，不劣于现状）
+      if (this.input.resumeSessionId && /no rollout found for thread id/i.test(stderrTail))
+        return this.cb.onError('session-lost', stderrTail.slice(-500))
       this.cb.onError('parse', `exit ${code}: ${stderrTail.slice(-500)}`)
     } else if (!this.accText) {
-      // r51-review P2-③ 收尾 + 深审修正 altitude：no output 且流里有未识别事件，大概率是
-      // CLI 版本高于解析器实测（格式漂移）而非真没输出——用户气泡只给用户向归因与反馈
-      // 指引（重采样命令是维护者动作，已挪到扩展端 console.debug 排障信号里）
+      // no output 且有未识别事件：大概率 CLI 版本高于解析器实测（格式漂移），只给用户向归因与反馈指引
       this.cb.onError('parse', `no output${stderrTail ? `: ${stderrTail.slice(-500)}` : ''}${this.unrecognized ? `（流含 ${this.unrecognized} 个未识别事件——CLI 版本可能高于适配器实测，请到项目仓库反馈）` : ''}`)
     } else {
       this.cb.onDone(this.doneInfo(false, durationMs))
