@@ -13,6 +13,12 @@
 
 r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
 
+### Added（r79 批）
+
+- 图片附件超 500KB canvas 压缩重试（b14353d）：pickAttachments 对超限图片先走 shrinkImage——缩边 + jpeg 降质阶梯（边 2048→720 × 质 0.8→0.45），压进预算判据与帧内计量同口径（b64.length）；PNG 透明底垫白再转 jpeg；压不进（极端长图/噪声图）或解码失败落回跳过提示。host 落盘不消费 mime（b64 直写、CLI Read 按 magic bytes 认图）零下游错位。dev 浏览器实测 4.7MB 纯噪声 png 压进预算出 chip
+- dev harness 补错误终局两场景参数（93ff645，r78 审计 harness 空洞#2/#3）：?taskfail=<code> 第 2 段 chunk 后 task-error(code) 终局（code 直传 ERROR_LABEL 分流 + refill 回填实测原文还原）；?hostdown=1 广播 __host-disconnected + task-error 双帧（镜像 sw.ts:947-953，落 cliFault 前缀终局气泡 + tips 已分享已送达分流）
+- 270 → 271 用例：SummarizeView.test.tsx +1（超限图压缩链在 canvas 不可用环境降级——jsdom 无 URL.createObjectURL，不抛异常仍落跳过提示）
+
 ### Fixed（r78 批）
 
 - readability 残缺产出对账降级——课程表类页面不再静默丢正文（真机反馈排查闭环）：cmu-agents 课程表页实证，Readability sibling 裁剪把 Sep–Oct 8 整块当低分兄弟裁掉，结构化产出 1334 字符仅为页面可见文本 5361 的 25%，CLI 快照从 Oct 13 开始、Lecture 1-4 全丢——「成功/失败」二态间没有「成功但残缺」检测，兜底链只在产出为空时触发。修复：degraded 判据（markdown 非空但不足 innerText 1/4 且 innerText 过 looksLikeProse 双启发式）即降级全文兜底，宁带噪声勿丢正文（误伤面=长评论区被正常剥除的文章页带上评论噪声；漏检的损失是 CLI 对页面四分之三内容视而不见）；降级分支绕开 article.textContent（产出已判不可信）；extractor 降级标 innertext、notice「结构解析失败」→「结构解析不可信」涵盖两态。真页复测闭环（构建产物注入真实页面）：修复前 1334 字符/Oct 13 起/无 Lecture，修复后 11458 字符/Aug 25 起全学期/Lecture 1-14 全在（98fec8c）
