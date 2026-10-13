@@ -915,6 +915,13 @@ nmPort.onMessage((m) => {
     // r59（审计 T4）：入箱判据对齐 emitTerminal——广播有接收端即有人显示此帧，
     // 再入箱必在重开时复读；仅无接收端（reject）才入箱
     const owner = currentTask && msg.taskId === currentTask.taskId ? currentTask.tabId : tabOf.get(msg.taskId)
+    // r80(A)：CLI 侧 resume 目标丢失——清源页签会话句柄（historyPath 保留，历史
+    // 还原仍可用），否则重开面板经 get-state 恢复 resumable:true 再撞同一死会话
+    if (msg.code === 'session-lost' && owner !== undefined) {
+      const st = sessions.get(owner)
+      if (st?.sessionId) sessions.set(owner, { ...st, sessionId: '' })
+      persistSession()
+    }
     if (owner !== undefined && owner >= 0 && !cancelledTaskIds.has(msg.taskId)) {
       delivered.then((ok) => {
         if (!ok) {

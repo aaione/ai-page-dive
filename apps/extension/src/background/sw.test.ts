@@ -1080,4 +1080,28 @@ describe('sw.ts 回归网', () => {
     const r3 = await h3.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
     expect((r3 as { error?: string }).error).not.toBe('pdf-page')
   })
+
+  // r80(A)：CLI 侧 resume 目标丢失（host 识别形状后发 session-lost task-error）——SW 清
+  // 源页签会话句柄，否则重开面板经 get-state 恢复 resumable:true 再撞同一死会话；
+  // historyPath 保留（历史还原 UI 仍可用）。面板侧同步置 resumable:false（App 内联）
+  it('r80 A：session-lost 帧清源页签 sessionId（historyPath 保留）', async () => {
+    // calls 是本测试文件模块级单例（跨 boot 共享）——断言必须按各自 boot 前的
+    // 基线切片，否则会拿到上一段 boot 的持久化残影（.at(-1) 全局取尾的教训）
+    const h = await boot({ seed: { sessions: [[5, { agentId: 'claude', sessionId: 's-111', historyPath: '/tmp/h1.md' }]], panelTabId: 5, panelWindowId: 1 } })
+    const r = await h.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    const base1 = h.calls.storageSet.length
+    h.fireNm({ t: 'task-error', taskId: r.taskId, code: 'session-lost', message: 'No conversation found with session ID: s-111' })
+    const persist = h.calls.storageSet.slice(base1).filter((s: any) => Array.isArray(s.sessions)).at(-1)
+    expect(persist.sessions).toContainEqual([5, { agentId: 'claude', sessionId: '', historyPath: '/tmp/h1.md' }])
+    // 对照：其他码不清句柄（timeout 是传输/生成失败，与 CLI 会话存亡无关）
+    const h2 = await boot({ seed: { sessions: [[5, { agentId: 'claude', sessionId: 's-222', historyPath: '/tmp/h2.md' }]], panelTabId: 5, panelWindowId: 1 } })
+    const r2 = await h2.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    const base2 = h2.calls.storageSet.length
+    h2.fireNm({ t: 'task-error', taskId: r2.taskId, code: 'timeout', message: '超时' })
+    await Promise.resolve() // flush 入箱微任务（delivered.then 的 persist 也一并受检）
+    const persists = h2.calls.storageSet.slice(base2).filter((s: any) => Array.isArray(s.sessions))
+    for (const p of persists) {
+      expect(p.sessions.find((e: any) => e[0] === 5)?.[1]).toMatchObject({ sessionId: 's-222' })
+    }
+  })
 })

@@ -83,14 +83,11 @@ export const codexDef: AgentDef = {
       return undefined
     }
   },
-  // resume 轮（r7-impl，实测 codex 0.151）：exec resume <id>，prompt 省略参数即读 stdin。
-  // resume 子命令无 --sandbox flag——read-only 围栏用 -c config 覆盖等价保持（value 按 TOML 解析需内层引号）。
-  // r54 live-fire 实证（codex 0.156.1）：read-only 拦 touch / danger-full-access 放行——-c 是活配置通道，等价性闭环。
-  // 大版本升级 codex 时重跑三发实弹（fresh/resume/control）验证围栏未静默退化
-  // r8-review：删 -o lastMsgFile——最终文本取自 item.completed 流事件，该文件写了清理了但全仓无读取点（死机制）
-  // r54（review #2）：mcp_servers={} 封死用户 config.toml 的 MCP server——read-only 沙箱不约束
-  // MCP 调用（codex 自身作为客户端直连，不经沙箱），与 claude --strict-mcp-config 对称；
-  // live-fire stderr 实测 spawn 真在连用户 MCP server（rmcp worker 连 127.0.0.1:3845）
+  // resume 轮（实测 codex 0.151）：exec resume <id> 无 --sandbox flag——read-only 围栏
+  // 用 -c config 覆盖等价（value 按 TOML 解析需内层引号）。r54 live-fire（0.156.1）：
+  // read-only 拦 touch / danger-full-access 放行，等价性闭环；大版本升级重跑三发实弹
+  // r54 #2：mcp_servers={} 封死用户 config.toml 的 MCP——沙箱不约束 MCP 调用（codex
+  // 作为客户端直连不经沙箱），与 claude --strict-mcp-config 对称（live-fire 实测真在连用户 MCP）
   buildArgs: (opts) =>
     opts.resumeSessionId
       ? ['exec', 'resume', opts.resumeSessionId, '--json', '-c', 'sandbox_mode="read-only"', '-c', 'mcp_servers={}', '--skip-git-repo-check']

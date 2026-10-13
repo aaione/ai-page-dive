@@ -68,11 +68,12 @@ export function createClaudeParser() {
           outputTokens: u.output_tokens,
         })
       }
-      // r62 审计（code #1）：版本漂移/hook 污染可使 result 为对象——?? 只拦 null/undefined，
-      // 对象透传后 task.ts 的 ev.text.slice 抛 TypeError → uncaughtException 收割全 host 在跑
-      // 任务。出口收敛成 string：对象 JSON 化、空值归空串（畸形流降级为单任务失败）
+      // r62：result 可为对象（版本漂移/hook 污染）——出口收敛 string，防 task.ts 的
+      // ev.text.slice 抛 TypeError 崩 host（畸形流降级为单任务失败）
       const rtext = typeof d.result === 'string' ? d.result : d.result != null ? JSON.stringify(d.result) : ''
-      out.push({ type: 'result', isError: isError(d), text: rtext })
+      // r80(A)：is_error 且零轮次零 API 时间 = CLI 本地失败（resume 目标丢失实测
+      // 两形状同型；对照 open-design #4275——prose 文案随版本漂移，结构化形状稳）
+      out.push({ type: 'result', isError: isError(d), text: rtext, resumeLost: d.is_error === true && d.num_turns === 0 && d.duration_api_ms === 0 })
     } else if (typeof d.type === 'string' && !CLAUDE_IGNORED.has(d.type)) {
       // r51 A2③：未知 type 上报（版本漂移感知），task.ts 计数进 task-done
       out.push({ type: 'unrecognized', kind: d.type })
@@ -128,11 +129,9 @@ export const claudeDef: AgentDef = {
       // Read 围栏下 MCP 工具本就不可调，连接零语义收益）。内联空配置
       // （--mcp-config 收 JSON 串）+ strict 屏蔽其余来源，CLI 冷启段 ~10s+ → ~1s
       '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
-      // r48（M7 实测补钉）：用户全局 settings.json 若配了 bypassPermissions，
-      // --allowedTools 白名单不构成拒绝面（白名单外 Read 实测照样放行）——显式钉
-      // default 让围栏不随用户个人偏好漂移。白名单内 Read 在 default 下免批准直读
-      // （实测 denials 空），白名单外 Read/Bash 逃逸均被拦；headless -p 无人值守，
-      // 一切「需批准」操作被拒正是产品语义
+      // r48 M7：用户全局 bypassPermissions 会架空 --allowedTools 白名单（实测白名单外
+      // Read 照样放行）——显式钉 default。白名单内 Read 免批准直读、白名单外与其他
+      // 工具被拦：headless 无人值守下「需批准即拒」正是产品语义
       '--permission-mode', 'default',
       // 进程级工具围栏（r6-sec，与 codex --sandbox read-only 对称）：任务语义只需读
       // 白名单路径下的正文/附件——白名单外的 Read 与一切其他工具（Bash/Write/网络等）

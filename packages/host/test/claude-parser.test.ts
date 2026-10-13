@@ -69,22 +69,37 @@ describe('claude stream-json parser', () => {
         usage: { input_tokens: 10, output_tokens: 5 },
       }),
     )
-    expect(evs).toContainEqual({ type: 'result', isError: true, text: 'No such file' })
+    expect(evs).toContainEqual({ type: 'result', isError: true, text: 'No such file', resumeLost: false })
     expect(evs).toContainEqual({ type: 'usage', inputTokens: 10, outputTokens: 5 })
   })
 
   it('result 正常路径', () => {
     const p = createClaudeParser()
     const evs = p(JSON.stringify({ type: 'result', is_error: false, result: '完成', usage: {} }))
-    expect(evs.at(-1)).toEqual({ type: 'result', isError: false, text: '完成' })
+    expect(evs.at(-1)).toEqual({ type: 'result', isError: false, text: '完成', resumeLost: false })
+  })
+
+  it('r80(A)：resume 目标丢失形状——is_error 且零轮次零 API 时间 → resumeLost:true（真机实测非 UUID / UUID 不存在两形状同型）', () => {
+    const p = createClaudeParser()
+    // 实测形状①：--resume 非 UUID（errors 带 CLI prose）
+    const e1 = p(JSON.stringify({ type: 'result', subtype: 'error_during_execution', duration_ms: 0, duration_api_ms: 0, is_error: true, num_turns: 0, result: 'Error: --resume requires a valid session ID' }))
+    expect(e1.at(-1)).toMatchObject({ type: 'result', isError: true, resumeLost: true })
+    // 实测形状②：合法 UUID 但会话不存在（stderr prose 「No conversation found with session ID」会随版本漂移，结构化形状稳——对照 open-design #4275）
+    const e2 = p(JSON.stringify({ type: 'result', subtype: 'error_during_execution', duration_api_ms: 0, is_error: true, num_turns: 0, errors: ['No conversation found with session ID: 00000000-0000-4000-8000-000000000000'] }))
+    expect(e2.at(-1)).toMatchObject({ type: 'result', isError: true, resumeLost: true })
+    // 真过载/瞬态失败（有轮次或 API 时间）不得误判——误杀会让活会话被自愈降级
+    const e3 = p(JSON.stringify({ type: 'result', subtype: 'error_during_execution', duration_api_ms: 4200, is_error: true, num_turns: 1, result: 'overloaded' }))
+    expect(e3.at(-1)).toMatchObject({ type: 'result', isError: true, resumeLost: false })
+    const e4 = p(JSON.stringify({ type: 'result', duration_api_ms: 0, is_error: true, num_turns: 2, result: '中途断流' }))
+    expect(e4.at(-1)).toMatchObject({ type: 'result', isError: true, resumeLost: false })
   })
 
   it('r62 code#1：result 为对象（版本漂移）→ JSON 化收敛成 string，不透传不抛', () => {
     const p = createClaudeParser()
     const evs = p(JSON.stringify({ type: 'result', is_error: true, result: { code: 'E31', msg: 'quota' } }))
-    expect(evs.at(-1)).toEqual({ type: 'result', isError: true, text: '{"code":"E31","msg":"quota"}' })
+    expect(evs.at(-1)).toEqual({ type: 'result', isError: true, text: '{"code":"E31","msg":"quota"}', resumeLost: false })
     // null 归空串（原 ?? 语义保留）
-    expect(p(JSON.stringify({ type: 'result', is_error: false, result: null })).at(-1)).toEqual({ type: 'result', isError: false, text: '' })
+    expect(p(JSON.stringify({ type: 'result', is_error: false, result: null })).at(-1)).toEqual({ type: 'result', isError: false, text: '', resumeLost: false })
   })
 
   it('非 JSON 行丢弃不崩', () => {

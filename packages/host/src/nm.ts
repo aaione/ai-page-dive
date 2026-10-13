@@ -35,11 +35,9 @@ export function createFrameReader(onMsg: (obj: any) => void, maxLength = NM_MAX,
       if (buf.length < 4) break
       const len = buf.readUInt32LE(0)
       if (len > maxLength) {
-        // r5-sec：超限帧曾在 stdin 回调内同步 throw → uncaughtException 崩整个
-        // host（多附件可组出 >1MB 单帧）。r6-sec：丢缓冲降级同样不可救——失步后
-        // 后续字节被解析成随机帧头，协议永久毒化，host 成哑巴直到 SW 看门狗
-        // 120s 假超时。失步唯一正确响应是终结本进程：断连可由 SW 重 spawn 自愈
-        //（失步不可自愈）。优先 onDesync（收割在跑的 CLI 进程树再退），未传时裸退出
+        // r5/r6-sec：超限帧同步 throw 崩 host、丢缓冲则失步（后续字节解析成随机帧头，
+        // 协议永久毒化）——失步唯一正确响应是终结本进程（断连由 SW 重 spawn 自愈）。
+        // 优先 onDesync（收割在跑的 CLI 进程树再退），未传时裸退出
         console.error(`[pd] frame length ${len} exceeds max ${maxLength}, NM stream desynced — terminating host`)
         desynced = true
         if (onDesync) onDesync()

@@ -706,6 +706,9 @@ export function App() {
               finished: [...s.finished, m.taskId].slice(-8),
               done: true,
               activeId: null,
+              // r80(A)：CLI 侧 resume 目标丢失——置 false 后下一条自动走全新总结
+              //（对齐下方启动前 session-lost 自愈写法，SW 侧同步清会话句柄）
+              ...(m.code === 'session-lost' ? { resumable: false } : {}),
               ...(rf ? { refill: rf } : {}),
               messages,
             }

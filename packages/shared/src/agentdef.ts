@@ -37,7 +37,10 @@ export type AgentEvent =
   | { type: 'meta'; model?: string; sessionId?: string }
   | { type: 'text-delta'; text: string }
   | { type: 'usage'; inputTokens?: number; outputTokens?: number }
-  | { type: 'result'; isError: boolean; text: string }
+  /** resumeLost：is_error 且零轮次零 API 时间——CLI 本地失败（典型：--resume 目标
+   *  会话不存在，实测两种丢失形状同型；不耗订阅额度）。task.ts 结合 resumeSessionId
+   *  判定走 session-lost 专属终局（r80） */
+  | { type: 'result'; isError: boolean; text: string; resumeLost?: boolean }
   /** r51 A2③ 版本漂移感知：解析器遇到未知事件类型时上报（kind=原始 type），
    *  task.ts 计数后经 task-done.unrecognized 透出——CLI 升级改格式的第一信号 */
   | { type: 'unrecognized'; kind: string }

@@ -42,7 +42,9 @@ export const START_FAIL_LABEL: Partial<Record<TerminalCode, string>> = {
   'empty-content': '页面没有可提取的正文——等页面加载完成（或滚动到底部触发懒加载）后重试；也可粘贴正文作为附件直接追问',
   cancelled: '已取消',
   'empty-instruction': '请输入要追问的内容（或直接点「新对话」重新总结本页）',
-  'session-lost': '会话已失效（扩展服务重启）——直接重新发送即可（将开始全新总结）',
+  // r80(A)：文案去「扩展服务重启」限定——同码现在双触发（SW 会话丢失 / CLI 侧
+  // resume 目标丢失），通用措辞两边都如实
+  'session-lost': '上轮会话已失效——直接重新发送即可（将开始全新总结）',
   'frame-too-large': '内容过长（输入 + 附件超出单帧 1MB 上限）——精简附件或缩短输入后重试',
 }
 

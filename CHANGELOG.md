@@ -13,6 +13,12 @@
 
 r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
 
+### Added（r80 批——OpenHands/open-design 对比优化）
+
+- claude resume 目标丢失识别 + 全链自愈（A）：claude.ts 识别 CLI 本地失败形状（result 帧 `is_error` 且零轮次零 API 时间——真机实测非 UUID 假 ID 与合法 UUID 不存在两形状同型，零 token 消耗；有 API 时间/轮次的真失败不识别，防误杀活会话；对照 open-design #4275 教训选结构化形状而非随版本漂移的 stderr prose），TaskErrorMsg.code 闭集补 `session-lost`；task.ts 结合 resumeSessionId 走 onError('session-lost') 专属终局（非 resume 轮同形状仍 is_error onDone）；SW task-error 分支清源页签会话句柄（historyPath 保留——历史还原仍可用，否则重开面板 get-state 恢复 resumable:true 再撞同一死会话）；面板 resumable:false——重发即全新总结；terminal.ts 启动前失败文案去「扩展服务重启」限定（同码现双触发）
+- 10min 一次性总闸改双闸看门狗（B）：idle 闸每过程帧重挂（长产出任务不再被中途误杀——慢思考后持续吐流的全链总算活到终局）+ 硬上限 3× 不重置（idle 语义放宽后的配额保护，流式炸弹最迟 30min 强收）；终局后靠回调首行 finished 守卫自然失效；scheduleCleanup 11min → 31min 配套（硬上限期临时文件不得被删）
+- 271 → 277 用例：claude-parser.test.ts resumeLost 形状（两丢失形状 → true / 有 API 时间 / 有轮次 → false + 存量 3 处补字段）；task-resume-lost.test.ts +2（resume 轮走 session-lost 不落 is_error done / 非 resume 轮同形状仍 is_error onDone——帧实抄真机）；task-watchdog.test.ts +2（帧续命活过旧总闸刻度 / 永续流硬上限强收）；sw.test.ts +1（session-lost 帧清源页签 sessionId 保 historyPath + timeout 码对照不清——calls 单例跨 boot 共享，断言按基线切片）
+
 ### Added（r79 批）
 
 - 图片附件超 500KB canvas 压缩重试（b14353d）：pickAttachments 对超限图片先走 shrinkImage——缩边 + jpeg 降质阶梯（边 2048→720 × 质 0.8→0.45），压进预算判据与帧内计量同口径（b64.length）；PNG 透明底垫白再转 jpeg；压不进（极端长图/噪声图）或解码失败落回跳过提示。host 落盘不消费 mime（b64 直写、CLI Read 按 magic bytes 认图）零下游错位。dev 浏览器实测 4.7MB 纯噪声 png 压进预算出 chip

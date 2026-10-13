@@ -116,9 +116,7 @@ export function runStdio(send: (obj: unknown) => void): StdioSession {
         readHistory(msg.path)
           .then((raw) => {
             // NM 单帧 ≤1MB：按字节收缩 + 回退 UTF-8 边界（CJK 截不断）；NM_MAX-1024 给
-            // path/键名等帧信封留余量（r8-review）。r54（#10）：编码后字节校验从
-            // >900KB 分支提出全量覆盖——≤900KB 原文遇高转义密度（引号/反斜杠每个
-            // 膨胀 2 倍）同样击穿 1MB，此前小原文直发、面板静默收不到帧
+            // 帧信封留余量。r54 #10：编码后字节校验全量覆盖——高转义密度原文同样击穿
             let content = raw
             const buf = Buffer.from(raw, 'utf8')
             let end = Math.min(HISTORY_MAX_BYTES, buf.length)

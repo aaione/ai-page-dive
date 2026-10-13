@@ -42,7 +42,7 @@ export interface TaskCallbacks {
     sessionId?: string
     unrecognized?: number
   }) => void
-  onError: (code: 'spawn-fail' | 'runtime-error' | 'timeout' | 'cancelled' | 'parse' | 'no-agent', message: string) => void
+  onError: (code: 'spawn-fail' | 'runtime-error' | 'timeout' | 'cancelled' | 'parse' | 'no-agent' | 'session-lost', message: string) => void
   /** r57（#24）：prune 实删了超限旧历史（removed>0）——触达 panel 的唯一信号 */
   onPruned?: (removed: number, limit: number) => void
 }
@@ -76,6 +76,10 @@ export class Task {
   private persistOk = false
   private historyPath = ''
   private timeoutTimer?: ReturnType<typeof setTimeout>
+  /** r80(B)：硬上限闸（不重置）——活跃超长任务也得收（配额保护）；终局后靠回调首行 finished 守卫自然失效 */
+  private hardTimer?: ReturnType<typeof setTimeout>
+  /** r80(B)：idle 闸重挂（handleEvent 每过程帧调） */
+  private armIdle: (cf: string) => void = () => {}
   /** r8-perf：text-delta 攒批——逐 delta 直发 NM 帧且 panel 每 chunk 全树 reconcile，
    * 数千 delta 的长回答累计秒级主线程开销；≥8KB 或 50ms 合并（seq 仍连续） */
   private pendingDelta = ''
@@ -197,18 +201,17 @@ export class Task {
     const contentFile = isResume ? '' : await writeContentFile(this.taskId, this.contentParts.join(''))
     // 统一在此调度清理：isError/spawn-fail/cancel/正常路径全覆盖
     if (!isResume) {
-      // 11min > 10min 任务超时：运行期文件必须存在，终局后再留 1min 缓冲给迟到的读取
-      scheduleCleanup(contentFile, 11 * 60_000)
+      // 31min > 30min 硬上限（r80(B)：idle 闸下任务最长 3× 超时窗）：运行期文件必须
+      // 存在，终局后再留 1min 缓冲给迟到的读取
+      scheduleCleanup(contentFile, 31 * 60_000)
     }
 
     // workflow 正文即任务段：用户目录 shadow 内置，未命中走通用兜底文案（r58 #17）
     const wfName = this.input.workflow ?? 'quick'
     const wf = await getWorkflow(wfName)
 
-    // 技能注入：非 resume 轮读取启用技能正文（读取失败的已在 getSkillBodies 内跳过）。
-    // r49（#64-① 按任务注入）：quick 档跳过——「十几秒出要点」与技能增强指令互相
-    // 冲突（每技能 ~450 token 拖慢首字），快速档零负担；其余档（默认/深度/论文/
-    // 改写/自定义）保留注入。面板徽标同语义降透明提示（SummarizeView PageTips）
+    // 技能注入：非 resume 轮读取启用技能正文（读取失败的在 getSkillBodies 内跳过）。
+    // quick 档跳过——每技能 ~450 token 拖慢首字，与「十几秒出要点」档位定位冲突
     const skillBodies = !isResume && wfName !== 'quick' && this.input.skills?.length
       ? await getSkillBodies(this.input.skills)
       : undefined
@@ -216,8 +219,7 @@ export class Task {
     const parser = def.streamFormat === 'claude-stream-json' ? createClaudeParser() : createCodexParser()
 
     // cwd 语义：claude 会话按 cwd 分区存储（~/.claude/projects/<编码>/），跨 host 重启
-    // 必须可复现否则 --resume 报错——统一固定工作区。r57（#6）：filePathInPrompt 沙箱
-    // 分支随 opencode 删除已零使用方，死代码连 linkIntoCwd/makeAgentCwd 一并删除
+    // 必须可复现否则 --resume 报错——统一固定工作区
     const agentCwd = await getStableAgentCwd()
     // 占位符只展开 workflow 正文：用户 instruction 可能合法含 {xx} 字面量，不展开
     const wfBody = !isResume && wf?.body && !this.input.instruction
@@ -265,7 +267,9 @@ export class Task {
       return
     }
 
-    this.timeoutTimer = setTimeout(() => {
+    // r80(B)：一次性总闸改双闸（open-design stage watchdog 同款教训）——idle 闸每帧
+    // 重置（长思考/长产出任务不再被中途误杀），硬上限 3× 不重置（配额保护）；同回调
+    const onFire = (cf: string) => {
       // r48（M4）：cancel() 只在 !ran 时同步置 finished——运行中取消后 exit 事件
       // 到达前 finished 仍 false，此处若不挡会误报 timeout 终局顶掉 cancelled
       if (this.finished || this.cancelled) return
@@ -273,30 +277,29 @@ export class Task {
       this.finished = true
       this.timeoutSent = true
       this.flushDelta() // timeout 不经 finish()：终局前发完缓冲尾巴
-      // r47-audit（M4 超时误杀）：result 成功帧已解析（gotResultOk）但进程未退出——典型如
-      // CLI 工具孙进程持 stdout 写端（r33 机制）——时，到点仍走 onError('timeout') +
-      // persist('interrupted')，用户看到失败但结果已完整交付。已交付则改走成功终局
-      // （与 finish() 成功路径同款：persist('done') + onDone），收割照旧
+      // r47-audit M4：result 已交付（gotResultOk）但进程未退（孙进程持写端）——到点改走成功终局，不误报 timeout
       if (this.gotResultOk && this.accText) {
         void (async () => {
           await this.persist('done') // 落盘完成再发终局（对齐 isError 路径的持久化语义）
           this.cb.onDone(this.doneInfo(false, Date.now() - this.startedAt))
         })()
-        // r53（#4）：先收割再删 cwd——对齐 M5 不变量（error 分支注释自述），
-        // 防删仍在运行进程的工作目录
-        this.proc?.reap()
-        this.cleanupCwd(contentFile)
+        this.proc?.reap() // r53 #4：先收割再删 cwd——防删运行中进程的工作目录
+        this.cleanupCwd(cf)
         return
       }
       this.cb.onError('timeout', `task exceeded ${TASK_TIMEOUT_MS / 60_000}min`)
       // 部分输出落盘（对称于 cancel 路径）；不 await——persist 在事件循环里自然完成
       void this.persist('interrupted')
-      // r53（#4）：先收割再删 cwd（M5 不变量，对齐 error/cancelled 分支）。收割挂死 CLI：
-      // 走 cancel() 会被其 finished 守卫挡回（终局已前置），detached 进程组永久泄漏烧配额
-      // （r9-review 实证）；cwd 不经过 finish() 由本路径自回收（r4-impl）
+      // 收割挂死 CLI（cancel() 会被 finished 守卫挡回，此处唯一出口）；cwd 由本路径自回收
       this.proc?.reap()
-      this.cleanupCwd(contentFile)
-    }, TASK_TIMEOUT_MS)
+      this.cleanupCwd(cf)
+    }
+    this.armIdle = (cf) => {
+      clearTimeout(this.timeoutTimer)
+      this.timeoutTimer = setTimeout(() => onFire(cf), TASK_TIMEOUT_MS)
+    }
+    this.armIdle(contentFile)
+    this.hardTimer = setTimeout(() => onFire(contentFile), TASK_TIMEOUT_MS * 3)
 
     await new Promise<void>((resolve) => {
       // close 而非 exit（r33）：exit 即刻触发时 stdout 尾部（pipe 异步）未派发完，result 未到即 finish() 会误判 parse 失败
@@ -337,6 +340,7 @@ export class Task {
 
   private async handleEvent(ev: AgentEvent, contentFile: string): Promise<void> {
     if (this.finished) return
+    if (ev.type !== 'result') this.armIdle(contentFile) // r80(B)：过程帧续命 idle 闸
     switch (ev.type) {
       case 'status':
         if (!this.cancelled) this.cb.onStatus(ev.phase)
@@ -371,8 +375,14 @@ export class Task {
           // r76：错误文案入册 body 首段（此前只进面板帧，面板错过即历史零痕迹）
           await this.persist('error', ev.text.slice(0, 4000))
           this.flushDelta() // isError 不经 finish()：终局前发完缓冲尾巴
-          // errorText 截 4000：r46（review C9）——无上限直接进帧会在 >1MB 时 encodeFrame
-          // throw、终局帧被静默丢弃、面板永久 running；诊断用途下 4000 字符绰绰有余
+          // errorText 截 4000：无上限进帧会在 >1MB 时 encodeFrame throw 静默丢终局（r46）
+          // r80(A)：resume 目标丢失（本地失败零轮次零 API 时间，不耗订阅）走专属码
+          // task-error——面板置 resumable:false 重发即全新总结，不再撞同一死会话；
+          // 有轮次/API 时间的正牌失败仍走 is_error，瞬态失败不误杀活会话
+          if (ev.resumeLost && this.input.resumeSessionId) {
+            this.cb.onError('session-lost', ev.text.slice(0, 4000))
+            return
+          }
           this.cb.onDone(this.doneInfo(true, Date.now() - this.startedAt, ev.text.slice(0, 4000)))
         } else if (ev.text && !this.accText) {
           // codex 无增量时 result 兜底出全文
@@ -404,11 +414,10 @@ export class Task {
   }
 
   private sendChunk(text: string): void {
-    // NM 单帧 ≤1MB（字节维度）：CJK UTF-8 每字符 3 字节，按字符数切会击穿上限——
-    // 按 JSON 序列化后字节收缩切片。用 JSON.stringify 而非裸 Buffer.byteLength：
-    // 帧最终是 JSON（\ → \\、" → \"、控制字符 → \uXXXX），转义密集页最坏 2x 膨胀，
-    // 只测原文字节会让 encodeFrame 在 nm.ts 处 throw → chunk 静默丢失、正文缺段。
-    // r71（r70 code L13）：码元切点不做边界回退——分片拼回无损，截断类（stdio 收缩）才须回退，两谱刻意不同
+    // NM 单帧 ≤1MB（字节维度）：CJK 每字符 3 字节，按字符数切会击穿。用 JSON.stringify
+    // 计而非裸 byteLength：帧最终是 JSON，转义密集页最坏 2x 膨胀，裸测会让
+    // encodeFrame throw → chunk 静默丢、正文缺段。r71：码元切点不做边界回退——
+    // 分片拼回无损，与截断类（stdio 收缩）两谱刻意不同
     let start = 0
     for (;;) {
       let end = Math.min(start + MAX_CHUNK, text.length)

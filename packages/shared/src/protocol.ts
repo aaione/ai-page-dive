@@ -264,7 +264,7 @@ export type TerminalCode =
 export interface TaskErrorMsg {
   t: 'task-error'
   taskId: string
-  code: 'spawn-fail' | 'runtime-error' | 'timeout' | 'cancelled' | 'parse' | 'no-agent' | 'bad-request' | 'content-mismatch' | 'host-shutting-down'
+  code: 'spawn-fail' | 'runtime-error' | 'timeout' | 'cancelled' | 'parse' | 'no-agent' | 'bad-request' | 'content-mismatch' | 'host-shutting-down' | 'session-lost'
   message: string
 }
 
