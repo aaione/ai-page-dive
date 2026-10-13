@@ -76,7 +76,7 @@ export class Task {
   private persistOk = false
   private historyPath = ''
   private timeoutTimer?: ReturnType<typeof setTimeout>
-  /** r80(B)：硬上限闸（不重置）——活跃超长任务也得收（配额保护）；终局后靠回调首行 finished 守卫自然失效 */
+  /** r80(B)：硬上限闸（不重置，配额保护）；r80 审计：各终局出口双闸齐清（防 Task 悬挂 30min） */
   private hardTimer?: ReturnType<typeof setTimeout>
   /** r80(B)：idle 闸重挂（handleEvent 每过程帧调） */
   private armIdle: (cf: string) => void = () => {}
@@ -274,7 +274,7 @@ export class Task {
       // 到达前 finished 仍 false，此处若不挡会误报 timeout 终局顶掉 cancelled
       if (this.finished || this.cancelled) return
       // 终局标记前置：reap 触发的 exit 事件不得再走 finish() 二次发终局
-      this.finished = true
+      this.finished = true; clearTimeout(this.timeoutTimer); clearTimeout(this.hardTimer) // r80 审计：闸已 fire 的 clearTimeout 是 no-op，另一闸不再悬挂
       this.timeoutSent = true
       this.flushDelta() // timeout 不经 finish()：终局前发完缓冲尾巴
       // r47-audit M4：result 已交付（gotResultOk）但进程未退（孙进程持写端）——到点改走成功终局，不误报 timeout
@@ -295,7 +295,7 @@ export class Task {
       this.cleanupCwd(cf)
     }
     this.armIdle = (cf) => {
-      clearTimeout(this.timeoutTimer)
+      clearTimeout(this.timeoutTimer) // 只清 idle 闸——hard 闸不重置（r80 B 语义核心）
       this.timeoutTimer = setTimeout(() => onFire(cf), TASK_TIMEOUT_MS)
     }
     this.armIdle(contentFile)
@@ -308,7 +308,7 @@ export class Task {
         this.finished = true
         // r58（#2）：负退出码 = spawn 失败（UV errno，ENOENT=-2；实测 error 先于 close，此为事件序兜底）——防 parse 误判
         if (code !== null && code < 0) {
-          clearTimeout(this.timeoutTimer)
+          clearTimeout(this.timeoutTimer); clearTimeout(this.hardTimer) // r80 审计：双闸齐清
           this.cleanupCwd(contentFile)
           this.cb.onError('spawn-fail', this.spawnErr ? String(this.spawnErr.message ?? this.spawnErr) : `spawn error (${code})`)
           return resolve()
@@ -321,7 +321,7 @@ export class Task {
       this.proc!.child.on('error', (err) => {
         if (!this.finished) {
           this.finished = true
-          clearTimeout(this.timeoutTimer)
+          clearTimeout(this.timeoutTimer); clearTimeout(this.hardTimer) // r80 审计：双闸齐清
           // r47-audit M5：先 reap 再删 cwd（对齐 cancelled 序，防删运行中进程的工作目录）
           this.proc?.reap()
           this.cleanupCwd(contentFile)
@@ -368,7 +368,7 @@ export class Task {
         if (ev.isError) { // claude 运行内失败：退出码 0 也判失败（硬约束 #4）
           this.finished = true
           this.doneSent = true
-          clearTimeout(this.timeoutTimer)
+          clearTimeout(this.timeoutTimer); clearTimeout(this.hardTimer) // r80 审计：双闸齐清
           this.proc?.reap()
           this.cleanupCwd(contentFile) // 不经过 finish()：isError 路径自回收 cwd（r4-impl）
           // 落盘完成再发终局：host 若在 persist 期间断连退出，错误轮历史不再丢失。
@@ -439,7 +439,7 @@ export class Task {
 
   private async finish(code: number | null, signal: string | null, stderrTail: string, contentFile: string): Promise<void> {
     this.flushDelta() // 攒批兜底：终局前把缓冲里的尾部正文发完
-    clearTimeout(this.timeoutTimer)
+    clearTimeout(this.timeoutTimer); clearTimeout(this.hardTimer) // r80 审计：双闸齐清
     this.cleanupCwd(contentFile)
     const durationMs = Date.now() - this.startedAt
     // r8-host：只有 cancelled/SIGTERM（reap 专属）算「已取消」；SIGKILL 可能来自 OOM killer/手杀，按被杀上报以免误导排障
