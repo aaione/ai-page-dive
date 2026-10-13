@@ -53,6 +53,9 @@ describe('ERROR_LABEL 键域（Partial：未送达族走各自专属展示，不
     expect(ERROR_LABEL.timeout).toContain('任务超时')
     expect(ERROR_LABEL['host-disconnected']).toContain('连接中断')
     expect(ERROR_LABEL['runtime-error']).toContain('运行中异常退出')
+    // r80 审计：收件箱补发通道（missedErrBubble）只查本表——运行期 session-lost
+    // 缺键即「未知错误+裸英文」（r72 host-disconnected 同型复发，删键即红）
+    expect(ERROR_LABEL['session-lost']).toContain('重新发送')
     expect(ERROR_LABEL['no-tab']).toBeUndefined()
     expect(ERROR_LABEL['extract-crash']).toBeUndefined()
   })

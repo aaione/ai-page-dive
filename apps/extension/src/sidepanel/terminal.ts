@@ -23,6 +23,10 @@ export const ERROR_LABEL: Partial<Record<TerminalCode, string>> = {
   'host-disconnected': '本机组件连接中断——请重试',
   // r55（#10）：SW 冷启动把孤儿任务指针折算成的终局（扩展更新/重载打断在跑任务）
   'ext-restarted': '扩展更新或重启打断了进行中的任务——请重新发起',
+  // r80 审计：收件箱补发通道（missedErrBubble 只查本表）——r80(A) 运行期 session-lost
+  // 只加了 START_FAIL_LABEL，面板收起重开落「未知错误（码 session-lost）: 裸英文」
+  //（r72 host-disconnected 同型复发的教训：两表都要有可达码的键）
+  'session-lost': '上轮会话已失效——直接重新发送即可（将开始全新总结）',
 }
 
 /** r76（r75 product high#3）：启动前失败族（SW onStartResult return error / 同码

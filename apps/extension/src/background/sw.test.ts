@@ -1093,13 +1093,23 @@ describe('sw.ts 回归网', () => {
     h.fireNm({ t: 'task-error', taskId: r.taskId, code: 'session-lost', message: 'No conversation found with session ID: s-111' })
     const persist = h.calls.storageSet.slice(base1).filter((s: any) => Array.isArray(s.sessions)).at(-1)
     expect(persist.sessions).toContainEqual([5, { agentId: 'claude', sessionId: '', historyPath: '/tmp/h1.md' }])
-    // 对照：其他码不清句柄（timeout 是传输/生成失败，与 CLI 会话存亡无关）
+  })
+
+  it('r80 A 对照：其他码不清句柄（timeout 是传输/生成失败，与 CLI 会话存亡无关）', async () => {
+    // 独立 it 而非同用例第二段：上一段的入箱 persist（delivered.then 异步）会写
+    // 共享 store，若在其后紧接 boot，seed 会被迟到的旧 persist 竞态顶掉——上一段
+    // followUp 会话已被清成空串，本段 seed 直接落「启动前 session-lost」走不到对照
     const h2 = await boot({ seed: { sessions: [[5, { agentId: 'claude', sessionId: 's-222', historyPath: '/tmp/h2.md' }]], panelTabId: 5, panelWindowId: 1 } })
     const r2 = await h2.fireMessage({ t: 'summarize', followUp: true, instruction: 'x' })
+    expect(r2.taskId).toBeTruthy() // 对照前提：followUp 真起跑（未被 store 残影截断）
     const base2 = h2.calls.storageSet.length
     h2.fireNm({ t: 'task-error', taskId: r2.taskId, code: 'timeout', message: '超时' })
-    await Promise.resolve() // flush 入箱微任务（delivered.then 的 persist 也一并受检）
+    // delivered 两层微任务（sendToPanel 的 then + delivered.then）——单轮
+    // await Promise.resolve() 排不到第二层，宏任务一跳微任务队列全清
+    await new Promise((r) => setTimeout(r, 0))
     const persists = h2.calls.storageSet.slice(base2).filter((s: any) => Array.isArray(s.sessions))
+    // 非空钉死：否则 for-of 空转即 vacuous 通过（入箱 persist 必带 sessions 数组）
+    expect(persists.length).toBeGreaterThan(0)
     for (const p of persists) {
       expect(p.sessions.find((e: any) => e[0] === 5)?.[1]).toMatchObject({ sessionId: 's-222' })
     }
