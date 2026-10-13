@@ -405,6 +405,44 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
    * task-start 单帧内嵌 attachments，ext→host 同受 NM 1MB 帧限（host 侧超限即
    * 失步自杀收割全部任务；旧「5MB/12MB + ext→host 宽松」假设是错的，r31 审计
    * 实证）。超限/读失败标红提示并跳过（r4-ux）：静默丢弃 = 用户不知道附件没带上 */
+  // r79：超限图片压缩重试——缩边 + jpeg 降质阶梯（边 2048→720 × 质 0.8→0.45），
+  // 压进预算的判据与帧内计量同口径（b64.length）。PNG 透明底垫白再转 jpeg；压不进
+  // （极端长图/噪声图）或解码失败返回 null 落回跳过提示。host 落盘不消费 mime
+  // （b64 直写、CLI Read 按 magic bytes 认图），重编码零下游错位
+  const shrinkImage = (f: File, budget: number): Promise<{ b64: string; mime: string } | null> =>
+    new Promise((resolve) => {
+      const img = new Image()
+      let url = ''
+      const done = (r: { b64: string; mime: string } | null) => {
+        if (url) URL.revokeObjectURL(url)
+        resolve(r)
+      }
+      img.onload = () => {
+        const cv = document.createElement('canvas')
+        const ctx = cv.getContext('2d')
+        if (!ctx) return done(null)
+        const dims = [2048, 1600, 1280, 960, 720]
+        const qs = [0.8, 0.6, 0.45]
+        const tryOne = (di: number, qi: number) => {
+          if (di >= dims.length) return done(null)
+          const scale = Math.min(1, dims[di] / Math.max(img.width, img.height))
+          cv.width = Math.max(1, Math.round(img.width * scale))
+          cv.height = Math.max(1, Math.round(img.height * scale))
+          ctx.fillStyle = '#fff'
+          ctx.fillRect(0, 0, cv.width, cv.height)
+          ctx.drawImage(img, 0, 0, cv.width, cv.height)
+          const b64 = cv.toDataURL('image/jpeg', qs[qi]).split(',')[1] ?? ''
+          if (b64.length <= budget) return done({ b64, mime: 'image/jpeg' })
+          qi + 1 < qs.length ? tryOne(di, qi + 1) : tryOne(di + 1, 0)
+        }
+        tryOne(0, 0)
+      }
+      img.onerror = () => done(null)
+      try {
+        url = URL.createObjectURL(f)
+        img.src = url
+      } catch { done(null) }
+    })
   async function pickAttachments(files: FileList | null) {
     if (!files?.length) return
     const all = Array.from(files)
@@ -421,6 +459,14 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
     for (const f of all.slice(0, 5)) {
       const isImage = f.type.startsWith('image/')
       if (isImage ? f.size > IMG_MAX : f.size > 512 * 1024) {
+        // r79：超限图先压缩重试，压进预算才收；文本附件/压不进的图照旧跳过提示
+        if (isImage) {
+          const shrunk = await shrinkImage(f, IMG_MAX).catch(() => null)
+          if (shrunk) {
+            next.push({ name: f.name, kind: 'image', b64: shrunk.b64, mime: shrunk.mime })
+            continue
+          }
+        }
         skipped.push(`${f.name}（超过 ${isImage ? '500KB' : '512KB'}）`)
         continue
       }

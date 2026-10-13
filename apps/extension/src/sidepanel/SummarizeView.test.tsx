@@ -216,4 +216,12 @@ describe('r77：Ctrl+V 粘贴剪贴板图片直入附件链', () => {
     // preventDefault 未发生 → 默认粘贴路径由浏览器插文本（jsdom 不执行默认动作，
     // 此处钉的是「不劫持」：事件未被吞，文本交给浏览器默认行为而非静默丢弃）
   })
+
+  it('r79：超 500KB 图片走压缩重试链——canvas 不可用环境（jsdom 无 URL.createObjectURL）降级 null，仍落跳过提示不抛异常', async () => {
+    mount()
+    const ta = screen.getByRole('textbox', { name: '自定义指令' })
+    const big = new File([new Uint8Array(600 * 1024)], '巨图.png', { type: 'image/png' })
+    fireEvent.paste(ta, { clipboardData: { files: [big], getData: () => '' } })
+    await waitFor(() => expect(screen.getByText(/已跳过：巨图\.png（超过 500KB）/)).toBeTruthy())
+  })
 })
