@@ -16,10 +16,12 @@ r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期�
 ### Fixed（r78 批）
 
 - readability 残缺产出对账降级——课程表类页面不再静默丢正文（真机反馈排查闭环）：cmu-agents 课程表页实证，Readability sibling 裁剪把 Sep–Oct 8 整块当低分兄弟裁掉，结构化产出 1334 字符仅为页面可见文本 5361 的 25%，CLI 快照从 Oct 13 开始、Lecture 1-4 全丢——「成功/失败」二态间没有「成功但残缺」检测，兜底链只在产出为空时触发。修复：degraded 判据（markdown 非空但不足 innerText 1/4 且 innerText 过 looksLikeProse 双启发式）即降级全文兜底，宁带噪声勿丢正文（误伤面=长评论区被正常剥除的文章页带上评论噪声；漏检的损失是 CLI 对页面四分之三内容视而不见）；降级分支绕开 article.textContent（产出已判不可信）；extractor 降级标 innertext、notice「结构解析失败」→「结构解析不可信」涵盖两态。真页复测闭环（构建产物注入真实页面）：修复前 1334 字符/Oct 13 起/无 Lecture，修复后 11458 字符/Aug 25 起全学期/Lecture 1-14 全在（98fec8c）
+- 交互严苛自测（23 agents / 75 断言 / 14 findings → 4 确认缺陷全修，报告 research/interact-audit-r78.md）四修复：①StreamMarkdown StrictMode 流式锁死（high）——卸载清理只 clearTimeout 不置 null，生产入口 main.tsx StrictMode 模拟卸载后重挂载，主 effect 守卫 `if (timerRef.current) return` 只认引用不认死活，残留已清理引用让节流 flush 永久死锁：流式期间零渲染、done 才一次性上屏（单测裸 createRoot 无 StrictMode 测不到该形状）；修复：卸载 effect 一并置 null。②pd-page-tips 层叠拦截（medium）——悬浮条压在滚动区上方，未滚到底时与末条消息操作按钮（复制/下载/新对话）垂直重叠，elementFromPoint 实测命中 tips 文本而非按钮；修复：整体 pointer-events: none（backdrop-filter 磨砂绘制不受影响），notice 的 title 悬停单独恢复 auto。③首轮 done tips 误报降级文案（medium）——resume 分流只看 hasSession（首轮总结 done 即有 sessionId），resynced/unchanged 恒空落入「本轮未同步页面」，与刚分享成功的事实相反（违背 r71 如实原则）；修复：补 followedUp 判据（出现第二条 user 消息即追问已发出才走 resume 三分），首轮 done 如实「已分享」。④图文混合粘贴吞文本（low）——onPaste 只看 clipboardData.files 判纯图，真实混合形状是 image 文件 + text flavor（文本不在 .files），误判纯图接管 preventDefault 后文本静默丢失；修复：getData('text/plain') 有文本即走默认文本粘贴。浏览器回归四点全过：流式渐进上屏（0→2→33→70 during data-done="false"）、tips 非 notice 区 elementFromPoint 穿透命中下层、首轮 done「已分享」无降级文案、混合 defaultPrevented=false 零 chip 且纯图对照接管出 chip
 
 ### Added（r78 批）
 
 - 264 → 266 用例：extract.test.ts +2（readability「成功但残缺」降级全文兜底——jsdom defineProperty 伪造 innerText own property、loadHtml 顺带清跨用例污染；反向锚——正常文章页剥导航后产出占比健康不误降级）；shadow 用例断言同步「结构解析不可信」新文案为存量改造
+- 266 → 270 用例：StreamMarkdown.test.ts +1（StrictMode 模拟卸载不锁死节流——修复前红：单测复现流式零渲染）；SummarizeView.test.tsx +3（粘贴「image 文件 + text flavor」混合形状不接管、tips 首轮 done「已分享」不落降级文案、追问轮仍走 resume 分支对照；存量两粘贴用例 clipboardData 补 getData shim）
 
 ### Added（r77 批）
 
