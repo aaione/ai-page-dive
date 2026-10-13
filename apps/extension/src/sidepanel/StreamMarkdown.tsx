@@ -115,6 +115,11 @@ export const StreamMarkdown = memo(function StreamMarkdown({
   // 卸载时清理（不能在主 effect cleanup 里 clearTimeout——那会退化成每次重排）
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current)
+    // r78（交互审计 high）：清理必须一并置 null——生产入口 main.tsx 的 StrictMode
+    // 模拟卸载后重挂载，主 effect 首行守卫 if (timerRef.current) return 只认引用不认
+    // 死活，残留已 clearTimeout 的引用让节流 flush 永久死锁：流式期间零渲染、done
+    // 才一次性上屏（单测裸 createRoot 无 StrictMode，此前测不到该形状）
+    timerRef.current = null
   }, [])
 
   // r58（#18）：吸底判定收敛单一来源——本组件曾自带 stickyRef（wheel/key/touch

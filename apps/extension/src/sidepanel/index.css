@@ -916,10 +916,16 @@ code, kbd, pre { font-family: var(--font-mono-ui); }
   -webkit-backdrop-filter: var(--pd-glass-1-filter);
   backdrop-filter: var(--pd-glass-1-filter);
   border: 1px solid var(--pd-line-glass);
+  /* r78（交互审计）：悬浮 action-bar 压在滚动区上方，未滚到底时本条与末条消息
+     的操作按钮（复制/下载/新对话）垂直重叠并拦截点击（实测 elementFromPoint 命中
+     tips 文本而非按钮）。本条自身无点击交互——整体放行指针（不影响 backdrop-filter
+     磨砂绘制），notice 的 title 悬停单独恢复 */
+  pointer-events: none;
   /* r43-motion：滑入谱（24px 大幅位移 + easeOutQuint 丝滑收尾）——rise-in 的 14px
      上浮实测感知弱（用户报「没有动画」）；切页重挂载时重播 */
   animation: pd-slide-up-in 300ms cubic-bezier(.22, 1, .36, 1) both;
 }
+.pd-page-tips-notice { pointer-events: auto; }
 .pd-page-tips-favicon {
   width: 16px;
   height: 16px;

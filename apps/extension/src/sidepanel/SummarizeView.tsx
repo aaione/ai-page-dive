@@ -254,6 +254,12 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
   const canFollowUp =
     resumable && (stream.reopened || messages.some((m) => m.role === 'assistant' && !m.streaming && !m.error && m.text))
   const hasSession = canFollowUp
+  // r78（交互审计）：PageTips resume 分流补「已发生追问轮」判据——首轮总结 done 即
+  // 拿到 sessionId（hasSession=true），但 resynced/unchanged 恒空会落入「本轮未同步
+  // 页面」降级文案，与刚分享成功的事实相反（r71 如实原则）。出现第二条 user 消息
+  // （追问发出）才走 resume 三分；首轮 done 后如实说「已分享」。swcycle 还原的对话
+  // 流天然多轮 user，不受影响
+  const followedUp = messages.filter((m) => m.role === 'user').length > 1
   // r56（#12）：resume 态的上下文锚——hasSession 建立时快照来源页 title/url。page-meta
   // 是活数据（页签内导航即更新），不锚定的话 tips 会把「对话上下文」错标成新页标题，
   // 而 CLI --resume 的内容仍是快照页；firstId 变化（新对话/重开还原）时重置重捕
@@ -653,7 +659,7 @@ export function SummarizeView({ agents, workflows, stream, agentId, onAgentChang
             r71（r70 product C9/L3）：失败分流依据收敛为 undelivered（页面未送达 CLI）——
             timeout/is_error 等已送达的生成阶段失败如实说「已分享」（同屏错误气泡已陈述
             事实）；cancelled 终局独立第五态「已停止」 */}
-        {pageMeta && <PageTips key={hasSession && ctxAnchor ? ctxAnchor.url : pageMeta.url} meta={hasSession && ctxAnchor ? { ...pageMeta, ...ctxAnchor } : pageMeta} idle={!messages.length} active={running} failed={!running && messages.length > 0 && stream.done ? !!messages.at(-1)?.isError && !!messages.at(-1)?.undelivered : false} stopped={!running && messages.length > 0 && stream.done ? !!messages.at(-1)?.cancelled : false} dimmed={hasSession ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
+        {pageMeta && <PageTips key={hasSession && ctxAnchor ? ctxAnchor.url : pageMeta.url} meta={hasSession && ctxAnchor ? { ...pageMeta, ...ctxAnchor } : pageMeta} idle={!messages.length} active={running} failed={!running && messages.length > 0 && stream.done ? !!messages.at(-1)?.isError && !!messages.at(-1)?.undelivered : false} stopped={!running && messages.length > 0 && stream.done ? !!messages.at(-1)?.cancelled : false} dimmed={hasSession && followedUp ? 'resume' : workflow === 'quick' ? 'quick' : false} />}
         {chips.shown && chips.shown.length > 0 && (
           <div className={`pd-attach-chips${chips.exiting ? ' pd-exiting' : ''}`}>
             {chips.shown.map((a, i) => (
@@ -1167,6 +1173,10 @@ function ActionBar({
         onPaste={(e) => {
           const files = Array.from(e.clipboardData?.files ?? [])
           if (!files.length || !files.every((f) => f.type.startsWith('image/'))) return
+          // r78（交互审计）：图文混合的真实形状是「image 文件 + text flavor」——
+          // text 以 flavor 形式存在时不在 .files，只看 files 会把混合误判纯图，
+          // preventDefault 后文本静默丢失。有文本 flavor 即走默认文本粘贴
+          if (e.clipboardData.getData('text/plain')) return
           e.preventDefault()
           onPickFiles(e.clipboardData!.files)
         }}

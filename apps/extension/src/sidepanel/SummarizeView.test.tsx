@@ -146,14 +146,54 @@ describe('SummarizeView tips 终局五态分流（r71 r70 product C9/L3）', () 
   })
 })
 
+describe('r78（交互审计）：tips resume 分流补「已发生追问轮」判据', () => {
+  // 契约：首轮总结 done 即有 sessionId（resumable），但 resynced/unchanged 恒空——
+  // 若只看 hasSession 会落「本轮未同步页面」降级文案，与刚分享成功的事实相反。
+  // 出现第二条 user 消息（追问已发出）才走 resume 三分（r71 如实原则）
+  const mountRounds = (messages: TaskStreamState['messages']) =>
+    render(
+      <SummarizeView
+        agents={[{ id: 'claude', available: true, version: '2.1.162' }]}
+        workflows={[]}
+        stream={{ ...stream, done: true, pending: false, messages }}
+        agentId="claude"
+        onAgentChange={() => {}}
+        onStartResult={() => {}}
+        beginTurn={() => {}}
+        beginSession={() => {}}
+        pageMeta={{ url: 'https://example.com/a', title: '示例页' } as never}
+        resumable // 首轮 done 后 SW 已给 sessionId——追问能力在场
+      />,
+    )
+
+  it('首轮 done（单轮 user+完整回答）→「已分享」，不得落「本轮未同步页面」降级文案', () => {
+    mountRounds([
+      { id: 'u1', role: 'user', text: '深度总结本页' },
+      { id: 'a1', role: 'assistant', text: '# 总结\n\n正文' },
+    ])
+    expect(screen.getByText(/已分享「示例页」/)).toBeTruthy()
+    expect(screen.queryByText(/本轮未同步页面/)).toBeNull()
+  })
+
+  it('追问轮（第二条 user 在场）→ 仍走 resume 分支的降级文案（meta 未带 resynced 时如实说）', () => {
+    mountRounds([
+      { id: 'u1', role: 'user', text: '深度总结本页' },
+      { id: 'a1', role: 'assistant', text: '# 总结' },
+      { id: 'u2', role: 'user', text: '第二节展开讲讲' },
+      { id: 'a2', role: 'assistant', text: '展开……' },
+    ])
+    expect(screen.getByText(/本轮未同步页面/)).toBeTruthy()
+  })
+})
+
 describe('r77：Ctrl+V 粘贴剪贴板图片直入附件链', () => {
   it('纯图片粘贴 → chip 渲染（pickAttachments 预算/上限/提示全复用）；纯文本粘贴不劫持', async () => {
     mount()
     const ta = screen.getByRole('textbox', { name: '自定义指令' })
-    fireEvent.paste(ta, { clipboardData: { files: [new File(['fake-png'], '粘贴图.png', { type: 'image/png' })] } })
+    fireEvent.paste(ta, { clipboardData: { files: [new File(['fake-png'], '粘贴图.png', { type: 'image/png' })], getData: () => '' } })
     await waitFor(() => expect(screen.getByText('粘贴图.png')).toBeTruthy())
     // 纯文本粘贴（files 空）不产生新附件
-    fireEvent.paste(ta, { clipboardData: { files: [] } })
+    fireEvent.paste(ta, { clipboardData: { files: [], getData: () => '文本' } })
     expect(screen.getAllByText('粘贴图.png').length).toBe(1)
   })
 
@@ -161,8 +201,19 @@ describe('r77：Ctrl+V 粘贴剪贴板图片直入附件链', () => {
     mount()
     const ta = screen.getByRole('textbox', { name: '自定义指令' })
     fireEvent.paste(ta, {
-      clipboardData: { files: [new File(['x'], '混.png', { type: 'image/png' }), new File(['t'], 'a.txt', { type: 'text/plain' })] },
+      clipboardData: { files: [new File(['x'], '混.png', { type: 'image/png' }), new File(['t'], 'a.txt', { type: 'text/plain' })], getData: () => '' },
     })
     expect(screen.queryByText('混.png')).toBeNull()
+  })
+
+  it('r78（交互审计）：混合的真实形状「image 文件 + text flavor」——getData 有文本即走默认粘贴，文本不静默丢失', () => {
+    mount()
+    const ta = screen.getByRole('textbox', { name: '自定义指令' })
+    fireEvent.paste(ta, {
+      clipboardData: { files: [new File(['x'], '味.png', { type: 'image/png' })], getData: (t: string) => (t === 'text/plain' ? '图文混合文本' : '') },
+    })
+    expect(screen.queryByText('味.png')).toBeNull() // 不接管不出 chip
+    // preventDefault 未发生 → 默认粘贴路径由浏览器插文本（jsdom 不执行默认动作，
+    // 此处钉的是「不劫持」：事件未被吞，文本交给浏览器默认行为而非静默丢弃）
   })
 })

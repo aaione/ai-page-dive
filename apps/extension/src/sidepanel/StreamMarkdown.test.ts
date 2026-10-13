@@ -6,7 +6,7 @@
  * 远程 img 一律不渲染（r52 #4 泄出通道）。剩余 UI 盲区（Settings/历史删改/
  * 附件气泡）见审计 #36，v2+ 分批补
  */
-import { act, createElement } from 'react'
+import { act, createElement, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StreamMarkdown } from './StreamMarkdown.js'
@@ -61,5 +61,19 @@ describe('StreamMarkdown（r58 #36 UI 防线起步）', () => {
     expect(div.querySelector('.pd-md')).toBeNull() // 不走 markdown 分块渲染
     expect(div.textContent).toContain('仅显示末尾约 4 万字符')
     expect(div.textContent).toContain('TAIL_MARKER_末尾')
+  })
+
+  it('r78：StrictMode 模拟卸载不锁死节流——流式期间可见（非 done 才上屏）', async () => {
+    vi.useFakeTimers()
+    // 生产入口 main.tsx 以 <React.StrictMode> 包裹：首挂载排定节流 timer 后模拟
+    // 卸载清理 clearTimeout 但残留 timerRef 引用 → 重挂载守卫 if (timerRef.current)
+    // return 永远早退，流式全程零渲染、done 才一次性上屏（r78 交互审计 high）。
+    // 本 harness 原裸 createRoot 无 StrictMode，恰好测不到该形状
+    const sm = createElement(StreamMarkdown, { text: '# 标题\n\n半截尾部', done: false })
+    act(() => root.render(createElement(StrictMode, null, sm)))
+    act(() => {
+      vi.advanceTimersByTime(100)
+    })
+    expect(div.querySelector('h1')?.textContent).toBe('标题')
   })
 })
