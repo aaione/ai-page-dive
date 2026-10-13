@@ -102,6 +102,8 @@ Chrome 移除扩展后，终端**先执行 `ai-page-dive uninstall`** 清理本�
 <summary>遇到问题？</summary>
 
 先走三步自查：**① 面板顶部有版本横幅** = 扩展与本机组件版本错位，复制横幅里的命令到终端重装即可对齐（若该命令报 **E404**：该版本尚未发布到 npm——勿手改装其他版本（跨版本消息协议可能不匹配），到 [issues](https://github.com/aaione/ai-page-dive/issues) 反馈或等发版后重跑）；**② 终端跑 `which claude` / `which codex`** 确认 CLI 在 PATH 且跑一次无鉴权提示；**③ 重装本机组件**（同②横幅命令，无脑可重复）。仍不行请到 [issues](https://github.com/aaione/ai-page-dive/issues) 搜索或新建（附上扩展版本号与横幅命令输出）。
+
+**④ macOS 弹「无法验证开发者」安全窗**：先看弹窗指名的是哪个文件——本机组件是纯 npm 脚本（无二进制，不会触发），被拦的几乎总是 **CLI 本体**（claude / codex 官方安装器带的二进制，首次执行时 macOS 按隔离标记拦截，与从终端还是从扩展拉起无关）。出路：系统设置 → 隐私与安全性 → 底部「仍要打开」放行一次，或在终端跑 `xattr -d com.apple.quarantine <弹窗指名的文件路径>`；放行后回扩展重试即可。
 </details>
 
 ## 开发者
@@ -111,10 +113,10 @@ Chrome 移除扩展后，终端**先执行 `ai-page-dive uninstall`** 清理本�
 
 - pnpm monorepo：`apps/extension`（Vite + React + TS + Tailwind v4）/ `packages/host`（纯 Node ≥18，运行时零依赖）/ `packages/shared`（类型与 NM 协议）
 - 必读：[DECISIONS.md](DECISIONS.md)（已拍板决策）· [research/product-architecture-report.md](research/product-architecture-report.md)（架构报告）· [AGENTS.md](AGENTS.md)（贡献规范）
-- 测试：vitest 251 用例——host 流解析器 / buildArgs / 真实流 fixture 重放 / pgid 收割链 / 历史轮切分 / SW 回归网（chrome shim 锚冷唤醒竞态、断连清理、丢片对账、分片上限、孤儿任务指针、resolveContentTab 落级链）/ 终局三戳直测 / jsdom 内容提取（与 [AGENTS.md](AGENTS.md) 同口径）
+- 测试：vitest 270 用例——host 流解析器 / buildArgs / 真实流 fixture 重放 / pgid 收割链 / 历史轮切分 / SW 回归网（chrome shim 锚冷唤醒竞态、断连清理、丢片对账、分片上限、孤儿任务指针、resolveContentTab 落级链）/ 终局三戳直测 / jsdom 内容提取（与 [AGENTS.md](AGENTS.md) 同口径）
 
 ```bash
-pnpm install && pnpm test    # 全量测试（26 文件 / 251 用例）
+pnpm install && pnpm test    # 全量测试（26 文件 / 270 用例）
 pnpm build                   # 构建后在 chrome://extensions 加载 apps/extension/dist/
 ```
 </details>
