@@ -13,6 +13,12 @@
 
 r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
 
+### Fixed（r81 修批③——快照指纹持久化 + 会话维度化）
+
+- 快照指纹并入 storage.session（M1）：lastSnap 值从快照全文改 FNV 双 32 位 + 长度指纹（全文曾数百 KB 驻留 SW 内存），随 persistSession 持久化、restoreSession 恢复——此前 SW 回收即失，「页面无变化零附件」承诺只在 SW 不回收时成立（主场景 30s 回收恰是最常见路径）
+- 指纹会话维度化（M2）：resume-history/new-session 顶替会话时清指纹——历史会话没看过本页当前快照，残留指纹假命中「无变化」会漏发快照，追问落在没见过本页的会话上
+- SW 回收跨世代命中 / resume-history 同文照附两条单测变异自证（删持久化/删清理必红）；285 → 287 用例，README/AGENTS 同步
+
 ### Fixed（r81 修批②——captureShot await 窗口所有权复检）
 
 - sw.ts 发送段补单点复检（C1）：captureShot（含 tabs.get + jpeg 编码，数十至上百 ms）是 startSummarize 发送段唯一 await，窗口内任务易主（双面板/双击二发）后旧管道恢复会发第二个 task-start 并把新任务 expectedChars 覆写成旧 total → 新任务 content-received 对账错配被误判 content-mismatch 假终局（r56 #4 同族第三个漏网点）；复检折算 cancelled 后到 return 全程同步（单线程无竞态），窗口一次封死。双击时序单测变异自证（删守卫必红）；284 → 285 用例，README/AGENTS 同步

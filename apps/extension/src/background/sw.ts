@@ -62,10 +62,26 @@ let reconcileTimer: ReturnType<typeof setTimeout> | null = null
 type Session = { agentId: string; sessionId: string; historyPath?: string; page?: { url: string; title: string } }
 const sessions = new Map<number, Session>()
 
-/** r77b（实时读取·指纹复用）：每 tab 最近一次随任务下发的快照全文（全文比对，
- *  零碰撞讨论）。追问轮重抓后一致 → 零附件零披露（CLI 会话里上轮正文还在，再塞
- *  一份重复快照只会撑上下文）；SW 回收后 Map 即空 → miss 照附，宁多勿旧 */
+/** r77b（实时读取·指纹复用）：每 tab 最近一次随任务下发的快照指纹。追问轮重抓后
+ *  一致 → 零附件零披露（CLI 会话里上轮正文还在，再塞一份重复快照只会撑上下文）。
+ *  r81（M1）：值从全文改 hash（全文曾数百 KB 驻留 SW 内存，持久化也会膨胀
+ *  storage.session），并随 persistSession 入 storage.session——此前 SW 回收即失，
+ *  「零膨胀承诺」只在 SW 不回收时成立；r81（M2）：指纹随会话身份存续，
+ *  resume-history/new-session 顶替
+ *  会话时作废（历史会话没看过本页，残留指纹假命中「无变化」会漏发快照） */
 const lastSnap = new Map<number, string>()
+/** r81（M1）：FNV-1a 双 32 位 + 长度的同步指纹。碰撞后果仅一次多余/漏发附件
+ *  （2^-64 级，非安全边界），Math.imul 保证 32 位语义不漂 */
+function snapHash(text: string): string {
+  let h1 = 0x811c9dc5
+  let h2 = 0x9e3779b9
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0
+    h2 = Math.imul(h2 + c, 0x85ebca6b) >>> 0
+  }
+  return `${h1.toString(36)}-${h2.toString(36)}-${text.length}`
+}
 
 /** 面板收起期间错过的任务终局收件箱（r53 #5 / r54 #5）——不变式规约（r57 盲区5）：
  *  ① 入箱仅 task-error 族（host 原生转发 :744 段 / SW 合成 emitTerminal——取消/
@@ -103,7 +119,7 @@ let sessionTouched = false
  * 绝不让持久化异常打断 host 帧转发链 */
 function persistSession() {
   try {
-    chrome.storage?.session?.set({ sessions: [...sessions.entries()], currentAgentId, lastModels: [...lastModels], panelTabId, panelWindowId, disabledTabs: [...disabledTabs], lastTerminals: [...lastTerminals] } as any)?.catch?.(() => {})
+    chrome.storage?.session?.set({ sessions: [...sessions.entries()], currentAgentId, lastModels: [...lastModels], panelTabId, panelWindowId, disabledTabs: [...disabledTabs], lastTerminals: [...lastTerminals], lastSnap: [...lastSnap] } as any)?.catch?.(() => {})
   } catch { /* 无 storage 权限：退化纯内存 */ }
 }
 
@@ -140,7 +156,7 @@ function clearRunningTaskIf(taskId: string) {
 void restoreSession()
 async function restoreSession() {
   try {
-    const s = (await chrome.storage?.session?.get?.(['sessions', 'currentAgentId', 'lastModels', 'panelTabId', 'panelWindowId', 'disabledTabs', 'lastTerminals'])) as Record<string, any> | undefined
+    const s = (await chrome.storage?.session?.get?.(['sessions', 'currentAgentId', 'lastModels', 'panelTabId', 'panelWindowId', 'disabledTabs', 'lastTerminals', 'lastSnap'])) as Record<string, any> | undefined
     // 已被显式动作触碰（含 new-session 清空）则不恢复会话/agent——旧持久化态不得复活。
     // lastModels 是纯展示缓存，逐 key 补全无害，不受 touched 约束
     if (!sessionTouched) {
@@ -151,6 +167,13 @@ async function restoreSession() {
         }
       }
       if (s?.currentAgentId) currentAgentId = s.currentAgentId
+      // r81（M1）：快照指纹同属会话语义（随会话存续/作废），与 sessions 同受 touched
+      // 约束——显式换会话（resume-history/new-session）后的恢复不得带回复活旧指纹
+      if (Array.isArray(s?.lastSnap)) {
+        for (const [k, v] of s.lastSnap) {
+          if (typeof k === 'number' && typeof v === 'string') lastSnap.set(k, v)
+        }
+      }
     }
     // 锚定态恢复（r9-backlog：SW 回收后 onActivated 不知该 unanchor 谁，切 tab 面板
     // 不再收起——锚定承诺失效直到重点图标）。锚定非会话语义，不受 touched 约束；
@@ -588,7 +611,7 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
         const snap = anchor !== null ? await resyncPage(anchor) : null
         let atts = attachments ? [...attachments] : undefined
         let inst = instruction ?? ''
-        if (snap && anchor !== null && lastSnap.get(anchor) === snap.contentMarkdown) {
+        if (snap && anchor !== null && lastSnap.get(anchor) === snapHash(snap.contentMarkdown)) {
           // r77b：指纹命中——与上轮随任务下发的快照全文一致（URL 不变 ≠ 内容不变，
           // 指纹粒度比路径严）→ 零附件零披露行，截图同跳过（页面没变）
           sendToPanel({ t: 'page-meta', page: { title: snap.title, url: snap.url, approxTokens: snap.approxTokens, unchanged: true } })
@@ -607,7 +630,7 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
               // 「原文就此结束」）；编号 = 用户附件数 + 1（host attachSection 统一编号）
               inst = `（本轮已附当前页面最新快照，见附件 [File #${base.length + 1}]，请读取后再作答${pack.note}）\n${inst}`
               sendToPanel({ t: 'page-meta', page: { title: snap.title, url: snap.url, approxTokens: snap.approxTokens, resynced: true } })
-              lastSnap.set(anchor!, snap.contentMarkdown) // r77b：真附上了才记指纹（预算回退丢快照不记——CLI 上下文里没有）
+              lastSnap.set(anchor!, snapHash(snap.contentMarkdown)) // r77b：真附上了才记指纹（预算回退丢快照不记——CLI 上下文里没有）
             }
             atts = next.length ? next : undefined
           }
@@ -632,7 +655,10 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
       const anchor = readAnchor(msg)
       if (currentTask && anchor !== null && currentTask.tabId === anchor) cancelCurrent()
       sessionTouched = true // 显式设置会话：restoreSession 微任务不得用旧态覆盖
-      if (anchor !== null) sessions.set(anchor, { agentId, sessionId, historyPath })
+      if (anchor !== null) {
+        sessions.set(anchor, { agentId, sessionId, historyPath })
+        lastSnap.delete(anchor) // r81（M2）：历史会话没看过本页当前快照——残留指纹假命中「无变化」会漏发
+      }
       currentAgentId = agentId
       persistSession()
       return { ok: true }
@@ -654,7 +680,10 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
         const anchor = readAnchor(msg)
         if (currentTask && anchor !== null && currentTask.tabId === anchor) cancelCurrent()
         sessionTouched = true // 显式清空：restoreSession 微任务不得让旧会话「复活」
-        if (anchor !== null) sessions.delete(anchor)
+        if (anchor !== null) {
+          sessions.delete(anchor)
+          lastSnap.delete(anchor) // r81（M2）：会话已清，指纹无主——下轮 summarize 重记
+        }
         persistSession()
         return { ok: true }
       }
@@ -1246,7 +1275,7 @@ async function startSummarize(o: StartSummarizeOpts) {
   if (!currentTask || currentTask.taskId !== taskId) return { error: 'cancelled', taskId }
 
   const { contentMarkdown, ...meta } = page
-  lastSnap.set(tab.id!, contentMarkdown) // r77b：首轮正文随任务下发，即该 tab 的首个快照指纹
+  lastSnap.set(tab.id!, snapHash(contentMarkdown)) // r77b：首轮正文随任务下发，即该 tab 的首个快照指纹
   // r56（#10）：正文可能来自 iframe（allFrames 择优）——meta.url/title 是 frame 级
   // （location.href/内帧 title），历史 frontmatter/tips/取消文案会失锚到内帧；
   // 顶层 tab 的 url/title 才是用户视角的页面锚

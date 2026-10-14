@@ -401,6 +401,43 @@ describe('sw.ts 回归网', () => {
     expect(t3.attachments).toBeUndefined()
   })
 
+  it('r81 M1：快照指纹随 storage.session 存活 SW 回收——二代 SW 恢复指纹，追问同文零附件', async () => {
+    // 一代 SW：追问附快照记指纹，meta 帧归档会话时一并落盘
+    const h1 = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const M = [{ result: { ...PAGE, contentMarkdown: '同文' } }]
+    ;(h1.chrome.scripting.executeScript as any).mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce(M)
+    await h1.fireMessage({ t: 'summarize', followUp: true, instruction: '一问' })
+    const tid = h1.calls.nmSent.filter((m: any) => m.t === 'task-start').at(-1).task.taskId
+    h1.fireNm({ t: 'task-meta', taskId: tid, sessionId: CLAUDE_SESS.sessionId })
+    await new Promise((r) => setTimeout(r, 10))
+    // 指纹已持久化（修复前 lastSnap 不入 persistSession——SW 回收即失，追问重塞快照）
+    expect(h1.calls.storageSet.at(-1)?.lastSnap).toEqual([[5, expect.any(String)]])
+    // SW 回收：内存 Map 即焚，storage.session 是唯一幸存物——二代 SW 同 storage 恢复
+    const survived = await h1.chrome.storage.session.get([])
+    const h2 = await boot({ seed: survived })
+    ;(h2.chrome.scripting.executeScript as any).mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce(M)
+    const r = await h2.fireMessage({ t: 'summarize', followUp: true, instruction: '二问' })
+    expect(r.ok).toBe(true)
+    const t2 = h2.calls.nmSent.filter((m: any) => m.t === 'task-start').at(-1).task
+    expect(t2.attachments).toBeUndefined() // 指纹跨 SW 世代命中——不再重塞重复快照
+    expect(h2.calls.sent.filter((m: any) => m.t === 'page-meta').at(-1)?.page).toMatchObject({ unchanged: true })
+  })
+
+  it('r81 M2：resume-history 顶替会话即清指纹——历史会话没看过本页，同文也照附快照', async () => {
+    const h = await boot({ seed: { sessions: [[5, CLAUDE_SESS]], panelTabId: 5, panelWindowId: 1 } })
+    const M = [{ result: { ...PAGE, contentMarkdown: '同文' } }]
+    ;(h.chrome.scripting.executeScript as any).mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce(M).mockResolvedValueOnce([]).mockResolvedValueOnce(M)
+    await h.fireMessage({ t: 'summarize', followUp: true, instruction: '一问' })
+    // 装载历史会话（顶替本页签会话）——残留指纹属于被顶掉的对话，历史会话里没有本页快照
+    await h.fireMessage({ t: 'resume-history', agentId: 'codex', sessionId: 'sx-hist' })
+    const r2 = await h.fireMessage({ t: 'summarize', followUp: true, instruction: '二问' })
+    expect(r2.ok).toBe(true)
+    const t2 = h.calls.nmSent.filter((m: any) => m.t === 'task-start').at(-1).task
+    // 修复前：指纹假命中「页面无变化」→ 零附件，追问落在没见过本页的历史会话上
+    expect(t2.attachments?.some((a: any) => a.name === '当前页快照.md')).toBe(true)
+    expect(h.calls.sent.filter((m: any) => m.t === 'page-meta').at(-1)?.page?.unchanged).toBeUndefined()
+  })
+
   it('分片 ≤ MAX_CHUNK（JSON 字节口径，转义密集正文强制走二分收缩）+ done 片 total 对账', async () => {
     const h = await boot()
     // 60 万原始字符、JSON 转义后 ~1.2MB：首个 512K 字符切片按字节口径必然超限，
