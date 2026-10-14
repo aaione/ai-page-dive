@@ -13,6 +13,10 @@
 
 r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
 
+### Fixed（r81 修批②——captureShot await 窗口所有权复检）
+
+- sw.ts 发送段补单点复检（C1）：captureShot（含 tabs.get + jpeg 编码，数十至上百 ms）是 startSummarize 发送段唯一 await，窗口内任务易主（双面板/双击二发）后旧管道恢复会发第二个 task-start 并把新任务 expectedChars 覆写成旧 total → 新任务 content-received 对账错配被误判 content-mismatch 假终局（r56 #4 同族第三个漏网点）；复检折算 cancelled 后到 return 全程同步（单线程无竞态），窗口一次封死。双击时序单测变异自证（删守卫必红）；284 → 285 用例，README/AGENTS 同步
+
 ### Fixed（r81 修批①——watchdog flaky + 两表键域互锁 + timeout 文案）
 
 - task-watchdog 两用例去真时钟窄裕量（C7，审前自查首轮 2 红实证）：帧距 1000/800ms 对 idle 1500ms 裕量仅 500/700ms 负载下假红——env 抬窗 idle=3000/hard=9000、帧距降载放大裕量至 2000/2500ms，断言全部改行为锚（帧表「段5」收齐即活过旧总闸 / chunk ≥14 帧即终局只能来自硬上限），对齐 r63 裕量纪律（task-timeout.test.ts 先例）

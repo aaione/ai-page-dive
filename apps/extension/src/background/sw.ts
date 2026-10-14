@@ -1260,6 +1260,12 @@ async function startSummarize(o: StartSummarizeOpts) {
   // r77（实时读取·成分②）：可视区截图随任务下发（视觉保真通道）；非激活页签/
   // 授权失效静默跳过。帧超限先丢截图（用户附件优先保留），attFrameOver 与追问轮同口径
   const shot = await captureShot(tab.id!, 280 * 1024)
+  // r81（C1）：captureShot 是发送段唯一 await（含 tabs.get + jpeg 编码，数十至上
+  // 百 ms）——窗口内任务易主（双面板/双击二发）后，后续代码无条件写/清 currentTask
+  // 会把新任务的 expectedChars 改写成本任务 total → 新任务 content-received 对账
+  // 错配被误判 content-mismatch 假终局（r56 #4 同族第三个漏网点）。此处复检后到
+  // return 全程同步（单线程无竞态），窗口一次封死；后续清句柄点无需再加条件守卫
+  if (!currentTask || currentTask.taskId !== taskId) return { error: 'cancelled', taskId }
   const taskAtts = shot && !attFrameOver(instruction ?? '', [...(attachments ?? []), shot]) ? [...(attachments ?? []), shot] : attachments
 
   const frame = {

@@ -448,6 +448,50 @@ describe('sw.ts 回归网', () => {
     expect(start?.task?.taskId).toBe(r2.taskId)
   })
 
+  it('r81 C1：captureShot await 窗口内易主——旧管道复检折算 cancelled，不发第二个 task-start 不覆写新任务对账账目', async () => {
+    const h = await boot()
+    // task1 提取成功后挂在截图编码 await（captureShot 是发送段唯一 await）；
+    // task2 随后发起并全程完成（含自己的截图+分片+expectedChars 挂账）；
+    // task1 的截图晚归。修复前：task1 恢复后无条件继续——发出第二个 task-start
+    //（host 起跑无主任务）并把 currentTask.expectedChars 覆写成 task1 的 total →
+    // task2 的 content-received 对账错配被误判 content-mismatch 假终局（r56 #4 同族）
+    let resShot1!: (v: string) => void
+    // 锚页签必须激活（非激活 captureShot 静默跳过，挂不起窗口——:317 先例同设置）
+    h.tabs.set(11, { id: 11, windowId: 2, url: 'https://x/active', title: 'Active', active: true })
+    ;(h.chrome.scripting.executeScript as any)
+      .mockReset()
+      .mockImplementationOnce(async () => []) // task1 注入 content.js
+      .mockImplementationOnce(async () => [{ result: { ...PAGE, contentMarkdown: 'aaaa' } }]) // task1 提取
+      .mockImplementationOnce(async () => []) // task2 注入
+      .mockImplementationOnce(async () => [{ result: { ...PAGE, contentMarkdown: 'bbbbbbbb' } }]) // task2 提取
+    ;(h.chrome.tabs as any).captureVisibleTab = vi.fn()
+      .mockImplementationOnce(() => new Promise((re) => { resShot1 = re })) // task1 截图（挂起）
+      .mockImplementation(async () => 'data:image/jpeg;base64,B') // task2 截图（立即）
+    const p1 = h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    await wait(10)
+    const p2 = h.fireMessage({ t: 'summarize', agentId: 'claude', workflow: 'quick' })
+    const r2 = await p2
+    expect(r2.ok).toBe(true)
+    resShot1('data:image/jpeg;base64,A') // task1 的截图此刻才晚归
+    const r1 = await p1
+    // 复检折算 cancelled（带 taskId 供 panel 台账对账），绝无第二个 task-start
+    expect(r1).toMatchObject({ error: 'cancelled' })
+    expect(typeof r1.taskId).toBe('string')
+    const starts = h.calls.nmSent.filter((m: any) => m.t === 'task-start')
+    expect(starts.length).toBe(1)
+    expect(starts[0]?.task?.taskId).toBe(r2.taskId)
+    // expectedChars 未被 task1 覆写：task2 的回执按自己字数（8）对账——静默。
+    // 若 task1 晚归后仍覆写 expectedChars=4（旧代码），同帧必 mismatch 假终局
+    h.fireNm({ t: 'content-received', taskId: r2.taskId, chars: 'bbbbbbbb'.length })
+    await wait(20)
+    expect(h.calls.nmSent).not.toContainEqual({ t: 'task-cancel', taskId: r2.taskId })
+    // 唯一允许的 task-error 是 task1 自身的取消终局（task2 进场收割——cancelCurrent
+    // 设计内帧，r57 #4 入箱）；task2 必须零错误帧（mismatch 假终局旧代码在此现形）
+    const errs = h.calls.sent.filter((m: any) => m.t === 'task-error')
+    expect(errs.filter((m: any) => m.taskId === r2.taskId)).toEqual([])
+    expect(errs.map((m: any) => [m.taskId, m.code])).toEqual([[r1.taskId, 'cancelled']])
+  })
+
   it('r56 #10：正文来自 iframe 时 task-start 携带顶层 tab 的 url/title（不以内帧失锚）', async () => {
     const h = await boot()
     // allFrames 择优可能选中内帧——提取结果的 url/title 是 frame 级（location.href/内帧
