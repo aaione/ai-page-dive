@@ -13,6 +13,12 @@
 
 r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
 
+### Docs（r81 双审批——产品+代码双 workflow 严苛审，报告入库待修）
+
+- r81 产品功能审（7 维 finder→对抗复核→终裁，18 agents/602k tokens；reports/2026-10-14-r81-product-audit.md，d0ab8f3）：终裁 4.5/否——critical 同根：发布链断裂第 15 轮续计（远端 install.sh 钉 0.1.3 而 registry 仅 0.1.2，新用户主线 100% E404 且失败指引对不上真因）；代码修 4 项立案：快照指纹并入 storage.session（M1，主场景 SW 回收后零膨胀承诺失效）、指纹 Map 会话维度化（M2，resume-history 假命中「页面无变化」）、host-not-found 补两表键+四处 return 补 taskId（M3，r75/r76 同型第三犯）、timeout 文案去「上限 10 分钟」口径（M4，r80 双闸硬上限 30min 脱节）；17 low（README 测试数 271/26 文件→实数 279/28、session-lost 文案两表重复无断言、watchdog 真时钟窄裕量等）
+- r81 代码实现审（5 维；reports/2026-10-14-r81-code-audit.md，28b6e12）：终裁 6.0/否——基数 8.3（健壮性 8/安全 8/正确性 7.5）被质量体系扣穿：C6 high App.tsx 等 2619 行 view 层零变异网（变异实证删 App.tsx:839 迟到回调守卫后 116 测试全绿，r75 挂账四轮未清）、C7 high task-watchdog 双用例真时钟窄裕量 500/700ms（审前自查首轮 2 红实证，同仓 r63 裕量纪律二踩）；C1 medium captureShot await 窗口无所有权复检（r56 同族第三个漏网点，双击下 expectedChars 错配假终局）；C9+C12+C8 medium 两表键域对 TerminalCode 闭集无互锁+两查找链不一致+UNDELIVERED_CODES 19 成员只钉 9（变异实证删 5 可达码全绿）——r72/r80 同型债第三犯；host 红线余量实测 1 行（2199/2200）；C4 low escapeYaml 漏 U+2028/2029（页面可控 title 可伪造 frontmatter 键）。首轮 verify 段 429 限额打穿 4 员（重置 19:50），21:01 同 runId resume 缓存补缺一把成（净补 50k tokens）
+- 审计方法入库（workflow-audit-discipline 记忆 #20/#21）：429 型验尸-resume-缓存三步法定型；变异授权+还原纪律+主编亲测三件套闭环生效
+
 ### Fixed（r80 审计批——严苛 review 实测修复）
 
 - 收件箱补发通道 session-lost 补 ERROR_LABEL 键（high）：missedErrBubble 只查 ERROR_LABEL——r80(A) 运行期 session-lost 只进了 START_FAIL_LABEL，面板收起重开落「未知错误（码 session-lost）: 裸英文」自愈指引丢失（r72 host-disconnected 同型复发）；补键 + terminal.test 删键即红断言。顺带揪出 sw.test 对照用例隔离缺陷：上一段入箱 persist（delivered.then 异步）写共享 store 竞态顶掉下一段 seed，对照段从未真正跑过（followUp 被截断成启动前 session-lost）——拆独立 it + taskId 前提断言 + persists 非空钉死（for-of 空转 vacuous）+ 宏任务 flush（delivered 两层微任务单轮 await 排不到）
