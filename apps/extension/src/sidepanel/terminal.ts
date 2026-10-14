@@ -102,3 +102,21 @@ export function terminalLabel(code?: string): string | undefined {
   const c = (code ?? '') as TerminalCode
   return START_FAIL_LABEL[c] ?? ERROR_LABEL[c]
 }
+
+/** r81（C6）：send 回调错误分支的三重迟到守卫——此前内联在 App.tsx onStartResult
+ *  的 setStream 闭包（App 全仓零直测，变异实证删守卫 116 测试全绿）。纯函数化后
+ *  参数化直测钉死三判据，App 消费语义逐字不变。 */
+export function dropLateError(
+  resp: { error?: string; taskId?: string },
+  s: { finished: string[]; taskId: string | null; pending: boolean; activeId: string | null; messages: unknown[] },
+): boolean {
+  // 旧轮 send 的迟到取消回调（新对话后重发，SW 提取窗口秒级）：resp.taskId 已在
+  // 终局台账——静默丢弃，勿清掉新一轮 pending/滤掉其占位气泡（r4-regression）
+  if (typeof resp.taskId === 'string' && s.finished.includes(resp.taskId)) return true
+  // 同类窄漏（r4-impl）：cancelled 在 SW reading 占位帧发出前被顶替——taskId 从未
+  // 进台账，台账守卫拦不住；与当前绑定不符即无事故可报，静默丢弃
+  if (resp.error === 'cancelled' && resp.taskId !== s.taskId) return true
+  // 已被 newChat/新会话清场的空 stream = 旧轮 send 的迟到回调——错误气泡注入全新
+  // 空会话是新用户首屏最常见的脏态（r3-ux R3-m1），静默丢弃
+  return s.pending === false && s.taskId === null && s.activeId === null && s.messages.length === 0
+}

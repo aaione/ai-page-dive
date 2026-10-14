@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TerminalCode } from '@ai-page-dive/shared'
-import { ERROR_LABEL, START_FAIL_LABEL, stampTerminal, terminalLabel, UNDELIVERED_CODES } from './terminal.js'
+import { dropLateError, ERROR_LABEL, START_FAIL_LABEL, stampTerminal, terminalLabel, UNDELIVERED_CODES } from './terminal.js'
 
 // r74（r73 code high#2）：终局三戳谓词直测——UNDELIVERED_CODES.has 生产逻辑此前
 // 零测试执行（tips 五态测试手搓 props），本文件是其第一道回归网；谱系口径见
@@ -116,5 +116,34 @@ describe('r81 键域互锁（C8/C9/C13——同型缺键债三犯后的结构防
   it('M4：timeout 文案不再钉具体分钟数（r80 双闸 idle 续命 + 30min 硬上限，分钟数两头不实）', () => {
     expect(ERROR_LABEL.timeout).not.toContain('分钟')
     expect(ERROR_LABEL.timeout).toContain('任务超时')
+  })
+})
+
+describe('r81 C6：迟到回调守卫（dropLateError——App send 错误分支三重判据参数化直测）', () => {
+  // 最小结构态：字段与 App stream 状态同形（鸭子型——守卫只读这五个字段）
+  const S = (over: Partial<Parameters<typeof dropLateError>[1]>) => ({
+    finished: [] as string[], taskId: null as string | null, pending: true, activeId: null as string | null, messages: [{}] as unknown[], ...over,
+  })
+
+  it('守卫①：taskId 在终局台账 → 丢（旧轮迟到回调不清新一轮 pending/不滤其占位气泡）', () => {
+    expect(dropLateError({ error: 'cancelled', taskId: 't-old' }, S({ finished: ['t-old'], taskId: 't-new', pending: true }))).toBe(true)
+    expect(dropLateError({ error: 'timeout', taskId: 't-x' }, S({ finished: ['t-x'] }))).toBe(true)
+  })
+
+  it('守卫②：cancelled 且 taskId 与当前绑定不符 → 丢（占位帧前被顶替，台账拦不住的窄漏）', () => {
+    expect(dropLateError({ error: 'cancelled', taskId: 't-old' }, S({ taskId: 't-new', finished: [] }))).toBe(true)
+    // taskId 恰是当前绑定 → 不丢（本轮自己的取消，须正常收尾）
+    expect(dropLateError({ error: 'cancelled', taskId: 't-now' }, S({ taskId: 't-now' }))).toBe(false)
+  })
+
+  it('守卫③：清场空 stream（newChat/新会话后）→ 丢（错误气泡注入全新空会话是首屏脏态）', () => {
+    expect(dropLateError({ error: 'no-permission' }, S({ pending: false, taskId: null, activeId: null, messages: [] }))).toBe(true)
+    // 空 stream 但 pending 中 → 不丢（本轮自己的失败必须上报）
+    expect(dropLateError({ error: 'no-permission' }, S({ pending: true, messages: [] }))).toBe(false)
+  })
+
+  it('非守卫域：在跑/非空会话的回调错误 → 不丢（守卫不得误伤正常失败路径）', () => {
+    expect(dropLateError({ error: 'no-permission', taskId: 't-now' }, S({ taskId: 't-now', pending: true }))).toBe(false)
+    expect(dropLateError({ error: 'timeout' }, S({ taskId: 't-now' }))).toBe(false)
   })
 })

@@ -7,7 +7,7 @@ import { Onboarding } from './Onboarding.js'
 import { SummarizeView, useDisabledClis } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
 import { Settings } from './Settings.js'
-import { ERROR_LABEL, stampTerminal, terminalLabel } from './terminal.js'
+import { dropLateError, ERROR_LABEL, stampTerminal, terminalLabel } from './terminal.js'
 
 type Overlay = null | 'history' | 'settings'
 
@@ -838,15 +838,9 @@ export function App() {
       const base = terminalLabel(code) ?? code
       const msg = resp.detail && DETAIL_MAX[code] ? `${base}（原始信息：${String(resp.detail).slice(0, DETAIL_MAX[code])}）` : base
       setStream((s) => {
-        // 旧轮 send 的迟到取消回调（新对话后重发，SW 提取窗口秒级）：resp.taskId 已
-        // 在终局台账——静默丢弃，勿清掉新一轮 pending/滤掉其占位气泡（r4-regression）
-        if (typeof resp.taskId === 'string' && s.finished.includes(resp.taskId)) return s
-        // 同类窄漏（r4-impl）：cancelled 在 SW reading 占位帧发出前被顶替——taskId 从
-        // 未进台账，台账守卫拦不住；与当前绑定不符即无事故可报，静默丢弃
-        if (resp.error === 'cancelled' && resp.taskId !== s.taskId) return s
-        // 已被 newChat/新会话清场的空 stream = 旧轮 send 的迟到回调——错误气泡注入
-        // 全新空会话是新用户首屏最常见的脏态（r3-ux R3-m1），静默丢弃
-        if (s.pending === false && s.taskId === null && s.activeId === null && s.messages.length === 0) return s
+        // r81（C6）：三重迟到守卫纯函数化 terminal.ts dropLateError——此前闭包内联
+        // 全仓零直测（变异实证删守卫后 116 测试全绿），判据谱系注释随迁
+        if (dropLateError(resp, s)) return s
         return {
           ...s,
           // 终局（含 SW reading 占位帧已绑定 taskId 的失败路径）：解绑 + 收尾——
