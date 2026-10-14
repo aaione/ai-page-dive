@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ERROR_LABEL, START_FAIL_LABEL, stampTerminal } from './terminal.js'
+import type { TerminalCode } from '@ai-page-dive/shared'
+import { ERROR_LABEL, START_FAIL_LABEL, stampTerminal, terminalLabel, UNDELIVERED_CODES } from './terminal.js'
 
 // r74（r73 code high#2）：终局三戳谓词直测——UNDELIVERED_CODES.has 生产逻辑此前
 // 零测试执行（tips 五态测试手搓 props），本文件是其第一道回归网；谱系口径见
@@ -71,5 +72,49 @@ describe('ERROR_LABEL 键域（Partial：未送达族走各自专属展示，不
     }
     // 抽查首跑最高频路径：授权失败不再「未知错误（码 no-permission）」
     expect(START_FAIL_LABEL['no-permission']).toContain('点工具栏上的 PageDive 图标')
+  })
+})
+
+describe('r81 键域互锁（C8/C9/C13——同型缺键债三犯后的结构防线）', () => {
+  // TerminalCode 闭集全集（shared/protocol.ts）——闭集加码而两表无键，此断言红
+  const CLOSED_SET: TerminalCode[] = [
+    'spawn-fail', 'runtime-error', 'timeout', 'cancelled', 'parse', 'no-agent', 'bad-request',
+    'content-mismatch', 'host-shutting-down', 'host-disconnected', 'ext-restarted', 'session-lost',
+    'no-tab', 'unsupported-page', 'pdf-page', 'inject-failed', 'tab-closed',
+    'page-not-ready', 'extract-crash', 'no-permission', 'empty-content',
+    'frame-too-large', 'host-not-found', 'host-not-found-retry', 'empty-instruction',
+  ]
+
+  it('C9：闭集全码 terminalLabel 必有文案——两表全缺即「未知错误/裸码」（host-not-found 曾三犯；单侧缺由 C12 统一链兜住非缺陷）', () => {
+    for (const code of CLOSED_SET) {
+      expect(terminalLabel(code), code).toBeTruthy()
+    }
+  })
+
+  it('C8：UNDELIVERED_CODES 全集逐成员 undelivered:true——从集合删可达码即红（曾只钉 9/19）', () => {
+    expect(UNDELIVERED_CODES.size).toBe(19)
+    for (const code of UNDELIVERED_CODES) {
+      expect(stampTerminal(code).undelivered, code).toBe(true)
+    }
+  })
+
+  it('C13：两表重复键文案逐字相同——重复无断言曾是漂移温床（session-lost 曾 r80 补键时单侧漏）', () => {
+    for (const code of CLOSED_SET) {
+      if (ERROR_LABEL[code] && START_FAIL_LABEL[code]) {
+        expect(START_FAIL_LABEL[code], code).toBe(ERROR_LABEL[code])
+      }
+    }
+  })
+
+  it('C12：terminalLabel 优先级 START_FAIL→ERROR_LABEL，闭集外码落 undefined（调用方未知兜底）', () => {
+    expect(terminalLabel('host-not-found')).toBe(START_FAIL_LABEL['host-not-found'])
+    expect(terminalLabel('timeout')).toBe(ERROR_LABEL.timeout)
+    expect(terminalLabel('no-tab')).toBe(START_FAIL_LABEL['no-tab'])
+    expect(terminalLabel('whatever-unknown')).toBeUndefined()
+  })
+
+  it('M4：timeout 文案不再钉具体分钟数（r80 双闸 idle 续命 + 30min 硬上限，分钟数两头不实）', () => {
+    expect(ERROR_LABEL.timeout).not.toContain('分钟')
+    expect(ERROR_LABEL.timeout).toContain('任务超时')
   })
 })

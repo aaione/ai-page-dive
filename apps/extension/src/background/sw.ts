@@ -986,7 +986,7 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
   const ok = nmPort.send(frame)
   if (!ok) {
     emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '本机组件未就绪，追问未发出——请重试', tabId: anchor ?? -1 }, anchor ?? -1) // r58（#4）
-    return { error: 'host-not-found', lastError: nmPort.lastError }
+    return { error: 'host-not-found', taskId, lastError: nmPort.lastError } // r81（M3）：补 taskId——App send 回调按 finished 台账去重，缺它双气泡
   }
   currentTask = { taskId, tabId: anchor ?? -1, page, content: '', startedAt: Date.now() }
   rememberTab(taskId, anchor ?? -1)
@@ -997,7 +997,7 @@ function startFollowUp(agentId: string, sessionId: string, instruction: string, 
     currentTask = null
     clearRunningTask() // r55（#10）
     emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '追问发送中断（本机组件连接失败）——请重试', tabId: anchor ?? -1 }, anchor ?? -1) // r58（#4）
-    return { error: 'host-not-found', lastError: nmPort.lastError }
+    return { error: 'host-not-found', taskId, lastError: nmPort.lastError } // r81（M3）：补 taskId——App send 回调按 finished 台账去重，缺它双气泡
   }
   // r62 审计（code #2）：r58#28 只修了 summarize 路径——追问轮 done 片被吞同样三重放大
   //（host 心跳永生续命 panel 看门狗 + CLI 永不启动 + 无自动收敛）。同款 15s 对账兜底：
@@ -1277,7 +1277,7 @@ async function startSummarize(o: StartSummarizeOpts) {
   if (!ok) {
     currentTask = null
     emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '本机组件未就绪——请重试', tabId: tab.id! }, tab.id!) // r58（#3）
-    return { error: 'host-not-found', lastError: nmPort.lastError }
+    return { error: 'host-not-found', taskId, lastError: nmPort.lastError } // r81（M3）：补 taskId——App send 回调按 finished 台账去重，缺它双气泡
   }
   setRunningTask(taskId, tab.id!) // r55（#10）：host 已受理，任务有了可死的实体
 
@@ -1311,7 +1311,7 @@ async function startSummarize(o: StartSummarizeOpts) {
       currentTask = null
       clearRunningTask() // r55（#10）：半途而废的正文同样终结任务
       emitTerminal({ t: 'task-error', taskId, code: 'host-not-found', message: '正文发送中断（本机组件连接失败）——请重试', tabId: tab.id! }, tab.id!) // r58（#4）
-      return { error: 'host-not-found', lastError: nmPort.lastError }
+      return { error: 'host-not-found', taskId, lastError: nmPort.lastError } // r81（M3）：补 taskId——App send 回调按 finished 台账去重，缺它双气泡
     }
     i = end
     seq++

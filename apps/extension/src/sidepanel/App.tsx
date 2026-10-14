@@ -7,7 +7,7 @@ import { Onboarding } from './Onboarding.js'
 import { SummarizeView, useDisabledClis } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
 import { Settings } from './Settings.js'
-import { ERROR_LABEL, START_FAIL_LABEL, stampTerminal } from './terminal.js'
+import { ERROR_LABEL, stampTerminal, terminalLabel } from './terminal.js'
 
 type Overlay = null | 'history' | 'settings'
 
@@ -689,8 +689,10 @@ export function App() {
                         : m.code === 'content-mismatch' && m.message
                           ? m.message
                           // r76：启动前失败族帧通道优先 START_FAIL_LABEL（SW message 是
-                          // 原始英文不拼进气泡）——不再落「未知错误（码 no-permission）」
-                          : START_FAIL_LABEL[m.code as TerminalCode] ?? `${ERROR_LABEL[m.code] ?? `未知错误（码 ${m.code}）`}: ${authHint(m.message)}`,
+                          // 原始英文不拼进气泡）——不再落「未知错误（码 no-permission）」。
+                          // r81（C12）：改走 terminalLabel 统一链（START_FAIL→ERROR_LABEL），
+                          // 与 missedErrBubble 同源——两链分裂是 r72/r80/r81 缺键债温床
+                          : terminalLabel(m.code) ?? `未知错误（码 ${m.code}）: ${authHint(m.message)}`,
                     isError: true,
                     // r74（r73 code low#8）：三戳收敛 stampTerminal——统一 missed 版
                     // 三排除（多排 ext-restarted，实时不可达：SW 冷启动孤儿指针折算
@@ -831,7 +833,9 @@ export function App() {
       // 回调通道句尾拼接（截断上限沿 r46 口径）
       const code = String(resp.error)
       const DETAIL_MAX: Record<string, number> = { 'inject-failed': 120, 'extract-crash': 80, 'no-permission': 120 }
-      const base = START_FAIL_LABEL[code as TerminalCode] ?? code
+      // r81（M3/C12）：terminalLabel 统一链（START_FAIL→ERROR_LABEL）——SW 四处
+      // return { error: 'host-not-found' } 此前落英文裸码（仅 START_FAIL 一层查不到）
+      const base = terminalLabel(code) ?? code
       const msg = resp.detail && DETAIL_MAX[code] ? `${base}（原始信息：${String(resp.detail).slice(0, DETAIL_MAX[code])}）` : base
       setStream((s) => {
         // 旧轮 send 的迟到取消回调（新对话后重发，SW 提取窗口秒级）：resp.taskId 已
@@ -1110,13 +1114,15 @@ function missedErrBubble(mt: { taskId: string; code?: string; message?: string }
     role: 'assistant' as const,
     text: '',
     error: mt.code === 'timeout'
-      ? '任务超时（上限 10 分钟）——请重新发起'
+      ? '任务超时——请重新发起'
       // r58（#22）：cancelled/content-mismatch 单用已定文案——host 的 message
       //（"task cancelled" 等）与 label 同义，拼接成「已取消: task cancelled」双重前缀
       : mt.code === 'cancelled' ? '已取消'
       : mt.code === 'content-mismatch' ? (mt.message || '正文传输不完整，已取消——请重试')
-      // r74：missedTerminal.code 跨进程即 string——cast 进闭集索引，闭集外新码仍落 ?? 兜底
-      : `${ERROR_LABEL[(mt.code ?? '') as TerminalCode] ?? `未知错误（码 ${mt.code ?? 'error'}）`}${mt.message ? `: ${authHint(mt.message)}` : ''}`,
+      // r81（C12）：改走 terminalLabel 统一链（START_FAIL→ERROR_LABEL）——此前只查
+      // ERROR_LABEL，仅 START_FAIL 有键的可达码（host-not-found）落「未知错误」。
+      // r74：missedTerminal.code 跨进程即 string——闭集外新码仍落 ?? 兜底
+      : `${terminalLabel(mt.code) ?? `未知错误（码 ${mt.code ?? 'error'}）`}${mt.message ? `: ${authHint(mt.message)}` : ''}`,
     isError: true,
     // r72（r71 code C2）：收件箱补发的取消终局同样带 cancelled——tips 五态在 missed
     // 落点此前误落「已分享」（stopped 判据读 cancelled，与实时分支 :675 不同步）。

@@ -13,6 +13,15 @@
 
 r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
 
+### Fixed（r81 修批①——watchdog flaky + 两表键域互锁 + timeout 文案）
+
+- task-watchdog 两用例去真时钟窄裕量（C7，审前自查首轮 2 红实证）：帧距 1000/800ms 对 idle 1500ms 裕量仅 500/700ms 负载下假红——env 抬窗 idle=3000/hard=9000、帧距降载放大裕量至 2000/2500ms，断言全部改行为锚（帧表「段5」收齐即活过旧总闸 / chunk ≥14 帧即终局只能来自硬上限），对齐 r63 裕量纪律（task-timeout.test.ts 先例）
+- host-not-found 补两表键 + SW 四处 return 补 taskId（M3）：terminal.ts ERROR_LABEL/START_FAIL_LABEL 各补「本机组件未就绪——请重试」（r72/r80/r81 同型缺键债第三犯收官）；sw.ts:989/1000/1280/1314 return 补 taskId 对齐 r76-E——App send 回调按 finished 台账去重，缺它双气泡
+- 终局文案统一查找链 terminalLabel（C12）：帧通道（START_FAIL→ERROR_LABEL→未知）与 missedErrBubble（仅 ERROR_LABEL→未知）两套结构合一（START_FAIL 优先），App 三消费点同源——单侧缺键不再可达「未知错误/裸码」（变异 A 实证：单侧删键不再产生用户可见缺陷即修复生效）
+- 键域互锁三断言（C8/C9/C13，变异自证均红）：UNDELIVERED_CODES 导出+全集逐成员 undelivered 断言（曾只钉 9/19，删可达码不红）；TerminalCode 闭集 24 码 terminalLabel 必有文案（两表全缺即红）；两表重复键文案逐字相同（session-lost 曾 r80 单侧漏）
+- timeout 文案去「上限 10 分钟」（M4）：r80(B) 双闸后 idle 帧续命 + 30min 硬上限，分钟数两头不实（terminal.ts 与 App.tsx missedErrBubble 两处）
+- 279 → 284 用例（terminal.test +5 互锁断言）；README/AGENTS 测试数同步（README 开发者节 271/26 → 284/28——r81 F2/F26 账面漂移顺手清）
+
 ### Docs（r81 双审批——产品+代码双 workflow 严苛审，报告入库待修）
 
 - r81 产品功能审（7 维 finder→对抗复核→终裁，18 agents/602k tokens；reports/2026-10-14-r81-product-audit.md，d0ab8f3）：终裁 4.5/否——critical 同根：发布链断裂第 15 轮续计（远端 install.sh 钉 0.1.3 而 registry 仅 0.1.2，新用户主线 100% E404 且失败指引对不上真因）；代码修 4 项立案：快照指纹并入 storage.session（M1，主场景 SW 回收后零膨胀承诺失效）、指纹 Map 会话维度化（M2，resume-history 假命中「页面无变化」）、host-not-found 补两表键+四处 return 补 taskId（M3，r75/r76 同型第三犯）、timeout 文案去「上限 10 分钟」口径（M4，r80 双闸硬上限 30min 脱节）；17 low（README 测试数 271/26 文件→实数 279/28、session-lost 文案两表重复无断言、watchdog 真时钟窄裕量等）

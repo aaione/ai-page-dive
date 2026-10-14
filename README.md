@@ -113,10 +113,10 @@ Chrome 移除扩展后，终端**先执行 `ai-page-dive uninstall`** 清理本�
 
 - pnpm monorepo：`apps/extension`（Vite + React + TS + Tailwind v4）/ `packages/host`（纯 Node ≥18，运行时零依赖）/ `packages/shared`（类型与 NM 协议）
 - 必读：[DECISIONS.md](DECISIONS.md)（已拍板决策）· [research/product-architecture-report.md](research/product-architecture-report.md)（架构报告）· [AGENTS.md](AGENTS.md)（贡献规范）
-- 测试：vitest 271 用例——host 流解析器 / buildArgs / 真实流 fixture 重放 / pgid 收割链 / 历史轮切分 / SW 回归网（chrome shim 锚冷唤醒竞态、断连清理、丢片对账、分片上限、孤儿任务指针、resolveContentTab 落级链）/ 终局三戳直测 / jsdom 内容提取（与 [AGENTS.md](AGENTS.md) 同口径）
+- 测试：vitest 284 用例——host 流解析器 / buildArgs / 真实流 fixture 重放 / pgid 收割链 / 历史轮切分 / SW 回归网（chrome shim 锚冷唤醒竞态、断连清理、丢片对账、分片上限、孤儿任务指针、resolveContentTab 落级链）/ 终局三戳直测 / jsdom 内容提取（与 [AGENTS.md](AGENTS.md) 同口径）
 
 ```bash
-pnpm install && pnpm test    # 全量测试（26 文件 / 271 用例）
+pnpm install && pnpm test    # 全量测试（28 文件 / 284 用例）
 pnpm build                   # 构建后在 chrome://extensions 加载 apps/extension/dist/
 ```
 </details>

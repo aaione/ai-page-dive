@@ -10,8 +10,10 @@ export const ERROR_LABEL: Partial<Record<TerminalCode, string>> = {
   // 不入 UNDELIVERED_CODES（已送达的生成阶段失败），tips 不再误标「分享未成功」
   'runtime-error': 'CLI 运行中异常退出——本次总结未完成，请重试',
   // r52（review #16）：完整用户向文案——host 原始英文 "task exceeded 10min" 不再
-  // 拼进气泡（task-error 分支的 timeout 专用处理 + console.debug 维护者通道）
-  timeout: '任务超时（上限 10 分钟）——你的问题已放回输入框（未覆盖已有草稿），可直接重发',
+  // 拼进气泡（task-error 分支的 timeout 专用处理 + console.debug 维护者通道）。
+  // r81（M4）：去「上限 10 分钟」——r80(B) 双闸后 idle 帧续命 + 30min 硬上限，
+  // 被硬上限强收的用户按旧文案推算「才 10 分钟？」与事实不符，分钟数两头都不实
+  timeout: '任务超时——你的问题已放回输入框（未覆盖已有草稿），可直接重发',
   cancelled: '已取消',
   parse: 'CLI 输出异常',
   'no-agent': '未知 CLI',
@@ -27,6 +29,10 @@ export const ERROR_LABEL: Partial<Record<TerminalCode, string>> = {
   // 只加了 START_FAIL_LABEL，面板收起重开落「未知错误（码 session-lost）: 裸英文」
   //（r72 host-disconnected 同型复发的教训：两表都要有可达码的键）
   'session-lost': '上轮会话已失效——直接重新发送即可（将开始全新总结）',
+  // r81（M3/C9）：host-not-found 运行期可达（NM 断连重试失败经 emitTerminal 进
+  // 收件箱）——C12 统一链后单侧缺键由 terminalLabel 兜住，双键为防御纵深
+  //（App.tsx 流式收尾仍直查本表），C13 断言钉死两表重复键逐字同步
+  'host-not-found': '本机组件未就绪——请重试',
 }
 
 /** r76（r75 product high#3）：启动前失败族（SW onStartResult return error / 同码
@@ -50,6 +56,9 @@ export const START_FAIL_LABEL: Partial<Record<TerminalCode, string>> = {
   // resume 目标丢失），通用措辞两边都如实
   'session-lost': '上轮会话已失效——直接重新发送即可（将开始全新总结）',
   'frame-too-large': '内容过长（输入 + 附件超出单帧 1MB 上限）——精简附件或缩短输入后重试',
+  // r81（M3）：SW 四处 return { error: 'host-not-found' } 回调通道查本表——
+  // 缺键即气泡落英文裸码（App.tsx base ?? code 兜底）
+  'host-not-found': '本机组件未就绪——请重试',
 }
 
 /** r71（r70 product C9/L3）：终局「页面未送达 CLI」code 集——tips 分流依据。
@@ -61,7 +70,9 @@ export const START_FAIL_LABEL: Partial<Record<TerminalCode, string>> = {
  *  r76（r75 code medium#4）点名 host-disconnected 不收编：断连时正文已过
  *  stdin（已送达），tips 不标「分享未成功」——App 实时/收尾/missed 三路径
  *  统一走 stampTerminal 同值。 */
-const UNDELIVERED_CODES = new Set<TerminalCode>([
+// r81（C8）：导出供 terminal.test 键全集互锁断言——此前私有，19 成员只被逐码
+// 抽钉 9 个，从集合删可达码测试不红（变异实证）
+export const UNDELIVERED_CODES = new Set<TerminalCode>([
   'no-tab', 'unsupported-page', 'pdf-page', 'inject-failed', 'tab-closed', 'page-not-ready',
   'extract-crash', 'no-permission', 'empty-content', 'frame-too-large', 'host-not-found',
   'host-not-found-retry', 'spawn-fail', 'no-agent', 'bad-request', 'empty-instruction',
@@ -80,4 +91,14 @@ export function stampTerminal(code?: string): { cancelled: boolean; undelivered:
     undelivered: UNDELIVERED_CODES.has((code ?? '') as TerminalCode),
     cliFault: code !== 'cancelled' && code !== 'content-mismatch' && code !== 'ext-restarted',
   }
+}
+
+/** r81（C12）：终局文案统一查找链——实时帧通道（App.tsx task-error 分支）与
+ *  收件箱补发（missedErrBubble）此前两套结构：帧通道 START_FAIL→ERROR_LABEL→
+ *  未知，missed 只查 ERROR_LABEL→未知（r72/r80/r81 同型缺键债的结构温床）。
+ *  两链同源 START_FAIL 优先（r76 口径：启动前失败族文案优先）；闭集外跨进程
+ *  string 落 undefined，调用方各自「未知错误」兜底。 */
+export function terminalLabel(code?: string): string | undefined {
+  const c = (code ?? '') as TerminalCode
+  return START_FAIL_LABEL[c] ?? ERROR_LABEL[c]
 }
