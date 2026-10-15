@@ -13,6 +13,14 @@
 
 r59 起至 r76 的全部审计批次均发生在 0.1.4 三处钉版未发布期间，同属 0.1.4 实物（r71 e5161b8 首次归位至 r70 批，r73 product C8 把 r71/r72/r73 批次一并并入；日期为并入封版日，发布时如跨日顺手更新）。
 
+### Fixed（r81 修批⑤——escapeYaml 码点 + 两处口径账面）
+
+- escapeYaml 补 U+2028/U+2029（C4）：YAML 双引号标量里裸行/段分隔符与 C0 同罪（重解析当换行），页面可控 title 可借它伪造 frontmatter 键——并进既有替空格字符类，单测钉死（变异自证删码点必红）；注释折进行内守红线（2199/2200，余量 1）
+- AGENTS.md 授权入口口径对齐 D3 r63（F23）：optional_host_permissions 的「始终允许读取网页」实装位为 no-permission 出错气泡而非设置页——硬约束①原描述停在 r47 前
+- Onboarding E404 归因对齐 install.sh:47-48 单一口径（F7）：「扩展刚更新、本机组件还没跟上」→「扩展与本机组件同版本发布，可能刚更新还未推送」——三处（sw.ts 横幅/README/Onboarding）归因一致
+- 钉版 CI「install.sh ∈ npm versions」核验闭合：check-version（install.sh 钉版 == 仓库版本）+ check-published（仓库版本 == registry latest）传递成立，无需第四道闸（ci.yml:44/46 双腿在跑）
+- 291 → 292 用例，README/AGENTS 同步
+
 ### Fixed（r81 修批④——迟到回调守卫纯函数化直测）
 
 - App.tsx send 错误分支三重迟到守卫纯函数化（C6）：dropLateError 抽入 terminal.ts（r74 先例路径），App onStartResult 消费语义逐字不变——此前闭包内联全仓零直测（r81 审计变异实证：删守卫后 116 测试全绿，r75 挂账四轮未清）。四用例参数化直测（台账命中丢/顶替 cancelled 丢/清场空会话丢/正常路径不丢），变异自证删守卫①必红；287 → 291 用例，README/AGENTS 同步

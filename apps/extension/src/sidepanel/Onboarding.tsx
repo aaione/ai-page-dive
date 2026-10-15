@@ -197,7 +197,7 @@ export function Onboarding() {
             <code style={{ whiteSpace: 'pre-line' }}>{npmCmd}</code>。
           </p>
           <p>
-            <code>E404</code> / 版本不存在 → 该版本尚未发布到 npm（扩展刚更新、本机组件还没跟上）——到 GitHub Issues 反馈或等发版后重试，勿手改装其他版本（跨版本消息协议可能不匹配）。
+            <code>E404</code> / 版本不存在 → 命令钉住的版本尚未发布到 npm（扩展与本机组件同版本发布，可能刚更新还未推送）——勿手改装其他版本（新旧版本间消息协议可能不匹配，比 E404 更难排查），到 GitHub Issues 反馈或等发版后重跑命令即可。{/* r81（F7）：归因对齐 install.sh:47-48 单一口径——旧文「扩展刚更新、本机组件还没跟上」与 install.sh 各执一词 */}
           </p>
           <p>
             <code>EACCES</code> / 权限错误 → 改用 nvm/Homebrew 的 Node 重装（免 sudo；

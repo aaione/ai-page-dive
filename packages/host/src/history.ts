@@ -70,8 +70,8 @@ export function slugify(s: string): string {
 }
 
 function escapeYaml(s: string): string {
-  // ponytail: 引号+反斜杠转义；C0 控制字符（含 \r，YAML 规范当换行、裸 CR 破坏引号解析）替空格（r8-review）
-  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\x00-\x1f]+/g, ' ')}"`
+  // ponytail: 引号+反斜杠转义；C0 控制字符（含 \r）与 U+2028/U+2029（r81 C4——页面可控 title 借行分隔符换行伪造 frontmatter 键）替空格（r8-review）
+  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\x00-\x1f\u2028\u2029]+/g, ' ')}"`
 }
 
 /** test 用：暴露转义行为 */
