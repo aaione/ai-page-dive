@@ -7,7 +7,11 @@
 
 ## [Unreleased]
 
-（暂无——0.1.4 已发 npm（registry latest 同版）并 push 147 commits + tag v0.1.4，r81 critical C1 发布链断裂（第 15 轮续计）闭合；下轮发版自此起记）
+（0.1.4 已发 npm（registry latest 同版）并 push 147 commits + tag v0.1.4，r81 critical C1 发布链断裂（第 15 轮续计）闭合；下轮发版自此起记）
+
+### Docs（r77 双终审迟到收割——发起于 r76 后、收割于 r82 后）
+
+- 双 workflow 19 agents/693k tokens（code 6 维 + product 5 维，报告 reports/2026-10-16-r77-dual-audit-post-hoc.md）：收割时仓库已被并行推进至 r82（HEAD 03bd069），审计员实测抓获基线漂移并按现状出账。正面：r76 批 7 项修复全部验证成立、发布链闭合亲测（registry 0.1.4 = install.sh 钉版 = tag）、9 决策零违背、r76 批入账措辞可逐字导出。新立案 medium×1：vitest 偶发红未定位（复核员修正嫌疑到 terminal.test.ts stampTerminal/UNDELIVERED_CODES 族，六跑三红单文件跑绿；本机磁盘 92% 满为已证放大器——红跑日志真实 ENOSPC）。新立案 low×8：send 回调先到不记 finished 台账（双气泡第三路径，一行修）/runtime-error·parse 失败轮历史零错误痕迹（r76-B 修全性缺口）/timeout 路径先发终局后落盘（三终局路径时序不齐）/errorText UTF-16 截断可切半代理对（stdio.ts 范式未对齐）/「未知错误（码 X）」格式三拷贝（三轮缺键债同域）/E404_HINT Issues URL 不可点击/注释 14 键 vs 实 15 键/产物级声明与发版 tag·zip 两步无 runbook 制度盲区。交叉确认 r82 P1（复制命令 bug 三 workflow 独立撞车 + zip 哈希亲验未修未重打）；剔除 1 low（「升级提示指向 npm 无 0.1.4」前提已随发布失效）；遗留观察：raw.githubusercontent CDN 暂态缓存钉 0.1.3 旧 install.sh（下轮复查）、本机磁盘 92% 建议清理。tests 变异 5/5 全红自证、收割后工作区干净亲测
 
 ## [0.1.4] - 2026-10-15
 
