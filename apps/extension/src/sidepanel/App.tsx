@@ -7,7 +7,7 @@ import { Onboarding } from './Onboarding.js'
 import { SummarizeView, useDisabledClis } from './SummarizeView.js'
 import { HistoryView } from './HistoryView.js'
 import { Settings } from './Settings.js'
-import { dropLateError, ERROR_LABEL, stampTerminal, terminalLabel } from './terminal.js'
+import { bannerCmd, dropLateError, ERROR_LABEL, stampTerminal, terminalLabel } from './terminal.js'
 
 type Overlay = null | 'history' | 'settings'
 
@@ -1046,13 +1046,15 @@ export function App() {
           <div className="pd-error" role="alert" style={{ margin: '8px 12px 0' }}>
             <span>{outdated}</span>
             {/* r56（#14）：横幅文案含两段式升级命令——手抄必错（版本号/ext-id 各 20+ 字符），
-                命令在末段（「请在终端执行：」之后），按钮只复制命令本身 */}
+                命令在末段（「请在终端执行：」之后），按钮只复制命令本体（bannerCmd 直测）。
+                r82（P1）：E404 提示须前置于命令——r76 尾置时其内含全角冒号使切片
+                命中提示内部，复制按钮复制出 issues URL（sw.test.ts 钉住字序） */}
             <button
               type="button"
               style={{ flex: 'none', fontSize: 12, cursor: 'pointer' }}
               onClick={() => {
                 navigator.clipboard
-                  .writeText(outdated.slice(outdated.lastIndexOf('：') + 1))
+                  .writeText(bannerCmd(outdated))
                   .then(() => {
                     setCmdCopied(true)
                     setTimeout(() => setCmdCopied(false), 1500)

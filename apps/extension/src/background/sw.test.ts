@@ -713,6 +713,10 @@ describe('sw.ts 回归网', () => {
     const st = await h.fireMessage({ t: 'panel-ready' })
     expect(st.outdated).toContain('@aaione/ai-page-dive@0.1.4')
     expect(st.outdated).toContain('install --ext-id test-ext-id')
+    // r82（上架审 P1）：E404 提示须前置于命令——panel 复制按钮按最后一个全角冒号
+    // 切片（terminal.ts bannerCmd），r76 尾置时提示内含冒号使复制出 issues URL
+    expect(st.outdated!.indexOf('issues）')).toBeLessThan(st.outdated!.indexOf('npm i -g'))
+    expect(st.outdated!.slice(st.outdated!.lastIndexOf('：') + 1)).toBe('npm i -g @aaione/ai-page-dive@0.1.4 && ai-page-dive install --ext-id test-ext-id')
   })
 
   // r57（#8）：升级触达——host ≥ 下限但落后于扩展钉版时给非阻断软提示；此前升级
@@ -722,6 +726,9 @@ describe('sw.ts 回归网', () => {
     const st = await h.fireMessage({ t: 'panel-ready' })
     expect(st.upgrade).toContain('0.1.3 → 0.1.4')
     expect(st.upgrade).toContain('install --ext-id test-ext-id')
+    // r82（P1）同款钉 upgrade 横幅：提示前置 + 切片得命令本体
+    expect(st.upgrade!.indexOf('issues）')).toBeLessThan(st.upgrade!.indexOf('npm i -g'))
+    expect(st.upgrade!.slice(st.upgrade!.lastIndexOf('：') + 1)).toBe('npm i -g @aaione/ai-page-dive@0.1.4 && ai-page-dive install --ext-id test-ext-id')
     expect(st.outdated).toBeUndefined() // 非阻断：不下限横幅
     // 过旧仍走阻断横幅，upgrade 与之互斥
     const h2 = await boot({ hostVersion: '0.0.9' })

@@ -517,11 +517,13 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
       // r76（r75 product low）：E404 出路口径对齐 install.sh/Onboarding——此前只说
       // 「稍后几分钟重试」，无 Issues 出路也无跨代警告（用户自行改装旧版 =
       // 新旧协议不匹配，比 E404 更难排查）
+      // r82（上架审 P1）：提示须前置于命令——panel 复制按钮按最后一个全角冒号切片，
+      // 尾置时提示内含冒号使复制出 issues URL（bannerCmd + sw.test 字序双侧钉死）
       const E404_HINT =
         '（若报 E404——该版本尚未发布到 npm：勿手改装其他版本（跨版本消息协议可能不匹配），到 Issues 反馈或等发版后重试：github.com/aaione/ai-page-dive/issues）'
       const outdated =
         r.ok && r.hostVersion && versionLt(r.hostVersion, MIN_HOST_VERSION)
-          ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），请在终端执行：npm i -g @aaione/ai-page-dive@${chrome.runtime.getManifest().version} && ai-page-dive install --ext-id ${chrome.runtime.id}${E404_HINT}`
+          ? `本机组件版本过低（${r.hostVersion} < ${MIN_HOST_VERSION}），${E404_HINT}请在终端执行：npm i -g @aaione/ai-page-dive@${chrome.runtime.getManifest().version} && ai-page-dive install --ext-id ${chrome.runtime.id}`
           : undefined
       // r57（#8）：升级触达——host ≥ 下限但落后于扩展钉版时给非阻断软提示（过旧
       // 阻断横幅优先）。此前升级无任何触达：已装机用户的 host 永远收不到修复，
@@ -529,7 +531,7 @@ async function handleMessage(msg: PanelToSw): Promise<unknown> {
       const extV = chrome.runtime.getManifest().version
       const upgrade =
         !outdated && r.ok && r.hostVersion && versionLt(r.hostVersion, extV)
-          ? `本机组件有新版本（${r.hostVersion} → ${extV}），建议升级：npm i -g @aaione/ai-page-dive@${extV} && ai-page-dive install --ext-id ${chrome.runtime.id}${E404_HINT}`
+          ? `本机组件有新版本（${r.hostVersion} → ${extV}），${E404_HINT}建议升级：npm i -g @aaione/ai-page-dive@${extV} && ai-page-dive install --ext-id ${chrome.runtime.id}`
           : undefined
       // 面板收起期间错过的任务终局一次性补发（r53 #5）：面板无接收端时广播静默丢，
       // 重开面板永远停在 loading。消费即清——防重复补发

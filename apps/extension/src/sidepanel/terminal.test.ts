@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TerminalCode } from '@ai-page-dive/shared'
-import { dropLateError, ERROR_LABEL, START_FAIL_LABEL, stampTerminal, terminalLabel, UNDELIVERED_CODES } from './terminal.js'
+import { bannerCmd, dropLateError, ERROR_LABEL, START_FAIL_LABEL, stampTerminal, terminalLabel, UNDELIVERED_CODES } from './terminal.js'
 
 // r74（r73 code high#2）：终局三戳谓词直测——UNDELIVERED_CODES.has 生产逻辑此前
 // 零测试执行（tips 五态测试手搓 props），本文件是其第一道回归网；谱系口径见
@@ -145,5 +145,21 @@ describe('r81 C6：迟到回调守卫（dropLateError——App send 错误分支
   it('非守卫域：在跑/非空会话的回调错误 → 不丢（守卫不得误伤正常失败路径）', () => {
     expect(dropLateError({ error: 'no-permission', taskId: 't-now' }, S({ taskId: 't-now', pending: true }))).toBe(false)
     expect(dropLateError({ error: 'timeout' }, S({ taskId: 't-now' }))).toBe(false)
+  })
+})
+
+describe('r82 P1：版本横幅复制命令切片', () => {
+  // 与 sw.ts E404_HINT 同形（含两个全角冒号——r76 尾置时正是它们使切片命中提示内部）
+  const E404 = '（若报 E404——该版本尚未发布到 npm：勿手改装其他版本（跨版本消息协议可能不匹配），到 Issues 反馈或等发版后重试：github.com/aaione/ai-page-dive/issues）'
+  const CMD = 'npm i -g @aaione/ai-page-dive@0.1.4 && ai-page-dive install --ext-id abc123'
+  it('阻断横幅：E404 提示前置于命令 → 切出命令本体（不是 issues URL）', () => {
+    expect(bannerCmd(`本机组件版本过低（0.0.9 < 0.1.0），${E404}请在终端执行：${CMD}`)).toBe(CMD)
+  })
+  it('软提示横幅同形；无提示历史形状切片不回归', () => {
+    expect(bannerCmd(`本机组件有新版本（0.1.2 → 0.1.4），${E404}建议升级：${CMD}`)).toBe(CMD)
+    expect(bannerCmd(`本机组件版本过低（0.0.9 < 0.1.0），请在终端执行：${CMD}`)).toBe(CMD)
+  })
+  it('守卫前提反例（钉住重构方向）：提示尾置时切出 issues URL——此形状不得回归', () => {
+    expect(bannerCmd(`本机组件版本过低（0.0.9 < 0.1.0），请在终端执行：${CMD}${E404}`)).toBe('github.com/aaione/ai-page-dive/issues）')
   })
 })

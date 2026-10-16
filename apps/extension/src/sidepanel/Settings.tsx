@@ -356,7 +356,8 @@ export function Settings({ agents, onClose, initialTab }: { agents: AgentStatus[
   function shareTo(kind: (typeof SHARE_SITES)[number][0]) {
     const url = 'https://github.com/aaione/ai-page-dive'
     // r51-review A1：分享文案与 README 首屏同口径——「零配置」对需先装 CLI 的新用户是误导
-    const text = 'AI PageDive——一键调用本机 AI CLI 深度总结当前网页的 Chrome 扩展：零账号零 API key、复用已有订阅、内容不出本机。'
+    // r82（P2）：「内容不出本机」改限定式——正文实交 CLI 厂商云端，与 manifest/PRIVACY 口径对齐
+    const text = 'AI PageDive——一键调用本机 AI CLI 深度总结当前网页的 Chrome 扩展：零账号零 API key、复用已有订阅、正文直达本机 CLI。'
     const u = encodeURIComponent(url)
     const t = encodeURIComponent(text)
     const target = {

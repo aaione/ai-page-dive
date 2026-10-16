@@ -120,3 +120,8 @@ export function dropLateError(
   // 空会话是新用户首屏最常见的脏态（r3-ux R3-m1），静默丢弃
   return s.pending === false && s.taskId === null && s.activeId === null && s.messages.length === 0
 }
+
+/** r82（上架审 P1）：版本横幅「复制命令」切片——命令在最后一个全角冒号之后。
+ *  守卫前提：E404 提示等含全角冒号的文案必须排在命令之前（sw.ts r82 重排）——
+ *  r76 尾置时 lastIndexOf 命中提示内部，复制出 issues URL 而非 npm 命令 */
+export const bannerCmd = (banner: string): string => banner.slice(banner.lastIndexOf('：') + 1)
