@@ -44,15 +44,19 @@ r83 报告写「history-list/read：列表 + 全文读取通过」——复查 r
 
 脚本迭代 3 条（A 轮1 断言误读 resp.version→实为 hostVersion、轮2 profile NM 注册跨轮残留加 rmSync；B 图标按钮仅 aria-label 锚点加选择器）+ r83 误诊修正 1 条（上述②）+ 轨 C 帧谓词弱点 1 条（上述①，已补真验证）+ notes 转录笔误 1 条（thinking 计数 542 实为 513）+ 环境效应 2 条（上述 3）。弱证据点名 2 处（relaunch-sw-alive、onboarding-embeds-ext-id 的 detail:null）均由同段强断言/源码仲裁闭合。
 
+## 轨 D 补验：真扩展 + 真 host 的历史 UI 联合路径（5/5 全过）
+
+r84 主轮收尾时识别的覆盖缝：轨 A 只验面板主 UI、轨 B 历史视图用 mock、协议帧靠裸探针——三段从未合缝。补验脚本 `/tmp/pd-e2e-wf/trackD-joint-history.mjs`（复用轨 A 的 NM 就绪 profile）：真 sidepanel 页 → SW 端口 → NM → 真 host → `history-list` / `history-read`（history-file 回帧）→ 面板渲染整链。结果：真实历史条目命中（`AI PageDive README（e2e 直驱） · github.com · claude · 2026/10/17 23:19:17`——正是轨 C 当轮产出，非 mock）；点开后正文正确渲染（「核心卖点/深读而非浅摘要」）、返回列表入口在位、frontmatter 元数据不裸露（`content_chars` 未出现在渲染层）。截图 `shots-a/19-history-real.png`、`20-history-read-real.png`。
+
 ## 结论
 
-**dist v0.1.4 经 workflow 三轨复验 + 终审对账：对 r83 基线零回归，四层（浏览器加载/NM 传输/host↔真 CLI/UI 全流程）全部通过**；过程中修正 r83 报告两处不准确（history-read 超claim、lost 时序误诊），并将 e2e 驱动固化为可复用脚本（含已知帧名修正点）。提审闸门不变：**P3 新机空跑主线实测**（用户真机，`store/p3-fresh-run-guide.md`）仍是最后一关。
+**dist v0.1.4 经 workflow 三轨复验 + 终审对账 + 轨 D 联合路径补验：对 r83 基线零回归，四层（浏览器加载/NM 传输/host↔真 CLI/UI 全流程）及历史 UI×真 host 联合路径全部通过**；过程中修正 r83 报告两处不准确（history-read 超claim、lost 时序误诊），并将 e2e 驱动固化为可复用脚本（含已知帧名修正点）。提审闸门不变：**P3 新机空跑主线实测**（用户真机，`store/p3-fresh-run-guide.md`）仍是最后一关。
 
 ## 证据索引
 
 - workflow 运行：run `wf_b54e2cc1-fe4`（journal：`…/subagents/workflows/wf_b54e2cc1-fe4/journal.jsonl`，4 agents 全 done）
-- 三轨结果：`/tmp/pd-e2e-wf/track{A,B,C}-result.json`
-- 截图 13 张：`/tmp/pd-e2e-wf/shots-a/`（3）+ `shots-b/`（10）
-- 驱动脚本（as-run 存档）：`/tmp/pd-e2e-wf/track{A,B,C}.mjs`（A/B 含 agents 迭代修订；C 的 history-read 谓词已知错误见勘误①，复用时改等 `t:'history-file'`）
+- 三轨结果：`/tmp/pd-e2e-wf/track{A,B,C}-result.json`（+轨 D：`trackD-result.json`）
+- 截图 15 张：`/tmp/pd-e2e-wf/shots-a/`（5）+ `shots-b/`（10）
+- 驱动脚本（as-run 存档）：`/tmp/pd-e2e-wf/track{A,B,C}.mjs`（A/B 含 agents 迭代修订；C 的 history-read 谓词已知错误见勘误①，复用时改等 `t:'history-file'`）+ `trackD-joint-history.mjs`
 - history-read 补验探针帧转储：本会话 Bash 记录（双文件 history-file 回帧）
 - 历史落盘样本：`~/.ai-page-dive/history/2026/10/17/231917-ai-pagedive-readme-e2e-直驱.md`
