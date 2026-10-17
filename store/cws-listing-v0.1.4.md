@@ -110,6 +110,6 @@ AI PageDive —— 用你自己的 Claude Code / Codex 订阅深度总结当前�
 
 - [x] P1 横幅复制修复进 zip（`0651e2b`，重打包已验）
 - [x] P2 商店文案限定语进 zip（同上）
-- [ ] P3 新机空跑主线实测（用户真机：干净环境跑 install.sh → 装扩展 → 总结 → 追问 → 历史恢复，录屏入账）
+- [ ] P3 新机空跑主线实测（用户真机：干净环境跑 install.sh → 装扩展 → 总结 → 追问 → 历史恢复，录屏入账）——**一步步指引已成稿：`store/p3-fresh-run-guide.md`**（2026-10-17 核：远端 install.sh 与本地零 diff、npm 0.1.4 已发布，P3 不被 push 阻塞）
 - [x] P4 本成稿
 - [ ] Dashboard 按 §7 填写 + §4 测试说明一并提交
